@@ -11,6 +11,8 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+egui = "0.34.2"
+egui_tracing = "0.3.0"
 tracing-subscriber = { version = "0.3", features = [
     "env-filter",
     "fmt",

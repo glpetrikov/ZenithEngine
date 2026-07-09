@@ -10,7 +10,7 @@ pub fn ctrlc_hook(event_loop_proxy: &winit::event_loop::EventLoopProxy<CustomEve
 	}) {
 		Ok(()) => {}
 		Err(e) => {
-			ze_log::error!("Cannon Setup ctrlc hook, error: {e:?}");
+			ze_log::error!("Cannot Setup ctrlc hook, error: {e:?}");
 		}
 	}
 }

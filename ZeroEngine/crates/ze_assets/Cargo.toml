@@ -15,5 +15,4 @@ anyhow = "1.0.102"
 schemars = { version = "1", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 wesl = "0.4.0"
-ze_build = { path = "../ze_build" }
 zepack = { version = "0.1.0", path = "../zepack" }

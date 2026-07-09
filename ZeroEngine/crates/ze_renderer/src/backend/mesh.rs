@@ -57,7 +57,7 @@ impl Vertex {
 		};
 
 		let buffer = device.create_buffer_init(&buffer_descriptor);
-		let offset: u64 = bytes_1.len().try_into().expect("Cannon get len of bytes_1 as u64");
+		let offset: u64 = bytes_1.len().try_into().expect("Cannot get len of bytes_1 as u64");
 
 		Mesh { buffer, offset }
 	}

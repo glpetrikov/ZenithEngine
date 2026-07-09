@@ -30,6 +30,7 @@ pub struct SpriteMaterial {
 
 pub struct TextureCache {
 	textures: HashMap<AssetRef, TextureResource>,
+	failed: std::collections::HashSet<AssetRef>,
 	fallback: TextureResource,
 }
 
@@ -153,8 +154,24 @@ impl TextureCache {
 	pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
 		Self {
 			textures: HashMap::new(),
+			failed: std::collections::HashSet::new(),
 			fallback: TextureResource::fallback(device, queue),
 		}
+	}
+
+	pub fn invalidate(&mut self, asset: &AssetRef) -> bool {
+		self.failed.remove(asset);
+		self.textures.remove(asset).is_some()
+	}
+
+	pub fn invalidate_many<'a>(&mut self, assets: impl IntoIterator<Item = &'a AssetRef>) -> usize {
+		let mut invalidated = 0;
+		for asset in assets {
+			if self.invalidate(asset) {
+				invalidated += 1;
+			}
+		}
+		invalidated
 	}
 
 	pub fn get_or_load(
@@ -164,6 +181,22 @@ impl TextureCache {
 		device: &wgpu::Device,
 		queue: &wgpu::Queue,
 	) -> &TextureResource {
+		// An empty path means "no texture assigned" (e.g. a freshly created
+		// Sprite). This is a valid, expected state, not a load failure, so we
+		// must not touch the filesystem or log anything for it.
+		if asset.path.is_empty() {
+			return &self.fallback;
+		}
+
+		// A previous attempt already failed for this asset. Retrying every
+		// frame would spam the log with the same error without any chance of
+		// succeeding, since nothing about the asset changes between frames.
+		// invalidate() clears this so a real fix (e.g. re-importing the file)
+		// gets picked up on the next access.
+		if self.failed.contains(asset) {
+			return &self.fallback;
+		}
+
 		if !self.textures.contains_key(asset) {
 			let texture = resources
 				.bytes(asset)
@@ -175,6 +208,7 @@ impl TextureCache {
 				}
 				Err(error) => {
 					ze_log::warn!("Failed to load texture `{}`: {error:?}", asset.path);
+					self.failed.insert(asset.clone());
 					return &self.fallback;
 				}
 			}

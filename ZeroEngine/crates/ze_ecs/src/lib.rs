@@ -38,10 +38,8 @@ pub fn test() -> Result<()> {
 		rotation: Quat::from_rotation_z(-90.0_f32.to_radians()),
 	});
 
-	let schema_directory = "assets/schemas";
-	let scene_directory = "assets/scenes";
+	let scene_directory = "Sandbox/assets/scenes";
 
-	Scene::write_schema(schema_directory.into())?;
 	scene.save(&scene_directory.into(), "main")?;
 
 	let loaded_scene = Scene::from_name(scene_directory.into(), "main")?;

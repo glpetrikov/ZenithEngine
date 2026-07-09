@@ -1,0 +1,32 @@
+{
+  "version": "0.1.0",
+  "name": "NewScene",
+  "scene_type": "Scene",
+  "entities": [
+    {
+      "id": {
+        "index": 2,
+        "gen": 0
+      },
+      "components": [
+        {
+          "component_type": "ze.name",
+          "value": {
+            "name": "PhysicsSettings"
+          }
+        },
+        {
+          "component_type": "ze.physics_2d.settings",
+          "value": {
+            "enable_debug_draw": true,
+            "gravity": [
+              0.0,
+              -9.8100004196167
+            ],
+            "physics_timestep": 0.014285714365541935
+          }
+        }
+      ]
+    }
+  ]
+}

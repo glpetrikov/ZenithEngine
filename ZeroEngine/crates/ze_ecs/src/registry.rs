@@ -61,6 +61,25 @@ impl ComponentRegistry {
 		self.components.insert(component_type, registration);
 	}
 
+	pub fn register_custom(
+		&mut self,
+		component_type: impl Into<String>,
+		schema: Value,
+		save: SaveComponentFn,
+		load: LoadComponentFn,
+	) {
+		let component_type = component_type.into();
+		self.components.insert(
+			component_type.clone(),
+			ComponentRegistration {
+				component_type,
+				schema,
+				save,
+				load,
+			},
+		);
+	}
+
 	pub fn save_entity(&self, entity: EntityId, world: &World) -> SavedEntity {
 		let mut components = Vec::new();
 

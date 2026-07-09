@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
 
 pub enum ShaderSource {
 	Path(PathBuf),
@@ -22,6 +22,7 @@ pub struct Builder<'a> {
 	cull_mode: Option<wgpu::Face>,
 	depth_write_enabled: bool,
 	depth_compare: wgpu::CompareFunction,
+	depth_stencil_enabled: bool,
 	name: String,
 	bind_group_layouts: Vec<Option<&'a wgpu::BindGroupLayout>>,
 	device: &'a wgpu::Device,
@@ -43,6 +44,7 @@ impl<'a> Builder<'a> {
 			cull_mode: None, // Some(wgpu::Face::Back),
 			depth_write_enabled: true,
 			depth_compare: wgpu::CompareFunction::Less,
+			depth_stencil_enabled: true,
 			name: "Unnamed Pipeline".to_string(),
 			bind_group_layouts: vec![],
 			device,
@@ -121,6 +123,11 @@ impl<'a> Builder<'a> {
 		self
 	}
 
+	pub const fn with_depth_stencil_enabled(mut self, enabled: bool) -> Self {
+		self.depth_stencil_enabled = enabled;
+		self
+	}
+
 	pub fn with_bind_group_layout(mut self, layout: &'a wgpu::BindGroupLayout) -> Self {
 		self.bind_group_layouts.push(Some(layout));
 		self
@@ -128,11 +135,8 @@ impl<'a> Builder<'a> {
 
 	pub fn build(self) -> ze_core::Result<Pipeline> {
 		let source_code = match self.shader_source {
-			Some(ShaderSource::Path(path)) => {
-				let filepath = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path);
-
-				fs::read_to_string(&filepath)
-					.unwrap_or_else(|e| panic!("Failed to read shader `{}`: {e}", filepath.display()))
+			Some(ShaderSource::Path(_path)) => {
+				ze_core::bail!("file-based shader loading is not supported in release builds");
 			}
 			Some(ShaderSource::Source(source)) => source,
 			None => {
@@ -164,13 +168,13 @@ impl<'a> Builder<'a> {
 			write_mask: wgpu::ColorWrites::ALL,
 		})];
 
-		let depth_stencil = wgpu::DepthStencilState {
+		let depth_stencil = self.depth_stencil_enabled.then_some(wgpu::DepthStencilState {
 			format: wgpu::TextureFormat::Depth32Float,
 			depth_write_enabled: Some(self.depth_write_enabled),
 			depth_compare: Some(self.depth_compare),
 			stencil: wgpu::StencilState::default(),
 			bias: wgpu::DepthBiasState::default(),
-		};
+		});
 
 		let render_pipeline_name = format!("{} Render Pipeline", self.name);
 
@@ -198,7 +202,7 @@ impl<'a> Builder<'a> {
 				unclipped_depth: false,
 				conservative: false,
 			},
-			depth_stencil: Some(depth_stencil),
+			depth_stencil,
 			multisample: wgpu::MultisampleState {
 				count: 1,
 				mask: !0,

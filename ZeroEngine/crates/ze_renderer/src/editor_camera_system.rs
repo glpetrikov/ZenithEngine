@@ -1,5 +1,5 @@
 use ze_core::{Result, Vec3};
-use ze_ecs::{EntitiesView, EntityId, Scene, System, Transform};
+use ze_ecs::{EditorOnly, EntitiesView, EntityId, Scene, System, Transform};
 use ze_input::{Input, ZKeyCode};
 
 use crate::{Camera, CameraProjection};
@@ -48,6 +48,13 @@ impl System for EditorCameraSystem {
 	fn name(&self) -> &'static str { "EditorCameraSystem" }
 
 	fn update(&mut self, scene: &mut Scene, dt: f32) -> Result<()> {
+		let Some(entity) = Self::primary_camera_entity(scene) else {
+			return Ok(());
+		};
+		if !Self::is_editor_camera(scene, entity) {
+			return Ok(());
+		}
+
 		let mut direction = Vec3::ZERO;
 
 		if Input::is_key_pressed(ZKeyCode::W) {
@@ -74,10 +81,6 @@ impl System for EditorCameraSystem {
 		if direction == Vec3::ZERO && wheel_delta == 0.0 {
 			return Ok(());
 		}
-
-		let Some(entity) = Self::primary_camera_entity(scene) else {
-			return Ok(());
-		};
 
 		if direction != Vec3::ZERO {
 			let speed = if Input::is_key_pressed(ZKeyCode::LShift) {
@@ -108,4 +111,11 @@ impl System for EditorCameraSystem {
 	}
 
 	fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+}
+
+impl EditorCameraSystem {
+	fn is_editor_camera(scene: &Scene, entity: EntityId) -> bool {
+		let world = scene.world();
+		world.get::<&EditorOnly>(entity).is_ok()
+	}
 }

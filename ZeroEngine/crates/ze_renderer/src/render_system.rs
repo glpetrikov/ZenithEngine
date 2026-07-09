@@ -1,8 +1,9 @@
 use ze_assets::{AssetRef, ResourceManager};
 use ze_core::{Mat4, Result, Vec2, Vec3};
 use ze_ecs::{
-	Collider, ColliderShape, EntitiesView, EntityId, Inactive, PhysicsSettings, RigidBody, RigidBodyType, Scene,
-	System, Transform,
+	Collider, ColliderShape, EditorOnly, EntitiesView, EntityId, Inactive, Name, PhysicsSettings, RigidBody,
+	RigidBodyType, Scene, System, Tag, Transform,
+	shipyard::{IntoIter, View},
 };
 use ze_input::{Input, ZKeyCode};
 
@@ -19,6 +20,8 @@ pub struct CameraRenderData {
 
 #[derive(Debug, Clone)]
 pub struct SpriteRenderItem {
+	pub entity: ze_ecs::ze_entity_id::ZeEntityId,
+	pub label: String,
 	pub transform: Mat4,
 	pub texture: AssetRef,
 	pub size: SpriteSize,
@@ -34,55 +37,94 @@ pub struct DebugLine {
 	pub color: [f32; 4],
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenderStatus {
+	Rendered,
+	MissingPrimaryCamera { scene_name: String },
+}
+
 #[derive(Default)]
 pub struct RenderSystem {
 	items: Vec<SpriteRenderItem>,
 	debug_lines: Vec<DebugLine>,
+	active_scene_name: Option<String>,
+	missing_primary_camera_reported_scene: Option<String>,
 }
 
 impl RenderSystem {
 	pub fn new() -> Self { Self::default() }
 
-	pub fn render(&mut self, scene: &Scene, renderer: &mut Renderer, resources: &ResourceManager) {
-		self.render_scene(scene, renderer, resources);
+	pub fn render(&mut self, scene: &Scene, renderer: &mut Renderer, resources: &ResourceManager) -> RenderStatus {
+		self.render_scene(scene, renderer, resources)
 	}
 
-	fn render_scene(&mut self, scene: &Scene, renderer: &mut Renderer, resources: &ResourceManager) {
+	fn render_scene(&mut self, scene: &Scene, renderer: &mut Renderer, resources: &ResourceManager) -> RenderStatus {
+		self.reset_missing_primary_camera_report_on_scene_change(&scene.name);
 		let Some(camera) = Self::find_primary_camera(scene, renderer.aspect_ratio()) else {
-			ze_log::warn!("No primary camera found in scene `{}`", scene.name);
-			return;
+			self.items.clear();
+			self.debug_lines.clear();
+			if self.missing_primary_camera_reported_scene.as_deref() != Some(&scene.name) {
+				self.missing_primary_camera_reported_scene = Some(scene.name.clone());
+				let name = if scene.name.is_empty() { "unnamed" } else { &scene.name };
+				ze_log::error!("No primary camera found in scene `{name}`");
+			}
+			return RenderStatus::MissingPrimaryCamera {
+				scene_name: scene.name.clone(),
+			};
 		};
 
 		self.items = Self::collect_items(scene);
 		self.debug_lines = Self::collect_debug_lines(scene);
 		renderer.request_sprite_redraw(&self.items, &self.debug_lines, &camera, resources);
+		RenderStatus::Rendered
+	}
+
+	fn reset_missing_primary_camera_report_on_scene_change(&mut self, scene_name: &str) {
+		if self.active_scene_name.as_deref() == Some(scene_name) {
+			return;
+		}
+
+		self.active_scene_name = Some(scene_name.to_string());
+		self.missing_primary_camera_reported_scene = None;
 	}
 
 	fn find_primary_camera(scene: &Scene, aspect: f32) -> Option<CameraRenderData> {
+		let entity = Self::primary_camera_entity(scene)?;
 		let world = scene.world();
-		let mut camera_data = None;
-
-		world.run(|entities: EntitiesView| {
-			for entity in entities.iter() {
-				if world.get::<&Inactive>(entity).is_ok() {
-					continue;
-				}
-
-				let Ok((transform, camera)) = world.get::<(&Transform, &Camera)>(entity) else {
-					continue;
-				};
-
-				if !camera.primary {
-					continue;
-				}
-
-				camera_data = Some(Self::build_camera_data(&transform, &camera, aspect));
-				break;
-			}
-		});
-
-		camera_data
+		let camera = world.get::<&Camera>(entity).ok()?;
+		let transform = scene.world_transform(entity)?;
+		Some(Self::build_camera_data(&transform, &camera, aspect))
 	}
+
+	fn primary_camera_entity(scene: &Scene) -> Option<EntityId> {
+		let world = scene.world();
+		let Ok(cameras) = world.borrow::<View<Camera>>() else {
+			return None;
+		};
+		let mut game_camera = None;
+		let mut editor_camera = None;
+
+		for (entity, camera) in cameras.iter().with_id() {
+			if !camera.primary || world.get::<&Inactive>(entity).is_ok() {
+				continue;
+			}
+
+			if world.get::<&EditorOnly>(entity).is_ok() {
+				if editor_camera.is_none() {
+					editor_camera = Some(entity);
+				}
+				continue;
+			}
+
+			game_camera = Some(entity);
+			break;
+		}
+
+		game_camera.or(editor_camera)
+	}
+
+	#[cfg(test)]
+	fn primary_camera_exists(scene: &Scene) -> bool { Self::primary_camera_entity(scene).is_some() }
 
 	fn build_camera_data(transform: &Transform, camera: &Camera, aspect: f32) -> CameraRenderData {
 		let camera_transform = Mat4::from_scale_rotation_translation(Vec3::ONE, transform.rotation, transform.position);
@@ -117,13 +159,17 @@ impl RenderSystem {
 					continue;
 				}
 
-				let Ok((transform, sprite)) = world.get::<(&Transform, &Sprite)>(entity) else {
+				let Ok(sprite) = world.get::<&Sprite>(entity) else {
 					continue;
 				};
 
 				if !sprite.settings.visible {
 					continue;
 				}
+
+				let Some(transform) = scene.world_transform(entity) else {
+					continue;
+				};
 
 				let mut scale = transform.scale;
 				if sprite.settings.flip_x {
@@ -134,6 +180,8 @@ impl RenderSystem {
 				}
 
 				items.push(SpriteRenderItem {
+					entity: ze_ecs::ze_entity_id::ZeEntityId::from(entity),
+					label: sprite_debug_label(scene, entity),
 					transform: Mat4::from_scale_rotation_translation(scale, transform.rotation, transform.position),
 					texture: sprite.texture.clone(),
 					size: sprite.size.clone(),
@@ -162,7 +210,11 @@ impl RenderSystem {
 					continue;
 				}
 
-				let Ok((transform, collider)) = world.get::<(&Transform, &Collider)>(entity) else {
+				let Ok(collider) = world.get::<&Collider>(entity) else {
+					continue;
+				};
+
+				let Some(transform) = scene.world_transform(entity) else {
 					continue;
 				};
 
@@ -221,6 +273,18 @@ impl System for RenderSystem {
 	}
 
 	fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+}
+
+fn sprite_debug_label(scene: &Scene, entity: EntityId) -> String {
+	let world = scene.world();
+	let id = ze_ecs::ze_entity_id::ZeEntityId::from(entity);
+	let name = world
+		.get::<&Name>(entity)
+		.map_or_else(|_| "<unnamed>".to_string(), |name| name.name.clone());
+	let tag = world
+		.get::<&Tag>(entity)
+		.map_or_else(|_| "<untagged>".to_string(), |tag| tag.tag.clone());
+	format!("entity=({}, {}) name=`{name}` tag=`{tag}`", id.index, id.generation)
 }
 
 fn settings_entity(scene: &Scene) -> Option<EntityId> {
@@ -351,4 +415,53 @@ fn capsule_points(half_height: f32, radius: f32, arc_segments: usize) -> Vec<Vec
 	}
 
 	points
+}
+
+#[cfg(test)]
+mod tests {
+	use ze_ecs::{Collider, RigidBody};
+
+	use super::*;
+
+	fn primary_camera() -> Camera {
+		Camera {
+			projection: CameraProjection::Orthographic {
+				size: 10.0,
+				near: -100.0,
+				far: 100.0,
+			},
+			primary: true,
+			clear_color: [0.1, 0.1, 0.1, 1.0],
+		}
+	}
+
+	#[test]
+	fn primary_camera_lookup_accepts_camera_on_mixed_component_entity() {
+		let mut scene = Scene::new("main");
+		crate::register_renderer_components(scene.registry_mut());
+		let entity = scene.create_entity("Ball");
+		scene.entity_mut(entity).add_component(Transform::default());
+		scene.entity_mut(entity).add_component(primary_camera());
+		scene.entity_mut(entity).add_component(RigidBody::default());
+		scene.entity_mut(entity).add_component(Collider::default());
+		scene.entity_mut(entity).add_component(Tag {
+			tag: "Ball".to_string(),
+		});
+
+		assert_eq!(RenderSystem::primary_camera_entity(&scene), Some(entity));
+		assert!(RenderSystem::primary_camera_exists(&scene));
+	}
+
+	#[test]
+	fn primary_camera_lookup_ignores_inactive_primary_camera() {
+		let mut scene = Scene::new("main");
+		crate::register_renderer_components(scene.registry_mut());
+		let entity = scene.create_entity("DisabledCamera");
+		scene.entity_mut(entity).add_component(Transform::default());
+		scene.entity_mut(entity).add_component(primary_camera());
+		scene.entity_mut(entity).add_component(Inactive);
+
+		assert_eq!(RenderSystem::primary_camera_entity(&scene), None);
+		assert!(!RenderSystem::primary_camera_exists(&scene));
+	}
 }

@@ -32,6 +32,12 @@ pub enum ZKeyCode {
 	Enter,
 	LCtrl,
 	LShift,
+	RCtrl,
+	RShift,
+	ArrowUp,
+	ArrowDown,
+	ArrowLeft,
+	ArrowRight,
 	K1,
 	K2,
 	K3,
@@ -54,6 +60,14 @@ pub enum ZKeyCode {
 	KF10,
 	KF11,
 	KF12,
+	LAlt,
+	RAlt,
+	LSuper,
+	RSuper,
+	CapsLock,
+	Tab,
+	Backspace,
+	ContextMenu,
 	Unknown = 511,
 }
 
@@ -302,6 +316,20 @@ impl_from_winit_keycode! {
 	Enter => Enter,
 	ControlLeft => LCtrl,
 	ShiftLeft => LShift,
+	ControlRight => RCtrl,
+	ShiftRight => RShift,
+	AltLeft => LAlt,
+	AltRight => RAlt,
+	SuperLeft => LSuper,
+	SuperRight => RSuper,
+	CapsLock => CapsLock,
+	Tab => Tab,
+	Backspace => Backspace,
+	ContextMenu => ContextMenu,
+	ArrowUp => ArrowUp,
+	ArrowDown => ArrowDown,
+	ArrowLeft => ArrowLeft,
+	ArrowRight => ArrowRight,
 	Digit1 => K1,
 	Digit2 => K2,
 	Digit3 => K3,
@@ -387,5 +415,22 @@ mod tests {
 		input.set_key(ZKeyCode::Enter, true);
 		input.late_update();
 		assert!(!input.key_just_pressed(ZKeyCode::Enter));
+	}
+
+	#[cfg(feature = "winit")]
+	#[test]
+	fn winit_modifier_keys_map_to_engine_keys() {
+		assert_eq!(ZKeyCode::from(winit::keyboard::KeyCode::ShiftLeft), ZKeyCode::LShift);
+		assert_eq!(ZKeyCode::from(winit::keyboard::KeyCode::ShiftRight), ZKeyCode::RShift);
+		assert_eq!(ZKeyCode::from(winit::keyboard::KeyCode::ControlLeft), ZKeyCode::LCtrl);
+		assert_eq!(ZKeyCode::from(winit::keyboard::KeyCode::ControlRight), ZKeyCode::RCtrl);
+		assert_eq!(ZKeyCode::from(winit::keyboard::KeyCode::AltLeft), ZKeyCode::LAlt);
+		assert_eq!(ZKeyCode::from(winit::keyboard::KeyCode::AltRight), ZKeyCode::RAlt);
+		assert_eq!(ZKeyCode::from(winit::keyboard::KeyCode::SuperLeft), ZKeyCode::LSuper);
+		assert_eq!(ZKeyCode::from(winit::keyboard::KeyCode::SuperRight), ZKeyCode::RSuper);
+		assert_eq!(
+			ZKeyCode::from(winit::keyboard::KeyCode::ContextMenu),
+			ZKeyCode::ContextMenu
+		);
 	}
 }

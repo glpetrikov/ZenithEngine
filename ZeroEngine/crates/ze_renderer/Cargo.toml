@@ -1,8 +1,10 @@
 [package]
 name = "ze_renderer"
-version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
 
 [lints]
 workspace = true
@@ -22,3 +24,4 @@ glam = "0.32.1"
 bytemuck = "1.25.0"
 ze_input = { path = "../ze_input" }
 ze_ecs = { path = "../ze_ecs" }
+rfd = { version = "0.15", default-features = false, features = ["gtk3"] }

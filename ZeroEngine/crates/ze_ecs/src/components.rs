@@ -38,18 +38,43 @@ impl Default for Transform {
 	}
 }
 
-#[derive(Component, Reflect, Debug, Clone, Serialize, Deserialize)]
+#[derive(Component, Reflect, Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Parent {
+	#[schemars(with = "(u64, u16)")]
 	pub id: ZeEntityId,
 }
 
-#[derive(Component, Reflect, Debug, Clone, Serialize, Deserialize)]
+#[derive(Component, Reflect, Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+pub struct TransformInheritance {
+	#[serde(default = "default_true")]
+	pub inherit_position: bool,
+	#[serde(default = "default_true")]
+	pub inherit_rotation: bool,
+	#[serde(default = "default_true")]
+	pub inherit_scale: bool,
+}
+
+impl Default for TransformInheritance {
+	fn default() -> Self {
+		Self {
+			inherit_position: true,
+			inherit_rotation: true,
+			inherit_scale: true,
+		}
+	}
+}
+
+#[derive(Component, Reflect, Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Children {
+	#[schemars(with = "Vec<(u64, u16)>")]
 	pub ids: Vec<ZeEntityId>,
 }
 
 #[derive(Component, Reflect, Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Inactive;
+
+#[derive(Component, Reflect, Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+pub struct EditorOnly;
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Component, Reflect, Debug, Clone, Serialize, Deserialize, JsonSchema)]

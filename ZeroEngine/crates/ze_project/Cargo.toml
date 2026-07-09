@@ -1,0 +1,12 @@
+[package]
+name = "ze_project"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = "1.0.228"
+toml = "1.1.2"
+ze_core = { path = "../ze_core" }

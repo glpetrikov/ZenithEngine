@@ -6,8 +6,8 @@ use std::{
 use rapier2d::prelude::*;
 use ze_core::{Quat, Result, Vec2};
 use ze_ecs::{
-	Collider, ColliderShape, CollisionDetection, EntitiesView, EntityId, PhysicsSettings, RigidBody, RigidBodyType,
-	Scene, System, Transform,
+	Collider, ColliderShape, CollisionDetection, EntitiesView, EntityId, Inactive, PhysicsSettings, RigidBody,
+	RigidBodyType, Scene, System, Transform,
 };
 use ze_scripting_cs::{
 	ScriptingApiCommand, ScriptingRuntimeHandle, drain_scripting_api_commands, refresh_scripting_api_velocity_cache,
@@ -108,6 +108,12 @@ impl PhysicsWorld {
 		body.apply_impulse(Vector::new(impulse.x, impulse.y), true);
 	}
 
+	pub fn reset_forces(&mut self) {
+		for (_, body) in self.rigid_bodies.iter_mut() {
+			body.reset_forces(false);
+		}
+	}
+
 	pub fn body_velocities(&self) -> Vec<(EntityId, f32, f32)> {
 		self.entity_bodies
 			.iter()
@@ -190,6 +196,29 @@ impl PhysicsWorld {
 		self.collider_entities.insert(collider_handle, entity);
 	}
 
+	pub fn remove_entity(&mut self, entity: EntityId) {
+		let Some(entry) = self.entity_bodies.remove(&entity) else {
+			return;
+		};
+		let collider = self.entity_colliders.remove(&entity);
+		if let Some(collider) = collider {
+			self.collider_entities.remove(&collider);
+			self.active_contact_pairs
+				.retain(|pair| pair.0 != collider && pair.1 != collider);
+			self.active_sensor_pairs
+				.retain(|pair| pair.0 != collider && pair.1 != collider);
+		}
+
+		self.rigid_bodies.remove(
+			entry.handle,
+			&mut self.island_manager,
+			&mut self.colliders,
+			&mut self.impulse_joints,
+			&mut self.multibody_joints,
+			true,
+		);
+	}
+
 	pub fn entity_for_collider(&self, collider: ColliderHandle) -> Option<EntityId> {
 		self.collider_entities.get(&collider).copied()
 	}
@@ -207,9 +236,7 @@ impl PhysicsWorld {
 			.filter(|(_, entry)| is_kinematic(entry.body_type))
 			.filter_map(|(entity, _)| {
 				scene
-					.world()
-					.get::<&Transform>(*entity)
-					.ok()
+					.world_transform(*entity)
 					.map(|transform| (*entity, transform.position.x, transform.position.y, transform.rotation))
 			})
 			.collect::<Vec<_>>();
@@ -240,10 +267,13 @@ impl PhysicsWorld {
 			.collect::<Vec<_>>();
 
 		for (entity, x, y, angle) in updates {
-			let mut transform = scene.world_mut().get::<&mut Transform>(entity)?;
+			let Some(mut transform) = scene.world_transform(entity) else {
+				continue;
+			};
 			transform.position.x = x;
 			transform.position.y = y;
 			transform.rotation = Quat::from_rotation_z(angle);
+			scene.set_world_transform(entity, transform)?;
 		}
 
 		Ok(())
@@ -256,7 +286,6 @@ impl Default for PhysicsWorld {
 
 pub struct PhysicsSystem {
 	world: PhysicsWorld,
-	initialized: bool,
 	accumulator: f32,
 	scripting: Option<ScriptingRuntimeHandle>,
 }
@@ -265,7 +294,6 @@ impl PhysicsSystem {
 	pub fn new() -> Self {
 		Self {
 			world: PhysicsWorld::new(),
-			initialized: false,
 			accumulator: 0.0,
 			scripting: None,
 		}
@@ -274,7 +302,6 @@ impl PhysicsSystem {
 	pub fn with_scripting(scripting: ScriptingRuntimeHandle) -> Self {
 		Self {
 			world: PhysicsWorld::new(),
-			initialized: false,
 			accumulator: 0.0,
 			scripting: Some(scripting),
 		}
@@ -284,21 +311,59 @@ impl PhysicsSystem {
 
 	pub const fn world_mut(&mut self) -> &mut PhysicsWorld { &mut self.world }
 
-	fn register_scene_bodies(&mut self, scene: &Scene) {
+	pub fn reset(&mut self) {
+		self.world = PhysicsWorld::new();
+		self.accumulator = 0.0;
+	}
+
+	pub fn remove_inactive_entities(&mut self, scene: &Scene) {
+		let inactive_entities = self
+			.world
+			.entity_bodies
+			.keys()
+			.copied()
+			.filter(|entity| scene.world().get::<&Inactive>(*entity).is_ok())
+			.collect::<Vec<_>>();
+
+		for entity in inactive_entities {
+			self.world.remove_entity(entity);
+		}
+	}
+
+	fn sync_scene_bodies(&mut self, scene: &Scene) {
 		let ecs_world = scene.world();
+		let mut active_entities = HashSet::new();
 		let mut entities_to_register = Vec::new();
 
 		ecs_world.run(|entities: EntitiesView| {
 			for entity in entities.iter() {
-				let Ok((transform, rigid_body, collider)) =
-					ecs_world.get::<(&Transform, &RigidBody, &Collider)>(entity)
-				else {
+				if ecs_world.get::<&Inactive>(entity).is_ok() {
+					continue;
+				}
+
+				let Ok((_, rigid_body, collider)) = ecs_world.get::<(&Transform, &RigidBody, &Collider)>(entity) else {
 					continue;
 				};
 
-				entities_to_register.push((entity, rigid_body.clone(), collider.clone(), transform.clone()));
+				let Some(world_transform) = scene.world_transform(entity) else {
+					continue;
+				};
+
+				active_entities.insert(entity);
+				entities_to_register.push((entity, rigid_body.clone(), collider.clone(), world_transform));
 			}
 		});
+
+		let removed_entities = self
+			.world
+			.entity_bodies
+			.keys()
+			.copied()
+			.filter(|entity| !active_entities.contains(entity))
+			.collect::<Vec<_>>();
+		for entity in removed_entities {
+			self.world.remove_entity(entity);
+		}
 
 		for (entity, rigid_body, collider, transform) in entities_to_register {
 			self.world.register_entity(entity, &rigid_body, &collider, &transform);
@@ -314,21 +379,20 @@ impl System for PhysicsSystem {
 	fn name(&self) -> &'static str { "PhysicsSystem" }
 
 	fn update(&mut self, scene: &mut Scene, dt: f32) -> Result<()> {
-		if !self.initialized {
-			self.register_scene_bodies(scene);
-			self.initialized = true;
-		}
-
 		let settings = scene_physics_settings(scene);
 		let fixed_dt = settings.physics_timestep.max(f32::EPSILON);
+		self.sync_scene_bodies(scene);
 
 		self.accumulator += dt.max(0.0);
 		let steps = (self.accumulator / fixed_dt) as usize;
 		for _ in 0..steps {
 			self.world.set_gravity(settings.gravity);
 			self.apply_scripting_api_commands();
+
 			self.world.sync_from_ecs(scene);
 			let collision_events = self.world.step(fixed_dt);
+			self.world.reset_forces();
+
 			self.world.sync_to_ecs(scene)?;
 
 			if let Some(scripting) = self.scripting.clone() {
@@ -660,4 +724,37 @@ fn build_collider(collider: &Collider, mass: Option<f32>, scale: Vec2) -> rapier
 	};
 
 	builder.build()
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn inactive_entities_do_not_participate_in_physics() -> Result<()> {
+		let mut scene = Scene::new("Inactive Physics Test");
+		let entity = scene.create_entity("Body");
+		scene
+			.entity_mut(entity)
+			.add_component(Transform::default())
+			.add_component(RigidBody::default())
+			.add_component(Collider::default())
+			.add_component(Inactive);
+
+		let mut physics = PhysicsSystem::new();
+		physics.update(&mut scene, DEFAULT_PHYSICS_TIMESTEP)?;
+		assert_eq!(physics.world().rigid_bodies.len(), 0);
+		assert_eq!(physics.world().colliders.len(), 0);
+
+		scene.entity_mut(entity).remove_component::<Inactive>()?;
+		physics.update(&mut scene, DEFAULT_PHYSICS_TIMESTEP)?;
+		assert_eq!(physics.world().rigid_bodies.len(), 1);
+		assert_eq!(physics.world().colliders.len(), 1);
+
+		scene.entity_mut(entity).add_component(Inactive);
+		physics.update(&mut scene, DEFAULT_PHYSICS_TIMESTEP)?;
+		assert_eq!(physics.world().rigid_bodies.len(), 0);
+		assert_eq!(physics.world().colliders.len(), 0);
+		Ok(())
+	}
 }
