@@ -279,6 +279,9 @@ pub struct EditorWorkspace {
 	titlebar_height: f32,
 	// Rects of every interactive element in the title bar, gathered each frame
 	titlebar_interactive_rects: Vec<egui::Rect>,
+	// Set to true when the managed C# assembly is hot-reloaded; read and
+	// cleared by the InspectorPanel to invalidate its script_classes_cache.
+	script_classes_dirty: bool,
 }
 
 impl EditorWorkspace {
@@ -305,6 +308,7 @@ impl EditorWorkspace {
 			close_requested: false,
 			titlebar_height: 0.0,
 			titlebar_interactive_rects: Vec::new(),
+			script_classes_dirty: false,
 		};
 
 		workspace.configure_default_layout();
@@ -323,6 +327,8 @@ impl EditorWorkspace {
 	pub fn set_project_assets_root(&mut self, project_assets_root: Option<std::path::PathBuf>) {
 		self.project_assets_root = project_assets_root;
 	}
+
+	pub const fn mark_script_classes_dirty(&mut self) { self.script_classes_dirty = true; }
 
 	pub fn request_play(&self, menu_request: &mut Option<EditorRequest>) {
 		if !self.project_is_loaded() {
@@ -426,6 +432,7 @@ impl EditorWorkspace {
 				project_save_requested: &mut project_saved,
 				editor_request: &mut menu_request,
 				project: project.as_deref(),
+				script_classes_dirty: &mut self.script_classes_dirty,
 			},
 		};
 		DockArea::new(&mut self.dock_state)
@@ -593,6 +600,7 @@ impl EditorWorkspace {
 							egui::Color32::WHITE,
 						);
 						if close_resp.clicked() {
+							ze_log::info!("Close requested");
 							self.close_requested = true;
 						}
 						self.titlebar_interactive_rects.push(close_resp.rect);
@@ -1226,7 +1234,7 @@ fn show_script_status(ui: &mut Ui, status: ScriptStatus) {
 	ui.painter()
 		.rect_filled(rect, egui::CornerRadius::same(2), script_status_color(status));
 	response.on_hover_text(format!(
-		"{}\nGreen: scripts are up to date\nYellow: compiling or reloading\nRed: compile or reload failed\nGray: no scripts project or unknown",
+		"{}\n\nGreen: scripts are ready\nYellow: compiling\nRed: compile error\nGray: no scripts project or unknown",
 		script_status_label(status)
 	));
 }
@@ -1566,10 +1574,9 @@ const fn script_status_color(status: ScriptStatus) -> egui::Color32 {
 const fn script_status_label(status: ScriptStatus) -> &'static str {
 	match status {
 		ScriptStatus::Unavailable => "Scripts: unavailable",
-		ScriptStatus::UpToDate => "Scripts: up to date",
-		ScriptStatus::Recompiling => "Scripts: recompiling...",
-		ScriptStatus::ReloadPending => "Scripts: reload pending",
-		ScriptStatus::Failed => "Scripts: failed",
+		ScriptStatus::UpToDate => "Ready",
+		ScriptStatus::Recompiling | ScriptStatus::ReloadPending => "Compiling",
+		ScriptStatus::Failed => "Error",
 	}
 }
 

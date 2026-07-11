@@ -403,19 +403,6 @@ fn global_runtime_context(
 	Ok(guard)
 }
 
-/// Drops the current .NET runtime context so the next
-/// [`global_runtime_context`] call creates a fresh one. This forces a new
-/// `AssemblyLoadContext` to be created on the next assembly load, which is
-/// necessary for hot-reloading Scripts.dll when the default ALC would otherwise
-/// return the cached assembly.
-fn reset_runtime_context() {
-	let mut guard = RUNTIME_CONTEXT.lock().expect("C# runtime context mutex was poisoned");
-	if guard.is_some() {
-		ze_log::debug!("resetting C# runtime context for assembly reload");
-		*guard = None;
-	}
-}
-
 pub struct ScriptingEngine {
 	assembly: Option<ScriptAssembly>,
 }
@@ -475,16 +462,36 @@ impl ScriptingEngine {
 	}
 
 	fn reload_from_paths(&mut self, assembly_path: PathBuf, runtime_config_path: PathBuf) -> Result<()> {
-		// Reset the .NET runtime context so the next load creates a fresh
-		// AssemblyLoadContext and picks up any new types from the rebuilt
-		// Scripts.dll (the default ALC would otherwise cache the assembly
-		// by identity and return the old copy).
-		reset_runtime_context();
+		// Save the old runtime context so we can restore it if the new
+		// assembly fails to load.  The context must be taken *before*
+		// calling from_paths so that global_runtime_context creates a
+		// fresh HostfxrContext (and therefore a fresh AssemblyLoadContext)
+		// for the newly-built DLL.
+		let old_context = RUNTIME_CONTEXT
+			.lock()
+			.expect("C# runtime context mutex was poisoned")
+			.take();
 
-		// Create a fresh engine — this re-initializes the runtime context
-		// and loads the assembly from the new shadow-copy path.
-		let new_engine = Self::from_paths(assembly_path, runtime_config_path)?;
+		// Load the new assembly — this creates a fresh runtime context
+		// and loads the rebuilt Scripts.dll under a new ALC so the new
+		// types (e.g. new script fields) are visible to reflection.
+		let new_engine = match Self::from_paths(assembly_path, runtime_config_path) {
+			Ok(engine) => engine,
+			Err(error) => {
+				// Restore the old context so that the previously-loaded
+				// assembly remains usable.  Without this, the old
+				// ScriptAssembly's delegate loader would reference a
+				// destroyed HostfxrContext, leading to use-after-free
+				// on the next DescribeScriptFields call.
+				*RUNTIME_CONTEXT.lock().expect("C# runtime context mutex was poisoned") = old_context;
+				return Err(error);
+			}
+		};
 
+		// Old context is deliberately discarded here.  The old
+		// ScriptAssembly is still owned by self.assembly, but its
+		// HostfxrContext is no longer reachable — it will be cleaned up
+		// when the old ScriptAssembly is dropped below.
 		self.assembly = None;
 		self.assembly = new_engine.assembly;
 		Ok(())
@@ -1789,40 +1796,80 @@ fn assembly_name_from_path(path: &Path) -> Result<String> {
 fn workspace_root() -> Result<PathBuf> { ze_core::resolve_engine_root() }
 
 fn load_hostfxr() -> Result<Hostfxr> {
-	let hostfxr_path = find_hostfxr_path().context("failed to locate libhostfxr in a .NET installation")?;
+	// Stage 1: Bundled deployment (Dist build priority)
+	if let Some(bundled_path) = bundled_hostfxr_path() {
+		ze_log::debug!("Using bundled hostfxr at: {}", bundled_path.display());
+		return Hostfxr::load_from_path(&bundled_path)
+			.with_context(|| format!("Failed to load bundled hostfxr from {}", bundled_path.display()));
+	}
+	ze_log::debug!("Bundled dotnet runtime not found next to executable");
+
+	// Stage 2: Runtime system discovery (Replaces nethost compile-time discovery)
+	if let Some(detected_path) = find_system_hostfxr_path() {
+		ze_log::debug!("Successfully located system hostfxr at: {}", detected_path.display());
+		return Hostfxr::load_from_path(&detected_path)
+			.with_context(|| format!("Failed to load system hostfxr from {}", detected_path.display()));
+	}
+	ze_log::debug!("System hostfxr discovery failed");
+
+	// Stage 3: Manual path enumeration fallback (CI / Edge cases)
+	ze_log::debug!("Attempting manual path enumeration fallback...");
+	let hostfxr_path = find_hostfxr_path_fallback().context("Failed to locate libhostfxr via any available method")?;
+
 	Hostfxr::load_from_path(&hostfxr_path)
-		.with_context(|| format!("failed to load hostfxr from {}", hostfxr_path.display()))
+		.with_context(|| format!("Failed to load hostfxr from fallback path: {}", hostfxr_path.display()))
 }
 
-fn find_hostfxr_path() -> Option<PathBuf> { dotnet_roots().into_iter().find_map(|root| latest_hostfxr_path(&root)) }
-
-fn dotnet_roots() -> Vec<PathBuf> {
-	let mut roots = Vec::new();
-
-	// Self-contained deployment: check for dotnet/ next to the executable first.
-	if let Some(exe_dir) = std::env::current_exe()
-		.ok()
-		.and_then(|p| p.parent().map(Path::to_path_buf))
-	{
-		let bundled = exe_dir.join("dotnet");
-		if bundled.join("host/fxr").exists() {
-			roots.push(bundled);
+/// Helper to scan well-known system candidates at runtime.
+fn find_system_hostfxr_path() -> Option<PathBuf> {
+	for root in dotnet_root_candidates() {
+		if let Some(path) = latest_hostfxr_path_in(&root) {
+			return Some(path);
 		}
 	}
+	None
+}
+
+/// Check for a bundled dotnet runtime next to the executable (dist build
+/// scenario).
+fn bundled_hostfxr_path() -> Option<PathBuf> {
+	let exe_dir = env::current_exe().ok()?.parent()?.to_path_buf();
+	let bundled = exe_dir.join("dotnet");
+	if bundled.join("host/fxr").exists() {
+		return latest_hostfxr_path_in(&bundled);
+	}
+	None
+}
+
+/// Manual fallback: enumerate well-known dotnet root directories.
+fn find_hostfxr_path_fallback() -> Option<PathBuf> {
+	for root in dotnet_root_candidates() {
+		if let Some(path) = latest_hostfxr_path_in(&root) {
+			return Some(path);
+		}
+	}
+	None
+}
+
+/// Known dotnet install locations.
+fn dotnet_root_candidates() -> Vec<PathBuf> {
+	let mut roots = Vec::new();
 
 	if let Some(root) = env::var_os("DOTNET_ROOT") {
-		roots.push(root.into());
+		roots.push(PathBuf::from(root));
 	}
 	if let Some(home) = env::var_os("HOME") {
 		roots.push(PathBuf::from(home).join(".dotnet"));
 	}
 
+	roots.push(PathBuf::from("C:/Program Files/dotnet"));
 	roots.push(PathBuf::from("/usr/share/dotnet"));
 	roots.push(PathBuf::from("/usr/local/share/dotnet"));
 	roots
 }
 
-fn latest_hostfxr_path(dotnet_root: &Path) -> Option<PathBuf> {
+/// Return the path to the newest hostfxr library under a dotnet root.
+fn latest_hostfxr_path_in(dotnet_root: &Path) -> Option<PathBuf> {
 	let fxr_root = dotnet_root.join("host/fxr");
 	let mut versions = fs::read_dir(fxr_root)
 		.ok()?
@@ -1834,20 +1881,15 @@ fn latest_hostfxr_path(dotnet_root: &Path) -> Option<PathBuf> {
 	versions.sort();
 	versions.reverse();
 
-	versions
-		.into_iter()
-		.map(|version_dir| version_dir.join(hostfxr_library_name()))
-		.find(|path| path.exists())
-}
-
-const fn hostfxr_library_name() -> &'static str {
-	if cfg!(windows) {
+	let lib_name = if cfg!(windows) {
 		"hostfxr.dll"
 	} else if cfg!(target_os = "macos") {
 		"libhostfxr.dylib"
 	} else {
 		"libhostfxr.so"
-	}
+	};
+
+	versions.into_iter().map(|v| v.join(lib_name)).find(|p| p.exists())
 }
 
 const fn default_enabled() -> bool { true }

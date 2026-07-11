@@ -849,6 +849,11 @@ impl ApplicationHandler for EditorApp {
 					renderer.flush_game_pass();
 
 					let input = egui_state.take_egui_input(&window);
+
+					if asset_hot_reload.take_script_classes_dirty() {
+						editor_flow.workspace.mark_script_classes_dirty();
+					}
+
 					let editor_render_status = EditorRenderStatus {
 						script: asset_hot_reload.script_status(),
 						build: build_status,
@@ -1090,10 +1095,14 @@ impl EditorApp {
 				if let Some(sm) = &mut self.scene_manager
 					&& let Some(scene) = sm.active_scene_mut()
 					&& let Some(project) = self.active_project.as_ref()
-					&& let Err(error) =
-						reload_managed_assembly(scene, &project.scripts_dll, &project.runtime_config_path())
 				{
-					ze_log::error!("failed to reload managed assembly after distributable build: {error:?}");
+					if let Err(error) =
+						reload_managed_assembly(scene, &project.scripts_dll, &project.runtime_config_path())
+					{
+						ze_log::error!("failed to reload managed assembly after distributable build: {error:?}");
+					} else if let Some(editor_flow) = &mut self.editor_flow {
+						editor_flow.workspace.mark_script_classes_dirty();
+					}
 				}
 				self.build_message = None;
 				self.build_status = BuildStatus::Done;
@@ -1255,12 +1264,15 @@ impl EditorApp {
 				// Force the scripting runtime to reload from the freshly built
 				// Scripts.dll so that any user-added script types (e.g. Test.cs)
 				// are immediately discoverable in the Add Component dropdown.
-				if let Some(scene) = self.scene_manager.as_mut().and_then(|m| m.active_scene_mut())
-					&& let Err(error) = reload_managed_assembly(scene, &scripts_dll, &runtime_config_path)
-				{
-					ze_log::warn!("initial C# script assembly refresh failed: {error:?}");
-				} else {
-					ze_log::debug!("initial C# script assembly loaded and discovery complete");
+				if let Some(scene) = self.scene_manager.as_mut().and_then(|m| m.active_scene_mut()) {
+					if let Err(error) = reload_managed_assembly(scene, &scripts_dll, &runtime_config_path) {
+						ze_log::warn!("initial C# script assembly refresh failed: {error:?}");
+					} else {
+						if let Some(editor_flow) = &mut self.editor_flow {
+							editor_flow.workspace.mark_script_classes_dirty();
+						}
+						ze_log::debug!("initial C# script assembly loaded and discovery complete");
+					}
 				}
 			}
 			Err(error) => ze_log::error!("failed to create project in {}: {error:?}", directory.display()),

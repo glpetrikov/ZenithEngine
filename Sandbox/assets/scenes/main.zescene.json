@@ -330,6 +330,11 @@
                 "enabled": true,
                 "fields": {},
                 "path": "ScriptTest"
+              },
+              {
+                "enabled": true,
+                "fields": {},
+                "path": "Test3Script"
               }
             ]
           }
@@ -345,7 +350,7 @@
           "value": {
             "position": [
               0.0,
-              0.0,
+              0.12927734851837158,
               0.0
             ],
             "rotation": [

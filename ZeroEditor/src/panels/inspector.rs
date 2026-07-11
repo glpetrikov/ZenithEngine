@@ -36,6 +36,7 @@ pub struct InspectorPanel {
 	ignore_new_pattern: String,
 	new_tag_buffer: String,
 	show_add_tag_popup: bool,
+	script_classes_cache: Option<Vec<String>>,
 }
 
 #[derive(Debug)]
@@ -236,6 +237,7 @@ impl InspectorPanel {
 			ignore_new_pattern: String::new(),
 			new_tag_buffer: String::new(),
 			show_add_tag_popup: false,
+			script_classes_cache: None,
 		}
 	}
 
@@ -1182,7 +1184,10 @@ impl InspectorPanel {
 		action: &mut InspectorContextMenuAction,
 	) {
 		let available = available_components(context.scene, entity);
-		let script_classes = script_classes(context);
+
+		if self.script_classes_cache.is_none() {
+			self.script_classes_cache = script_classes(context).ok();
+		}
 
 		let close_behavior = MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside);
 		SubMenuButton::new("Add Component").config(close_behavior).ui(ui, |ui| {
@@ -1209,8 +1214,8 @@ impl InspectorPanel {
 				}
 			}
 
-			match &script_classes {
-				Ok(classes) => {
+			match &self.script_classes_cache {
+				Some(classes) => {
 					for class_path in classes {
 						let label = format!("Script: {class_path}");
 						if !label_matches_search(&label, &query) {
@@ -1224,8 +1229,8 @@ impl InspectorPanel {
 						}
 					}
 				}
-				Err(error) => {
-					ui.colored_label(egui::Color32::YELLOW, error);
+				None => {
+					ui.colored_label(egui::Color32::YELLOW, "C# script classes are unavailable.");
 				}
 			}
 
@@ -1966,8 +1971,10 @@ fn script_classes(context: &mut EditorPanelContext<'_>) -> Result<Vec<String>, S
 				true
 			}
 			Err(error) => {
-				ze_log::warn!("filtering script class `{class_path}` from Add Component list: {error:?}");
-				false
+				ze_log::warn!(
+					"script class `{class_path}` field metadata failed to load (will still be listed): {error:?}"
+				);
+				true
 			}
 		})
 		.collect();
@@ -2391,6 +2398,11 @@ impl Panel for InspectorPanel {
 	fn name(&self) -> &'static str { "Inspector" }
 
 	fn show(&mut self, ui: &mut Ui, context: &mut EditorPanelContext<'_>) {
+		if *context.script_classes_dirty {
+			self.script_classes_cache = None;
+			*context.script_classes_dirty = false;
+		}
+
 		let Some(selection) = context.selection.clone() else {
 			ui.centered_and_justified(|ui| {
 				ui.label("Nothing selected");

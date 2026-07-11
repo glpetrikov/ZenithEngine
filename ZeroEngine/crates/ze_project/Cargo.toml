@@ -10,3 +10,4 @@ repository.workspace = true
 serde = "1.0.228"
 toml = "1.1.2"
 ze_core = { path = "../ze_core" }
+ze_log = { path = "../ze_log" }

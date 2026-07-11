@@ -245,7 +245,23 @@ impl Project {
 				.parent()
 				.ok_or_else(|| anyhow!("csproj path has no parent directory"))?,
 		)?;
-		fs::write(&csproj_path, csproj)?;
+
+		// Only rewrite the csproj when its content has actually changed.
+		// MSBuild uses file mtime to decide whether its incremental-build
+		// cache is still valid.  Unconditionally writing the same bytes
+		// bumps the mtime, which forces MSBuild to re-evaluate the project
+		// and typically triggers a full rebuild — exactly the opposite of
+		// the incremental behaviour we want during hot-reload iterations.
+		let existing = fs::read_to_string(&csproj_path).unwrap_or_default();
+		if existing == csproj {
+			ze_log::debug!(
+				"[ze_project] skipped csproj write (content unchanged): {}",
+				csproj_path.display()
+			);
+		} else {
+			ze_log::debug!("writing updated csproj: {}", csproj_path.display());
+			fs::write(&csproj_path, csproj)?;
+		}
 
 		Ok(csproj_path)
 	}

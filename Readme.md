@@ -17,6 +17,10 @@ ZeroEngine is a modern GameEngine written in Rust with Editor, C# Scripting and 
 
 Requires [Rust](https://rustup.rs?style=flat-square).
 
+On Linux, install `clang`, `mold` and `sccache`, then start the sccache server:
+`sccache --start-server` and export Rustc wrapper `export RUSTC_WRAPPER=sccache`
+
+
 ```bash
 git clone https://github.com/glpetrikov/ZeroEngine
 cd ZeroEngine

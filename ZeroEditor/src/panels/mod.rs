@@ -36,6 +36,7 @@ pub struct EditorPanelContext<'a> {
 	pub project_save_requested: &'a mut Option<Project>,
 	pub editor_request: &'a mut Option<EditorRequest>,
 	pub project: Option<&'a Project>,
+	pub script_classes_dirty: &'a mut bool,
 }
 
 pub trait Panel {

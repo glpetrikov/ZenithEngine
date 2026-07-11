@@ -50,6 +50,9 @@ pub struct AssetHotReload {
 	last_reload_attempt: Option<Instant>,
 	last_source_change: Option<Instant>,
 	script_build_paused: bool,
+	script_rebuild_pending: bool,
+	script_classes_dirty: bool,
+	assembly_candidate_mtime: Option<SystemTime>,
 }
 
 const SCRIPT_RELOAD_DEBOUNCE_MS: u128 = 500;
@@ -99,10 +102,19 @@ impl AssetHotReload {
 			last_reload_attempt: None,
 			last_source_change: None,
 			script_build_paused: false,
+			script_rebuild_pending: false,
+			script_classes_dirty: false,
+			assembly_candidate_mtime: None,
 		}
 	}
 
 	pub const fn script_status(&self) -> ScriptStatus { self.script_status }
+
+	pub const fn take_script_classes_dirty(&mut self) -> bool {
+		let dirty = self.script_classes_dirty;
+		self.script_classes_dirty = false;
+		dirty
+	}
 
 	pub fn pause_script_watcher_for_build(&mut self) -> io::Result<()> {
 		self.script_build_paused = true;
@@ -158,7 +170,24 @@ impl AssetHotReload {
 
 		if script_source_changed {
 			self.script_status = ScriptStatus::Recompiling;
-			self.maybe_start_build();
+			self.script_rebuild_pending = true;
+		}
+
+		if self.script_rebuild_pending
+			&& self.build_child.is_none()
+			&& self
+				.last_source_change
+				.is_none_or(|t| t.elapsed() >= SCRIPT_SOURCE_DEBOUNCE)
+		{
+			self.last_source_change = Some(Instant::now());
+			if let Some(csproj_path) = self.csproj_path.as_deref() {
+				if let Some(child) = spawn_dotnet_build(csproj_path) {
+					self.build_child = Some(child);
+					self.script_rebuild_pending = false;
+				} else {
+					self.script_status = ScriptStatus::Failed;
+				}
+			}
 		}
 
 		let debounce_ms = self.last_reload_attempt.map_or(9999, |t| t.elapsed().as_millis());
@@ -171,33 +200,35 @@ impl AssetHotReload {
 			} else {
 				self.last_reload_attempt = Some(Instant::now());
 			}
+			self.assembly_candidate_mtime = None;
+		}
+
+		// Cross-platform fallback: after a successful build, settle-check the
+		// assembly mtime directly. Required on Windows where the notify backend
+		// (ReadDirectoryChangesW) does not emit Close(Write) events.
+		if self.build_child.is_none() && self.script_status == ScriptStatus::Recompiling {
+			let current_mtime = modified_time(&self.script_assembly_path);
+			if current_mtime.is_some() && current_mtime != self.last_successful_load_mtime {
+				if self.assembly_candidate_mtime == current_mtime {
+					if enough_time_since_last_attempt {
+						self.assembly_candidate_mtime = None;
+						self.reload_scripts_now(scene);
+					}
+				} else {
+					self.assembly_candidate_mtime = current_mtime;
+				}
+			}
+		}
+
+		if self.build_child.is_none()
+			&& self.script_status == ScriptStatus::Recompiling
+			&& modified_time(&self.script_assembly_path) == self.last_successful_load_mtime
+		{
+			self.script_status = ScriptStatus::UpToDate;
 		}
 
 		AssetReloadSet {
 			texture_assets: texture_assets.into_iter().collect(),
-		}
-	}
-
-	fn maybe_start_build(&mut self) {
-		if self.build_child.is_some() {
-			return;
-		}
-		let debounce_ok = self
-			.last_source_change
-			.is_none_or(|t| t.elapsed() >= SCRIPT_SOURCE_DEBOUNCE);
-		if !debounce_ok {
-			return;
-		}
-		self.last_source_change = Some(Instant::now());
-
-		let Some(csproj_path) = self.csproj_path.as_deref() else {
-			return;
-		};
-
-		if let Some(child) = spawn_dotnet_build(csproj_path) {
-			self.build_child = Some(child);
-		} else {
-			self.script_status = ScriptStatus::Failed;
 		}
 	}
 
@@ -224,11 +255,13 @@ impl AssetHotReload {
 	fn is_script_runtime_config(&self, path: &Path) -> bool { path == self.script_runtime_config_path }
 
 	fn reload_scripts_now(&mut self, scene: &mut Scene) {
+		self.assembly_candidate_mtime = None;
 		self.last_reload_attempt = Some(Instant::now());
 		match reload_managed_assembly(scene, &self.script_assembly_path, &self.script_runtime_config_path) {
 			Ok(()) => {
 				self.script_status = ScriptStatus::UpToDate;
 				self.last_successful_load_mtime = modified_time(&self.script_assembly_path);
+				self.script_classes_dirty = true;
 				ze_log::debug!(
 					"C# script assembly `{}` reloaded successfully",
 					self.script_assembly_path.display()
@@ -251,7 +284,11 @@ impl AssetHotReload {
 
 		match child.try_wait() {
 			Ok(Some(status)) => {
-				if !status.success() {
+				if status.success() {
+					if modified_time(&self.script_assembly_path) == self.last_successful_load_mtime {
+						self.script_status = ScriptStatus::UpToDate;
+					}
+				} else {
 					ze_log::warn!("dotnet build exited with status {status}");
 					if self.script_status == ScriptStatus::Recompiling {
 						self.script_status = ScriptStatus::Failed;
@@ -373,19 +410,50 @@ fn is_script_source(path: &Path) -> bool {
 }
 
 fn spawn_dotnet_build(csproj_path: &Path) -> Option<Child> {
-	match Command::new("dotnet")
-		.arg("build")
+	let mut cmd = Command::new("dotnet");
+	cmd.arg("build")
 		.arg("--nologo")
 		.arg(csproj_path)
 		.stdin(Stdio::null())
-		.stdout(Stdio::null())
-		.stderr(Stdio::null())
-		.spawn()
-	{
-		Ok(child) => Some(child),
+		.stdout(Stdio::piped())
+		.stderr(Stdio::piped());
+
+	let mut child = match cmd.spawn() {
+		Ok(child) => child,
 		Err(error) => {
 			ze_log::error!("failed to start dotnet build for {}: {error}", csproj_path.display());
-			None
+			return None;
+		}
+	};
+
+	let stdout = child.stdout.take();
+	let stderr = child.stderr.take();
+
+	thread::Builder::new()
+		.name("dotnet-build-out".into())
+		.spawn(move || read_build_output(stdout))
+		.ok();
+	thread::Builder::new()
+		.name("dotnet-build-err".into())
+		.spawn(move || read_build_output(stderr))
+		.ok();
+
+	Some(child)
+}
+
+fn read_build_output(stream: Option<impl io::Read + Send + 'static>) {
+	use io::BufRead;
+	let Some(reader) = stream else {
+		return;
+	};
+	for line in io::BufReader::new(reader).lines() {
+		let Ok(line) = line else {
+			break;
+		};
+		if line.contains(": error CS") || line.contains("Build FAILED") {
+			ze_log::error!("{line}");
+		} else if line.contains(": warning CS") {
+			ze_log::warn!("{line}");
 		}
 	}
 }

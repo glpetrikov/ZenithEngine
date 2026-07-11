@@ -62,6 +62,10 @@ fn log_filter() -> EnvFilter {
 			eprintln!("Invalid log directive: {e}");
 			std::process::exit(1);
 		}))
+		.add_directive("egui=warn".parse().unwrap_or_else(|e| {
+			eprintln!("Invalid log directive: {e}");
+			std::process::exit(1);
+		}))
 }
 
 fn fmt_layer<S>() -> impl tracing_subscriber::Layer<S>
