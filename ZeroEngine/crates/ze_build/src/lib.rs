@@ -10,6 +10,53 @@ use ze_project::Project;
 const EDITOR_ONLY_COMPONENT_TYPE: &str = "ze.editor.only";
 const CAMERA_COMPONENT_TYPE: &str = "ze.renderer.camera";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildTarget {
+	Linux,
+	Windows,
+}
+
+impl BuildTarget {
+	#[must_use]
+	pub const fn host() -> Self {
+		if cfg!(target_os = "windows") {
+			Self::Windows
+		} else {
+			Self::Linux
+		}
+	}
+
+	#[must_use]
+	pub const fn target_triple(self) -> &'static str {
+		match self {
+			Self::Linux => "x86_64-unknown-linux-gnu",
+			Self::Windows => {
+				if cfg!(target_os = "linux") {
+					"x86_64-pc-windows-gnu"
+				} else {
+					"x86_64-pc-windows-msvc"
+				}
+			}
+		}
+	}
+
+	#[must_use]
+	pub const fn binary_name(self) -> &'static str {
+		match self {
+			Self::Linux => "ZeroEngine",
+			Self::Windows => "ZeroEngine.exe",
+		}
+	}
+
+	#[must_use]
+	pub const fn dotnet_rid(self) -> &'static str {
+		match self {
+			Self::Linux => "linux-x64",
+			Self::Windows => "win-x64",
+		}
+	}
+}
+
 #[derive(Debug, Clone)]
 pub struct BuildOptions {
 	pub configuration: String,
@@ -17,6 +64,7 @@ pub struct BuildOptions {
 	pub zeroengine_binary: PathBuf,
 	pub notice_path: PathBuf,
 	pub api_source_dir: Option<PathBuf>,
+	pub target: BuildTarget,
 }
 
 impl BuildOptions {
@@ -24,9 +72,10 @@ impl BuildOptions {
 		Self {
 			configuration: "Release".to_string(),
 			output_dir: output_dir.into(),
-			zeroengine_binary: zeroengine_binary_path(),
+			zeroengine_binary: zeroengine_binary_path(BuildTarget::host()),
 			notice_path: notice_path.into(),
 			api_source_dir: None,
+			target: BuildTarget::host(),
 		}
 	}
 
@@ -35,9 +84,10 @@ impl BuildOptions {
 		Self {
 			configuration: "Debug".to_string(),
 			output_dir: output_dir.into(),
-			zeroengine_binary: zeroengine_binary_path(),
+			zeroengine_binary: zeroengine_binary_path(BuildTarget::host()),
 			notice_path: notice_path.into(),
 			api_source_dir: None,
+			target: BuildTarget::host(),
 		}
 	}
 
@@ -50,6 +100,13 @@ impl BuildOptions {
 	#[must_use]
 	pub fn with_api_source_dir(mut self, api_source_dir: impl Into<PathBuf>) -> Self {
 		self.api_source_dir = Some(api_source_dir.into());
+		self
+	}
+
+	#[must_use]
+	pub fn with_target(mut self, target: BuildTarget) -> Self {
+		self.target = target;
+		self.zeroengine_binary = zeroengine_binary_path(target);
 		self
 	}
 }
@@ -91,6 +148,7 @@ pub fn build_project_dist(project: &Project, options: &BuildOptions) -> ze_core:
 		project,
 		&options.configuration,
 		options.api_source_dir.as_deref(),
+		options.target.dotnet_rid(),
 		&publish_temp,
 	);
 	if publish_result.is_err() {
@@ -142,7 +200,7 @@ pub fn build_project_dist(project: &Project, options: &BuildOptions) -> ze_core:
 		)
 	})?;
 
-	let source_runtime_binary = resolve_zeroengine_binary(&options.zeroengine_binary)?;
+	let source_runtime_binary = resolve_zeroengine_binary(&options.zeroengine_binary, options.target)?;
 	let extension = source_runtime_binary
 		.extension()
 		.and_then(|extension| extension.to_str())
@@ -199,6 +257,7 @@ fn publish_self_contained_scripts(
 	project: &Project,
 	configuration: &str,
 	api_source_dir: Option<&Path>,
+	rid: &str,
 	publish_output_dir: &Path,
 ) -> ze_core::Result<()> {
 	let project_path = project.generate_csproj_with_api_source(api_source_dir)?;
@@ -211,7 +270,7 @@ fn publish_self_contained_scripts(
 		.arg("--self-contained")
 		.arg("false")
 		.arg("-r")
-		.arg(target_rid())
+		.arg(rid)
 		.arg("--nologo")
 		.arg("-o")
 		.arg(publish_output_dir)
@@ -296,24 +355,24 @@ fn copy_recursive(source: &Path, target: &Path) -> io::Result<()> {
 	Ok(())
 }
 
-const fn target_rid() -> &'static str {
-	if cfg!(target_os = "windows") {
-		if cfg!(target_arch = "aarch64") {
-			"win-arm64"
-		} else {
-			"win-x64"
+fn ensure_rustup_target(triple: &str) -> ze_core::Result<()> {
+	let output = Command::new("rustup")
+		.args(["target", "list", "--installed"])
+		.output()
+		.map_err(|error| io::Error::new(error.kind(), format!("failed to run rustup target list: {error}")))?;
+
+	let installed = String::from_utf8_lossy(&output.stdout);
+	if !installed.lines().any(|line| line.trim() == triple) {
+		ze_log::info!("adding rustup target: {triple}");
+		let status = Command::new("rustup")
+			.args(["target", "add", triple])
+			.status()
+			.map_err(|error| io::Error::new(error.kind(), format!("failed to run rustup target add: {error}")))?;
+		if !status.success() {
+			ze_core::bail!("rustup target add {triple} failed");
 		}
-	} else if cfg!(target_os = "macos") {
-		if cfg!(target_arch = "aarch64") {
-			"osx-arm64"
-		} else {
-			"osx-x64"
-		}
-	} else if cfg!(target_arch = "aarch64") {
-		"linux-arm64"
-	} else {
-		"linux-x64"
 	}
+	Ok(())
 }
 
 fn executable_file_name(game_name: &str, extension: &str) -> String {
@@ -343,14 +402,12 @@ fn sanitize_file_stem(value: &str) -> String {
 		.to_string()
 }
 
-fn zeroengine_binary_path() -> PathBuf {
+fn zeroengine_binary_path(target: BuildTarget) -> PathBuf {
 	match runtime_binary_mode() {
-		RuntimeBinaryMode::Dev { workspace_root } => workspace_runtime_binary_path(&workspace_root),
-		RuntimeBinaryMode::Release { executable_dir } => executable_dir.join(zeroengine_binary_name()),
+		RuntimeBinaryMode::Dev { workspace_root } => workspace_runtime_binary_path(&workspace_root, target),
+		RuntimeBinaryMode::Release { executable_dir } => executable_dir.join(target.binary_name()),
 	}
 }
-
-const fn zeroengine_binary_name() -> &'static str { if cfg!(windows) { "ZeroEngine.exe" } else { "ZeroEngine" } }
 
 enum RuntimeBinaryMode {
 	Dev { workspace_root: PathBuf },
@@ -385,27 +442,28 @@ fn runtime_binary_mode() -> RuntimeBinaryMode {
 
 fn current_build_profile() -> &'static str { option_env!("PROFILE").unwrap_or("debug") }
 
-fn workspace_runtime_binary_path(workspace_root: &Path) -> PathBuf {
+fn workspace_runtime_binary_path(workspace_root: &Path, target: BuildTarget) -> PathBuf {
 	workspace_root
 		.join("target")
+		.join(target.target_triple())
 		.join(current_build_profile())
-		.join(zeroengine_binary_name())
+		.join(target.binary_name())
 }
 
-fn resolve_zeroengine_binary(path: &Path) -> ze_core::Result<PathBuf> {
+fn resolve_zeroengine_binary(path: &Path, target: BuildTarget) -> ze_core::Result<PathBuf> {
 	if is_editor_binary(path) {
 		ze_core::bail!(
 			"refusing to package editor binary as game runtime: {}; expected {}",
 			path.display(),
-			zeroengine_binary_name()
+			target.binary_name()
 		);
 	}
 
-	if is_zeroengine_binary(path) {
+	if is_zeroengine_binary(path, target) {
 		match runtime_binary_mode() {
 			RuntimeBinaryMode::Dev { workspace_root } => {
-				build_zeroengine_runtime_binary(&workspace_root)?;
-				let built_runtime = workspace_runtime_binary_path(&workspace_root);
+				build_zeroengine_runtime_binary(&workspace_root, target)?;
+				let built_runtime = workspace_runtime_binary_path(&workspace_root, target);
 				if built_runtime.is_file() {
 					return Ok(built_runtime);
 				}
@@ -420,7 +478,7 @@ fn resolve_zeroengine_binary(path: &Path) -> ze_core::Result<PathBuf> {
 				}
 				ze_core::bail!(
 					"ZeroEngine runtime binary not found next to editor at {}; release editor builds do not invoke cargo",
-					executable_dir.join(zeroengine_binary_name()).display()
+					executable_dir.join(target.binary_name()).display()
 				);
 			}
 		}
@@ -436,10 +494,27 @@ fn resolve_zeroengine_binary(path: &Path) -> ze_core::Result<PathBuf> {
 	);
 }
 
-fn build_zeroengine_runtime_binary(workspace_root: &Path) -> ze_core::Result<()> {
+pub fn build_dev_runtime(target: BuildTarget) -> ze_core::Result<()> {
+	let current_exe = std::env::current_exe()
+		.map_err(|error| io::Error::new(error.kind(), format!("failed to get current executable path: {error}")))?;
+	let executable_dir = current_exe
+		.parent()
+		.ok_or_else(|| io::Error::other("current executable path has no parent directory"))?;
+	let workspace_root = find_cargo_workspace_from(executable_dir).ok_or_else(|| {
+		io::Error::other(
+			"no cargo workspace found from executable path; set ZEROENGINE_EDITOR_RUNTIME_MODE=dev in a workspace checkout",
+		)
+	})?;
+	build_zeroengine_runtime_binary(&workspace_root, target)
+}
+
+fn build_zeroengine_runtime_binary(workspace_root: &Path, target: BuildTarget) -> ze_core::Result<()> {
+	let triple = target.target_triple();
+	ensure_rustup_target(triple)?;
+
 	let profile = current_build_profile();
 	let mut cmd = Command::new("cargo");
-	cmd.arg("build").arg("-p").arg("ZeroEngine");
+	cmd.arg("build").arg("-p").arg("ZeroEngine").arg("--target").arg(triple);
 	match profile {
 		"debug" => {} // default cargo profile, no extra flags
 		"release" => {
@@ -452,12 +527,12 @@ fn build_zeroengine_runtime_binary(workspace_root: &Path) -> ze_core::Result<()>
 	let status = cmd.current_dir(workspace_root).status().map_err(|error| {
 		io::Error::new(
 			error.kind(),
-			format!("failed to run cargo build -p ZeroEngine ({profile}): {error}"),
+			format!("failed to run cargo build -p ZeroEngine ({profile}) for {triple}: {error}"),
 		)
 	})?;
 
 	if !status.success() {
-		ze_core::bail!("cargo build -p ZeroEngine ({profile}) failed");
+		ze_core::bail!("cargo build -p ZeroEngine ({profile}) for {triple} failed");
 	}
 
 	Ok(())
@@ -532,10 +607,10 @@ fn is_cargo_workspace_manifest(path: &Path) -> bool {
 	fs::read_to_string(path).is_ok_and(|source| source.lines().any(|line| line.trim() == "[workspace]"))
 }
 
-fn is_zeroengine_binary(path: &Path) -> bool {
+fn is_zeroengine_binary(path: &Path, target: BuildTarget) -> bool {
 	path.file_name()
 		.and_then(|name| name.to_str())
-		.is_some_and(|name| name == zeroengine_binary_name())
+		.is_some_and(|name| name == target.binary_name())
 }
 
 fn is_editor_binary(path: &Path) -> bool {
@@ -1039,11 +1114,13 @@ mod tests {
 		}
 		fs::create_dir_all(&test_dir)?;
 
+		let host_target = BuildTarget::host();
 		let source = test_dir
 			.join("target")
+			.join(host_target.target_triple())
 			.join(current_build_profile())
-			.join(zeroengine_binary_name());
-		let target = test_dir.join("dist").join(zeroengine_binary_name());
+			.join(host_target.binary_name());
+		let target = test_dir.join("dist").join(host_target.binary_name());
 		fs::create_dir_all(source.parent().expect("source should have parent"))?;
 		fs::create_dir_all(target.parent().expect("target should have parent"))?;
 		fs::write(&source, b"fresh runtime binary")?;

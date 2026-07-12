@@ -915,7 +915,7 @@ impl ApplicationHandler for EditorApp {
 					}
 				}
 				if let Some(build_request) = build_request {
-					self.start_build_distributable(build_request.output_dir);
+					self.start_build_distributable(build_request);
 				}
 				if close_requested {
 					event_loop.exit();
@@ -1010,7 +1010,7 @@ impl EditorApp {
 		}
 	}
 
-	fn start_build_distributable(&mut self, output_dir: PathBuf) {
+	fn start_build_distributable(&mut self, build_request: BuildRequest) {
 		if self.build_status == BuildStatus::Running {
 			ze_log::warn!("build already running");
 			return;
@@ -1027,7 +1027,7 @@ impl EditorApp {
 		}
 
 		if let Some(project) = self.active_project.as_ref() {
-			Self::append_build_path_to_gitignore(&output_dir, &project.root_dir);
+			Self::append_build_path_to_gitignore(&build_request.output_dir, &project.root_dir);
 		}
 
 		let Some(project) = self.active_project.clone() else {
@@ -1042,7 +1042,7 @@ impl EditorApp {
 				return;
 			}
 		};
-		let options = build_distributable_options(output_dir, Some(&project));
+		let options = build_distributable_options(build_request.output_dir, build_request.target, Some(&project));
 		let (sender, receiver) = mpsc::channel();
 		let thread = thread::Builder::new()
 			.name("zeroeditor-build".to_string())
@@ -1708,7 +1708,11 @@ fn create_asset_hot_reload(resources: &ResourceManager, active_project: Option<&
 	)
 }
 
-fn build_distributable_options(output_dir: PathBuf, project: Option<&ze_project::Project>) -> ze_build::BuildOptions {
+fn build_distributable_options(
+	output_dir: PathBuf,
+	target: ze_build::BuildTarget,
+	project: Option<&ze_project::Project>,
+) -> ze_build::BuildOptions {
 	let notice_path = resolve_notice_path(project);
 	let api_source_dir = project.and_then(resolve_api_source_dir);
 	// Match the .NET configuration to the Cargo build profile so script builds
@@ -1720,6 +1724,7 @@ fn build_distributable_options(output_dir: PathBuf, project: Option<&ze_project:
 	} else {
 		ze_build::BuildOptions::debug(output_dir, notice_path)
 	};
+	options = options.with_target(target);
 	if let Some(api_dir) = api_source_dir {
 		options = options.with_api_source_dir(api_dir);
 	}

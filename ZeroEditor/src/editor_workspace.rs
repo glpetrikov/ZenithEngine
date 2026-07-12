@@ -3,6 +3,7 @@ use std::{path::PathBuf, sync::Arc, time::Instant};
 use egui::{Align, Layout, RichText, Sense, TextureId, Ui, WidgetText};
 use egui_dock::{DockArea, DockState, NodeIndex, Style, TabStyle, TabViewer};
 use winit::window::Window;
+use ze_build::BuildTarget;
 use ze_core::Vec2;
 use ze_ecs::{EditorOnly, EntitiesView, PhysicsSettings, Scene};
 use ze_project::{PhysicsSettings as ProjectPhysicsSettings, Project};
@@ -129,6 +130,7 @@ pub struct SceneInfo {
 #[derive(Debug, Clone)]
 pub struct BuildRequest {
 	pub output_dir: PathBuf,
+	pub target: BuildTarget,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -239,6 +241,7 @@ impl Default for SceneCreatePrompt {
 struct BuildWindowState {
 	project_root: PathBuf,
 	output_dir: String,
+	target: BuildTarget,
 }
 
 impl BuildWindowState {
@@ -246,6 +249,7 @@ impl BuildWindowState {
 		Self {
 			project_root: project.root_dir.clone(),
 			output_dir: String::new(),
+			target: BuildTarget::host(),
 		}
 	}
 }
@@ -873,6 +877,36 @@ impl EditorWorkspace {
 				}
 
 				ui.separator();
+
+				if let Some(state) = self.build_window.as_mut() {
+					ui.horizontal(|ui| {
+						ui.label("Target");
+						egui::ComboBox::from_id_salt("build_target")
+							.selected_text(match state.target {
+								BuildTarget::Linux => "Linux",
+								BuildTarget::Windows => "Windows",
+							})
+							.show_ui(ui, |ui| {
+								if ui
+									.selectable_label(state.target == BuildTarget::Linux, "Linux")
+									.clicked()
+								{
+									state.target = BuildTarget::Linux;
+									ui.close();
+								}
+								if ui
+									.selectable_label(state.target == BuildTarget::Windows, "Windows")
+									.clicked()
+								{
+									state.target = BuildTarget::Windows;
+									ui.close();
+								}
+							});
+					});
+				}
+
+				ui.separator();
+
 				let mut output_path = None;
 				ui.horizontal(|ui| {
 					ui.label("Output path");
@@ -887,10 +921,14 @@ impl EditorWorkspace {
 					}
 				});
 
-				let output_dir = output_path;
+				ui.separator();
+
 				let can_build = build_status != BuildStatus::Running;
-				if ui.add_enabled(can_build, egui::Button::new("Build")).clicked() {
-					build_request = output_dir.map(|output_dir| BuildRequest { output_dir });
+				let target = self.build_window.as_ref().map_or(BuildTarget::host(), |s| s.target);
+				if ui.add_enabled(can_build, egui::Button::new("Build")).clicked()
+					&& let Some(output_dir) = output_path
+				{
+					build_request = Some(BuildRequest { output_dir, target });
 				}
 			});
 		self.build_window_visibility = if open {

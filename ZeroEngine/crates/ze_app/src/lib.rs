@@ -577,6 +577,12 @@ impl ApplicationHandler<CustomEvents> for App {
 			}
 			WindowEvent::Occluded(occluded) => {
 				self.occluded = occluded;
+				// Occlusion (e.g. minimized, covered by another window) can happen
+				// without a matching Focused(false) on some window managers, and is
+				// another point where key-release events can silently get lost.
+				if occluded {
+					Input::update_globally(Input::reset);
+				}
 			}
 			WindowEvent::CloseRequested => {
 				ze_log::debug!("Exiting...");
