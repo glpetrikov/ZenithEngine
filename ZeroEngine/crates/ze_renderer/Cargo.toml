@@ -24,4 +24,5 @@ glam = "0.32.1"
 bytemuck = "1.25.0"
 ze_input = { path = "../ze_input" }
 ze_ecs = { path = "../ze_ecs" }
+ze_ui = { path = "../ze_ui" }
 rfd = { version = "0.15", default-features = false, features = ["gtk3"] }

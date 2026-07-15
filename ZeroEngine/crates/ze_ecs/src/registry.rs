@@ -19,6 +19,7 @@ struct ComponentRegistration {
 	schema: Value,
 	save: SaveComponentFn,
 	load: LoadComponentFn,
+	display_name: Option<String>,
 }
 
 impl ComponentRegistry {
@@ -56,6 +57,41 @@ impl ComponentRegistry {
 			schema,
 			save,
 			load,
+			display_name: None,
+		};
+
+		self.components.insert(component_type, registration);
+	}
+
+	pub fn register_with_display_name<T>(&mut self, component_type: impl Into<String>, display_name: impl Into<String>)
+	where
+		T: Component + Clone + Serialize + for<'de> Deserialize<'de> + JsonSchema + 'static,
+	{
+		let component_type = component_type.into();
+
+		let schema = serde_json::to_value(schema_for!(T)).expect("component schema serialization failed");
+
+		let save = Box::new(|entity: EntityId, world: &World| {
+			world
+				.get::<&T>(entity)
+				.ok()
+				.and_then(|component| serde_json::to_value(*component).ok())
+		});
+
+		let load = Box::new(
+			|entity: EntityId, world: &mut World, value: Value| -> Result<(), Box<dyn std::error::Error>> {
+				let component: T = serde_json::from_value(value)?;
+				world.add_component(entity, (component,));
+				Ok(())
+			},
+		);
+
+		let registration = ComponentRegistration {
+			component_type: component_type.clone(),
+			schema,
+			save,
+			load,
+			display_name: Some(display_name.into()),
 		};
 
 		self.components.insert(component_type, registration);
@@ -76,6 +112,7 @@ impl ComponentRegistry {
 				schema,
 				save,
 				load,
+				display_name: None,
 			},
 		);
 	}
@@ -124,6 +161,12 @@ impl ComponentRegistry {
 			.iter()
 			.map(|(type_id, registration)| (type_id.clone(), registration.schema.clone()))
 			.collect()
+	}
+
+	pub fn display_name(&self, type_id: &str) -> Option<&str> {
+		self.components
+			.get(type_id)
+			.and_then(|registration| registration.display_name.as_deref())
 	}
 }
 

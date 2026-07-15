@@ -24,6 +24,7 @@ use ze_ecs::{
 	Component, Deserialize, EntitiesView, EntityId, JsonSchema, Scene, Serialize, System, registry::ComponentRegistry,
 };
 use ze_renderer::Sprite;
+use ze_ui::{UIBar, UIButton, UIText};
 
 const ASSEMBLY_PATH: &str = "Sandbox/assets/bin/Sandbox.dll";
 const RUNTIME_CONFIG_PATH: &str = "Sandbox/assets/bin/Sandbox.runtimeconfig.json";
@@ -58,6 +59,17 @@ pub struct EngineAPI {
 	pub add_2d_impulse: extern "C" fn(u64, f32, f32),
 	pub get_sprite_texture_rotation_degrees: extern "C" fn(u64) -> f32,
 	pub set_sprite_texture_rotation_degrees: extern "C" fn(u64, f32),
+	pub set_button_color: extern "C" fn(u64, f32, f32, f32, f32),
+	pub set_button_hover_color: extern "C" fn(u64, f32, f32, f32, f32),
+	pub set_bar_color: extern "C" fn(u64, f32, f32, f32, f32),
+	pub set_bar_bg_color: extern "C" fn(u64, f32, f32, f32, f32),
+	pub set_text_color: extern "C" fn(u64, f32, f32, f32, f32),
+	pub set_bar_label: extern "C" fn(u64, *const u8, i32),
+	pub set_button_pressed_color: extern "C" fn(u64, f32, f32, f32, f32),
+	pub set_button_text: extern "C" fn(u64, *const u8, i32),
+	pub set_text_text: extern "C" fn(u64, *const u8, i32),
+	pub set_text_font_size: extern "C" fn(u64, f32),
+	pub is_button_clicked: extern "C" fn(u64) -> bool,
 	pub scene_load: extern "C" fn(*const u8, i32),
 	pub scene_load_main: extern "C" fn(),
 	pub scene_reload: extern "C" fn(),
@@ -120,6 +132,17 @@ static ENGINE_API: EngineAPI = EngineAPI {
 	add_2d_impulse: api::add_2d_impulse,
 	get_sprite_texture_rotation_degrees: api::get_sprite_texture_rotation_degrees,
 	set_sprite_texture_rotation_degrees: api::set_sprite_texture_rotation_degrees,
+	set_button_color: api::set_button_color,
+	set_button_hover_color: api::set_button_hover_color,
+	set_bar_color: api::set_bar_color,
+	set_bar_bg_color: api::set_bar_bg_color,
+	set_text_color: api::set_text_color,
+	set_bar_label: api::set_bar_label,
+	set_button_pressed_color: api::set_button_pressed_color,
+	set_button_text: api::set_button_text,
+	set_text_text: api::set_text_text,
+	set_text_font_size: api::set_text_font_size,
+	is_button_clicked: api::is_button_clicked,
 	scene_load: api::scene_load,
 	scene_load_main: api::scene_load_main,
 	scene_reload: api::scene_reload,
@@ -182,6 +205,7 @@ const fn default_script_field_source() -> ScriptFieldSource { ScriptFieldSource:
 pub enum ScriptFieldValue {
 	Bool(bool),
 	Int(i32),
+	UInt(u32),
 	Float(f32),
 	String(String),
 	#[schemars(with = "[f32; 2]")]
@@ -207,6 +231,12 @@ impl Serialize for ScriptFieldValue {
 			Self::Int(v) => {
 				let mut map = serializer.serialize_map(Some(2))?;
 				map.serialize_entry("kind", "int")?;
+				map.serialize_entry("value", v)?;
+				map.end()
+			}
+			Self::UInt(v) => {
+				let mut map = serializer.serialize_map(Some(2))?;
+				map.serialize_entry("kind", "uint")?;
 				map.serialize_entry("value", v)?;
 				map.end()
 			}
@@ -274,6 +304,15 @@ impl<'de> Deserialize<'de> for ScriptFieldValue {
 					.as_i64()
 					.ok_or_else(|| de::Error::custom("expected integer for ScriptFieldValue::Int"))?;
 				Ok(Self::Int(i as i32))
+			}
+			Some("uint") => {
+				let val = obj
+					.get("value")
+					.ok_or_else(|| de::Error::custom("missing 'value' field in ScriptFieldValue"))?;
+				let u = val
+					.as_u64()
+					.ok_or_else(|| de::Error::custom("expected unsigned integer for ScriptFieldValue::UInt"))?;
+				Ok(Self::UInt(u as u32))
 			}
 			Some("float") => {
 				let val = obj
@@ -837,6 +876,7 @@ fn format_script_field_value(value: &ScriptFieldValue) -> String {
 	match value {
 		ScriptFieldValue::Bool(value) => value.to_string(),
 		ScriptFieldValue::Int(value) => value.to_string(),
+		ScriptFieldValue::UInt(value) => value.to_string(),
 		ScriptFieldValue::Float(value) => value.to_string(),
 		ScriptFieldValue::String(value) => format!("{value:?}"),
 		ScriptFieldValue::Vec2(value) => format!("{}, {}", value.x, value.y),
@@ -1141,9 +1181,71 @@ pub enum ScriptingSceneLoadCommand {
 	Reload,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Clone)]
 enum ScriptingSceneCommand {
-	SetSpriteTextureRotationDegrees { entity: EntityId, degrees: f32 },
+	SetSpriteTextureRotationDegrees {
+		entity: EntityId,
+		degrees: f32,
+	},
+	SetButtonColor {
+		entity: EntityId,
+		r: f32,
+		g: f32,
+		b: f32,
+		a: f32,
+	},
+	SetButtonHoverColor {
+		entity: EntityId,
+		r: f32,
+		g: f32,
+		b: f32,
+		a: f32,
+	},
+	SetBarColor {
+		entity: EntityId,
+		r: f32,
+		g: f32,
+		b: f32,
+		a: f32,
+	},
+	SetBarBgColor {
+		entity: EntityId,
+		r: f32,
+		g: f32,
+		b: f32,
+		a: f32,
+	},
+	SetTextColor {
+		entity: EntityId,
+		r: f32,
+		g: f32,
+		b: f32,
+		a: f32,
+	},
+	SetBarLabel {
+		entity: EntityId,
+		text: String,
+	},
+	SetButtonPressedColor {
+		entity: EntityId,
+		r: f32,
+		g: f32,
+		b: f32,
+		a: f32,
+	},
+	SetButtonText {
+		entity: EntityId,
+		text: String,
+	},
+	SetTextText {
+		entity: EntityId,
+		text: String,
+	},
+	SetTextFontSize {
+		entity: EntityId,
+		font_size: f32,
+	},
 }
 
 pub fn refresh_scripting_api_velocity_cache(velocities: impl IntoIterator<Item = (EntityId, f32, f32)>) {
@@ -1606,6 +1708,136 @@ fn apply_scripting_scene_commands(scene: &mut Scene) {
 					}
 				}
 			}
+			ScriptingSceneCommand::SetButtonColor { entity, r, g, b, a } => {
+				match scene.world_mut().get::<&mut UIButton>(entity) {
+					Ok(mut button) => {
+						button.color = [r, g, b, a];
+					}
+					Err(error) => {
+						ze_log::warn!(
+							"failed to apply button color command for entity {}: {error:?}",
+							entity.index()
+						);
+					}
+				}
+			}
+			ScriptingSceneCommand::SetButtonHoverColor { entity, r, g, b, a } => {
+				match scene.world_mut().get::<&mut UIButton>(entity) {
+					Ok(mut button) => {
+						button.hover_color = [r, g, b, a];
+					}
+					Err(error) => {
+						ze_log::warn!(
+							"failed to apply button hover color command for entity {}: {error:?}",
+							entity.index()
+						);
+					}
+				}
+			}
+			ScriptingSceneCommand::SetBarColor { entity, r, g, b, a } => {
+				match scene.world_mut().get::<&mut UIBar>(entity) {
+					Ok(mut bar) => {
+						bar.color = [r, g, b, a];
+					}
+					Err(error) => {
+						ze_log::warn!(
+							"failed to apply bar color command for entity {}: {error:?}",
+							entity.index()
+						);
+					}
+				}
+			}
+			ScriptingSceneCommand::SetBarBgColor { entity, r, g, b, a } => {
+				match scene.world_mut().get::<&mut UIBar>(entity) {
+					Ok(mut bar) => {
+						bar.bg_color = [r, g, b, a];
+					}
+					Err(error) => {
+						ze_log::warn!(
+							"failed to apply bar bg color command for entity {}: {error:?}",
+							entity.index()
+						);
+					}
+				}
+			}
+			ScriptingSceneCommand::SetTextColor { entity, r, g, b, a } => {
+				match scene.world_mut().get::<&mut UIText>(entity) {
+					Ok(mut text) => {
+						text.color = [r, g, b, a];
+					}
+					Err(error) => {
+						ze_log::warn!(
+							"failed to apply text color command for entity {}: {error:?}",
+							entity.index()
+						);
+					}
+				}
+			}
+			ScriptingSceneCommand::SetBarLabel { entity, text } => {
+				match scene.world_mut().get::<&mut UIBar>(entity) {
+					Ok(mut bar) => {
+						bar.text = if text.is_empty() { None } else { Some(text) };
+					}
+					Err(error) => {
+						ze_log::warn!(
+							"failed to apply bar label command for entity {}: {error:?}",
+							entity.index()
+						);
+					}
+				}
+			}
+			ScriptingSceneCommand::SetButtonPressedColor { entity, r, g, b, a } => {
+				match scene.world_mut().get::<&mut UIButton>(entity) {
+					Ok(mut button) => {
+						button.pressed_color = [r, g, b, a];
+					}
+					Err(error) => {
+						ze_log::warn!(
+							"failed to apply button pressed color command for entity {}: {error:?}",
+							entity.index()
+						);
+					}
+				}
+			}
+			ScriptingSceneCommand::SetButtonText { entity, text } => {
+				match scene.world_mut().get::<&mut UIButton>(entity) {
+					Ok(mut button) => {
+						button.text = text;
+					}
+					Err(error) => {
+						ze_log::warn!(
+							"failed to apply button text command for entity {}: {error:?}",
+							entity.index()
+						);
+					}
+				}
+			}
+			ScriptingSceneCommand::SetTextText { entity, text } => {
+				match scene.world_mut().get::<&mut UIText>(entity) {
+					Ok(mut ui_text) => {
+						ui_text.text = text;
+					}
+					Err(error) => {
+						ze_log::warn!(
+							"failed to apply text content command for entity {}: {error:?}",
+							entity.index()
+						);
+					}
+				}
+			}
+			ScriptingSceneCommand::SetTextFontSize { entity, font_size } => {
+				match scene.world_mut().get::<&mut UIText>(entity) {
+					Ok(mut ui_text) => {
+						ui_text.font_size = font_size;
+					}
+					Err(error) => {
+						ze_log::warn!(
+							"failed to apply text font size command for entity {}: {error:?}",
+							entity.index()
+						);
+					}
+				}
+			}
 		}
 	}
 }
@@ -1906,6 +2138,7 @@ mod api {
 	};
 	use ze_input::{Input, ZKeyCode, ZMouseCode};
 	use ze_renderer::{Camera, Sprite};
+	use ze_ui::{UIBar, UIButton, UIText};
 
 	use crate::{
 		ScriptingApiCommand, ScriptingSceneCommand, ScriptingSceneLoadCommand, ScriptingTimeState, Scripts,
@@ -1920,6 +2153,7 @@ mod api {
 		components: HashSet<(EntityId, ComponentKind)>,
 		velocities: HashMap<EntityId, (f32, f32)>,
 		sprite_texture_rotations: HashMap<EntityId, f32>,
+		button_clicked: HashMap<EntityId, bool>,
 	}
 
 	struct TimeStateCell(UnsafeCell<ScriptingTimeState>);
@@ -1942,6 +2176,9 @@ mod api {
 		Sprite = 10,
 		Camera = 11,
 		Script = 12,
+		UIButton = 13,
+		UIBar = 14,
+		UIText = 15,
 	}
 
 	thread_local! {
@@ -1990,6 +2227,7 @@ mod api {
 		let world = scene.world();
 		let mut components = HashSet::new();
 		let mut sprite_texture_rotations = HashMap::new();
+		let mut button_clicked = HashMap::new();
 
 		world.run(|entities: EntitiesView| {
 			for entity in entities.iter() {
@@ -2030,6 +2268,20 @@ mod api {
 				if world.get::<&Scripts>(entity).is_ok_and(|s| !s.list.is_empty()) {
 					components.insert((entity, ComponentKind::Script));
 				}
+				if let Ok(button) = world.get::<&UIButton>(entity) {
+					components.insert((entity, ComponentKind::UIButton));
+					// `pressed` is written by UISystem from yakui's edge-triggered
+					// click event (true for exactly the frame the click completes),
+					// so caching it here already gives IsClicked() correct
+					// once-per-click semantics rather than held-state polling.
+					button_clicked.insert(entity, button.pressed);
+				}
+				if world.get::<&UIBar>(entity).is_ok() {
+					components.insert((entity, ComponentKind::UIBar));
+				}
+				if world.get::<&UIText>(entity).is_ok() {
+					components.insert((entity, ComponentKind::UIText));
+				}
 			}
 		});
 
@@ -2037,6 +2289,7 @@ mod api {
 			let mut state = state.borrow_mut();
 			state.components = components;
 			state.sprite_texture_rotations = sprite_texture_rotations;
+			state.button_clicked = button_clicked;
 		});
 	}
 
@@ -2149,6 +2402,123 @@ mod api {
 				.scene_commands
 				.push(ScriptingSceneCommand::SetSpriteTextureRotationDegrees { entity, degrees });
 		});
+	}
+
+	pub extern "C" fn set_button_color(entity: u64, r: f32, g: f32, b: f32, a: f32) {
+		let entity = script_arg_to_entity_id(entity);
+		API_STATE.with(|state| {
+			state
+				.borrow_mut()
+				.scene_commands
+				.push(ScriptingSceneCommand::SetButtonColor { entity, r, g, b, a });
+		});
+	}
+
+	pub extern "C" fn set_button_hover_color(entity: u64, r: f32, g: f32, b: f32, a: f32) {
+		let entity = script_arg_to_entity_id(entity);
+		API_STATE.with(|state| {
+			state
+				.borrow_mut()
+				.scene_commands
+				.push(ScriptingSceneCommand::SetButtonHoverColor { entity, r, g, b, a });
+		});
+	}
+
+	pub extern "C" fn set_bar_color(entity: u64, r: f32, g: f32, b: f32, a: f32) {
+		let entity = script_arg_to_entity_id(entity);
+		API_STATE.with(|state| {
+			state
+				.borrow_mut()
+				.scene_commands
+				.push(ScriptingSceneCommand::SetBarColor { entity, r, g, b, a });
+		});
+	}
+
+	pub extern "C" fn set_bar_bg_color(entity: u64, r: f32, g: f32, b: f32, a: f32) {
+		let entity = script_arg_to_entity_id(entity);
+		API_STATE.with(|state| {
+			state
+				.borrow_mut()
+				.scene_commands
+				.push(ScriptingSceneCommand::SetBarBgColor { entity, r, g, b, a });
+		});
+	}
+
+	pub extern "C" fn set_text_color(entity: u64, r: f32, g: f32, b: f32, a: f32) {
+		let entity = script_arg_to_entity_id(entity);
+		API_STATE.with(|state| {
+			state
+				.borrow_mut()
+				.scene_commands
+				.push(ScriptingSceneCommand::SetTextColor { entity, r, g, b, a });
+		});
+	}
+
+	pub extern "C" fn set_bar_label(entity: u64, text: *const u8, len: i32) {
+		let entity = script_arg_to_entity_id(entity);
+		let Some(text) = read_utf8(text, len) else {
+			ze_log::error!(target: "zeroengine.script", "script Bar.SetLabel bridge received an invalid text buffer");
+			return;
+		};
+		API_STATE.with(|state| {
+			state
+				.borrow_mut()
+				.scene_commands
+				.push(ScriptingSceneCommand::SetBarLabel { entity, text });
+		});
+	}
+
+	pub extern "C" fn set_button_pressed_color(entity: u64, r: f32, g: f32, b: f32, a: f32) {
+		let entity = script_arg_to_entity_id(entity);
+		API_STATE.with(|state| {
+			state
+				.borrow_mut()
+				.scene_commands
+				.push(ScriptingSceneCommand::SetButtonPressedColor { entity, r, g, b, a });
+		});
+	}
+
+	pub extern "C" fn set_button_text(entity: u64, text: *const u8, len: i32) {
+		let entity = script_arg_to_entity_id(entity);
+		let Some(text) = read_utf8(text, len) else {
+			ze_log::error!(target: "zeroengine.script", "script Button.SetText bridge received an invalid text buffer");
+			return;
+		};
+		API_STATE.with(|state| {
+			state
+				.borrow_mut()
+				.scene_commands
+				.push(ScriptingSceneCommand::SetButtonText { entity, text });
+		});
+	}
+
+	pub extern "C" fn set_text_text(entity: u64, text: *const u8, len: i32) {
+		let entity = script_arg_to_entity_id(entity);
+		let Some(text) = read_utf8(text, len) else {
+			ze_log::error!(target: "zeroengine.script", "script Text.SetText bridge received an invalid text buffer");
+			return;
+		};
+		API_STATE.with(|state| {
+			state
+				.borrow_mut()
+				.scene_commands
+				.push(ScriptingSceneCommand::SetTextText { entity, text });
+		});
+	}
+
+	pub extern "C" fn set_text_font_size(entity: u64, font_size: f32) {
+		let entity = script_arg_to_entity_id(entity);
+		API_STATE.with(|state| {
+			state
+				.borrow_mut()
+				.scene_commands
+				.push(ScriptingSceneCommand::SetTextFontSize { entity, font_size });
+		});
+	}
+
+	pub extern "C" fn is_button_clicked(entity: u64) -> bool {
+		let entity = script_arg_to_entity_id(entity);
+		API_STATE.with(|state| state.borrow().button_clicked.get(&entity).copied().unwrap_or(false))
 	}
 
 	pub extern "C" fn scene_load(name: *const u8, len: i32) {
@@ -2351,6 +2721,9 @@ mod api {
 			10 => Some(ComponentKind::Sprite),
 			11 => Some(ComponentKind::Camera),
 			12 => Some(ComponentKind::Script),
+			13 => Some(ComponentKind::UIButton),
+			14 => Some(ComponentKind::UIBar),
+			15 => Some(ComponentKind::UIText),
 			_ => None,
 		}
 	}

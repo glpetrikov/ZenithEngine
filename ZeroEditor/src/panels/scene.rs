@@ -17,6 +17,11 @@ const ZOOM_WHEEL_SCALE: f32 = 0.01;
 #[derive(Debug, Clone)]
 pub struct ViewportOutput {
 	pub resolution: [u32; 2],
+	/// The viewport image's on-screen rect, in logical (egui) points. Used to
+	/// translate window-space pointer events into viewport-local coordinates
+	/// for the yakui UI overlay, which is painted into a texture sized to
+	/// `resolution`, not the full window.
+	pub screen_rect: egui::Rect,
 	pub hovered: bool,
 	pub focused: bool,
 	pub wants_game_input: bool,
@@ -173,6 +178,7 @@ impl Panel for ScenePanel {
 
 			self.viewport_output = Some(ViewportOutput {
 				resolution,
+				screen_rect: image_response.rect,
 				hovered,
 				focused,
 				wants_game_input,

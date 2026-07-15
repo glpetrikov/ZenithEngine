@@ -43,6 +43,7 @@ use ze_renderer::{Camera, CameraProjection, CompositeMode, RenderSystem, Rendere
 use ze_scripting_cs::{
 	SHUTDOWN_REQUESTED, ScriptingSceneLoadCommand, ScriptingSystem, drain_scripting_scene_load_commands,
 };
+use ze_ui::{UISystem, UiManagerHandle};
 
 const PROJECT_SCENE_SCAN_INTERVAL: Duration = Duration::from_mins(1);
 const EDITOR_ONLY_COMPONENT_TYPE: &str = "ze.editor.only";
@@ -57,6 +58,7 @@ pub struct EditorRenderFlow {
 	viewport_generation: u64,
 	pending_viewport_resolution: Option<[u32; 2]>,
 	viewport_wants_game_input: bool,
+	viewport_screen_rect: Option<egui::Rect>,
 	save_status: SaveStatus,
 	window: Arc<Window>,
 }
@@ -108,6 +110,7 @@ impl EditorRenderFlow {
 			viewport_generation: renderer.viewport_generation(),
 			pending_viewport_resolution: None,
 			viewport_wants_game_input: false,
+			viewport_screen_rect: None,
 			save_status: SaveStatus::saved(),
 			window,
 		}
@@ -118,6 +121,10 @@ impl EditorRenderFlow {
 	pub const fn mode(&self) -> editor_workspace::EditorMode { self.workspace.mode() }
 
 	pub fn game_input_active(&self) -> bool { self.workspace.mode() == editor_workspace::EditorMode::Play }
+
+	/// The viewport image's on-screen rect from the most recent frame, in
+	/// logical (egui) points. `None` before the first frame has rendered.
+	pub const fn viewport_screen_rect(&self) -> Option<egui::Rect> { self.viewport_screen_rect }
 
 	pub const fn mark_scene_loaded(&mut self) { self.save_status = SaveStatus::saved(); }
 
@@ -219,6 +226,7 @@ impl EditorRenderFlow {
 				self.pending_viewport_resolution = Some(viewport.resolution);
 				self.viewport_wants_game_input =
 					viewport.wants_game_input || self.workspace.mode() == editor_workspace::EditorMode::Play;
+				self.viewport_screen_rect = Some(viewport.screen_rect);
 				let _ = (viewport.hovered, viewport.focused);
 			}
 		});
@@ -311,6 +319,7 @@ struct EditorSceneManager {
 	scenes: BTreeMap<String, EditorSceneEntry>,
 	active_scene: String,
 	play_snapshot: Option<EditorPlaySnapshot>,
+	ui_manager: Option<UiManagerHandle>,
 }
 
 struct EditorSceneEntry {
@@ -335,35 +344,52 @@ impl EditorSceneManager {
 			scenes: BTreeMap::new(),
 			active_scene,
 			play_snapshot: None,
+			ui_manager: None,
 		};
 		manager.insert_scene(scene, mark_saved);
 		manager
 	}
 
-	fn load_project(resources: &ResourceManager, project: &Project) -> ze_core::Result<Self> {
+	fn load_project(
+		resources: &ResourceManager,
+		project: &Project,
+		ui_manager: Option<UiManagerHandle>,
+	) -> ze_core::Result<Self> {
 		let mut manager = Self {
 			scenes: BTreeMap::new(),
 			active_scene: project.main_scene.clone(),
 			play_snapshot: None,
+			ui_manager,
 		};
 
 		for scene_name in available_project_scene_names(project)? {
 			let existed = project_scene_path(project, &scene_name).is_file();
-			let mut scene = load_project_scene(resources, Some(project), &scene_name)
-				.with_context(|| format!("failed to load project scene `{scene_name}`"))?;
-			ensure_editor_runtime_entities(&mut scene, Some(project));
-			manager.insert_scene(scene, existed);
+			match load_project_scene(resources, Some(project), &scene_name, manager.ui_manager.clone()) {
+				Ok(mut scene) => {
+					ensure_editor_runtime_entities(&mut scene, Some(project));
+					manager.insert_scene(scene, existed);
+				}
+				Err(error) => {
+					ze_log::warn!("skipping scene `{scene_name}`: {error:?}");
+				}
+			}
 		}
 
 		if !manager.scenes.contains_key(&manager.active_scene) {
 			let scene_name = project.main_scene.clone();
 			let existed = project_scene_path(project, &scene_name).is_file();
-			let mut scene = load_project_scene(resources, Some(project), &scene_name)
-				.with_context(|| format!("failed to load main scene `{scene_name}`"))?;
-			ensure_editor_runtime_entities(&mut scene, Some(project));
-			manager.insert_scene(scene, existed);
+			match load_project_scene(resources, Some(project), &scene_name, manager.ui_manager.clone()) {
+				Ok(mut scene) => {
+					ensure_editor_runtime_entities(&mut scene, Some(project));
+					manager.insert_scene(scene, existed);
+				}
+				Err(error) => {
+					ze_log::warn!("failed to load main scene `{scene_name}`: {error:?}");
+				}
+			}
 		}
 
+		manager.ensure_active_scene_valid();
 		Ok(manager)
 	}
 
@@ -491,7 +517,7 @@ impl EditorSceneManager {
 		project: Option<&Project>,
 		scene_name: &str,
 	) -> ze_core::Result<()> {
-		let mut scene = load_project_scene(resources, project, scene_name)?;
+		let mut scene = load_project_scene(resources, project, scene_name, self.ui_manager.clone())?;
 		ensure_editor_runtime_entities(&mut scene, project);
 		let loaded_name = scene.name.clone();
 		self.insert_scene(
@@ -539,7 +565,7 @@ impl EditorSceneManager {
 		resources: &ResourceManager,
 		project: &Project,
 		scene_names: &[String],
-	) -> ze_core::Result<usize> {
+	) -> usize {
 		let mut loaded = 0usize;
 		for scene_name in scene_names {
 			if self.scenes.contains_key(scene_name) {
@@ -549,35 +575,37 @@ impl EditorSceneManager {
 				continue;
 			}
 
-			let mut scene = load_project_scene(resources, Some(project), scene_name)
-				.with_context(|| format!("failed to load discovered scene `{scene_name}`"))?;
-			ensure_editor_runtime_entities(&mut scene, Some(project));
-			self.insert_scene(scene, true);
-			loaded += 1;
+			match load_project_scene(resources, Some(project), scene_name, self.ui_manager.clone()) {
+				Ok(mut scene) => {
+					ensure_editor_runtime_entities(&mut scene, Some(project));
+					self.insert_scene(scene, true);
+					loaded += 1;
+				}
+				Err(error) => {
+					ze_log::warn!("skipping discovered scene `{scene_name}`: {error:?}");
+				}
+			}
 		}
 
-		Ok(loaded)
+		loaded
 	}
 
-	fn retain_project_scenes(&mut self, project: &Project, scene_names: &[String]) {
+	fn retain_project_scenes(&mut self, scene_names: &[String], project: &Project) {
 		self.scenes.retain(|name, entry| {
 			scene_names.iter().any(|scene| scene == name)
 				|| project.scenes.iter().any(|scene| scene == name)
 				|| entry.is_dirty()
 		});
-		if self.scenes.contains_key(&self.active_scene) {
-			return;
-		}
+		self.ensure_active_scene_valid();
+	}
 
-		self.active_scene = if self.scenes.contains_key(&project.main_scene) {
-			project.main_scene.clone()
-		} else {
-			self.scenes
-				.keys()
-				.next()
-				.cloned()
-				.unwrap_or_else(|| project.main_scene.clone())
-		};
+	fn ensure_active_scene_valid(&mut self) {
+		if !self.scenes.is_empty() && !self.scenes.contains_key(&self.active_scene) {
+			self.active_scene = self.scenes.keys().next().cloned().unwrap_or_default();
+		}
+		if self.scenes.is_empty() {
+			self.active_scene.clear();
+		}
 	}
 }
 
@@ -598,11 +626,11 @@ struct EditorApp {
 	build_message: Option<String>,
 	build_receiver: Option<Receiver<BuildEvent>>,
 	window: Option<Arc<Window>>,
-	renderer: Option<Renderer>,
 	editor_flow: Option<EditorRenderFlow>,
 	egui_state: Option<egui_winit::State>,
 	resources: ResourceManager,
 	scene_manager: Option<EditorSceneManager>,
+	renderer: Option<Renderer>,
 	occluded: bool,
 	minimized: bool,
 	last_frame: Instant,
@@ -701,15 +729,29 @@ impl ApplicationHandler for EditorApp {
 		};
 		renderer.set_composite_mode(CompositeMode::Editor);
 
-		let scene_manager = match &self.active_project {
-			Some(project) => match EditorSceneManager::load_project(&self.resources, project) {
+		let ui_manager = UiManagerHandle::new(ze_ui::UiManager::new(renderer.device(), renderer.queue(), &window));
+		renderer.set_ui_manager(ui_manager.clone());
+
+		let scene_manager = if let Some(project) = &self.active_project {
+			match EditorSceneManager::load_project(&self.resources, project, Some(ui_manager.clone())) {
 				Ok(manager) => manager,
 				Err(error) => {
 					ze_log::error!("failed to load project scenes; opening empty editor scene: {error:?}");
-					EditorSceneManager::from_scene(create_default_editor_scene(), true)
+					let mut manager = EditorSceneManager::from_scene(create_default_editor_scene(), true);
+					if let Some(scene) = manager.active_scene_mut() {
+						scene.add_system(UISystem::new(ui_manager.clone()));
+					}
+					manager.ui_manager = Some(ui_manager);
+					manager
 				}
-			},
-			None => EditorSceneManager::from_scene(create_default_editor_scene(), true),
+			}
+		} else {
+			let mut manager = EditorSceneManager::from_scene(create_default_editor_scene(), true);
+			if let Some(scene) = manager.active_scene_mut() {
+				scene.add_system(UISystem::new(ui_manager.clone()));
+			}
+			manager.ui_manager = Some(ui_manager);
+			manager
 		};
 		let mut editor_flow = EditorRenderFlow::new(
 			&renderer,
@@ -765,6 +807,8 @@ impl ApplicationHandler for EditorApp {
 		if should_forward_game_input(&event, game_input_active, egui_consumed) {
 			forward_game_input(&event);
 		}
+
+		self.forward_pointer_event_to_ui(&window, &event);
 
 		match event {
 			WindowEvent::CloseRequested => event_loop.exit(),
@@ -961,6 +1005,61 @@ impl ApplicationHandler for EditorApp {
 }
 
 impl EditorApp {
+	/// Forwards pointer events to the yakui UI overlay, translating
+	/// window-space coordinates into coordinates local to the viewport
+	/// panel's on-screen rect (in logical points, matching the space
+	/// `Renderer::set_ui_manager`/`resize_viewport` configure yakui's
+	/// surface for). The viewport panel is a sub-region of the window, not
+	/// the whole window, so raw window-space coordinates would place the
+	/// cursor at the wrong position inside yakui.
+	fn forward_pointer_event_to_ui(&self, window: &Window, event: &WindowEvent) {
+		let Some(ui_handle) = self
+			.scene_manager
+			.as_ref()
+			.and_then(|manager| manager.ui_manager.clone())
+		else {
+			return;
+		};
+		let Some(viewport_rect) = self
+			.editor_flow
+			.as_ref()
+			.and_then(EditorRenderFlow::viewport_screen_rect)
+		else {
+			return;
+		};
+
+		let scale = window.scale_factor() as f32;
+
+		match event {
+			&WindowEvent::CursorMoved { device_id, position } => {
+				let logical = pos2(position.x as f32 / scale, position.y as f32 / scale);
+
+				if viewport_rect.contains(logical) {
+					let local = logical - viewport_rect.min;
+					let translated = WindowEvent::CursorMoved {
+						device_id,
+						position: winit::dpi::PhysicalPosition::new(f64::from(local.x), f64::from(local.y)),
+					};
+					ui_handle.borrow_mut().handle_window_event(&translated);
+				} else {
+					ui_handle
+						.borrow_mut()
+						.handle_window_event(&WindowEvent::CursorLeft { device_id });
+				}
+			}
+			WindowEvent::CursorLeft { .. } => {
+				ui_handle.borrow_mut().handle_window_event(event);
+			}
+			WindowEvent::MouseInput { .. } | WindowEvent::MouseWheel { .. } => {
+				let logical_last = pos2(self.last_mouse_pos.x / scale, self.last_mouse_pos.y / scale);
+				if viewport_rect.contains(logical_last) {
+					ui_handle.borrow_mut().handle_window_event(event);
+				}
+			}
+			_ => {}
+		}
+	}
+
 	fn save_project(&mut self) -> ze_core::Result<()> {
 		self.sync_project_scene_list()?;
 
@@ -1215,8 +1314,9 @@ impl EditorApp {
 		let Some(scene_manager) = self.scene_manager.as_mut() else {
 			return Ok(());
 		};
-		scene_manager.retain_project_scenes(project, &scene_names);
-		scene_manager.load_missing_project_scenes(&self.resources, project, &scene_names)?;
+		scene_manager.retain_project_scenes(&scene_names, project);
+		scene_manager.load_missing_project_scenes(&self.resources, project, &scene_names);
+		scene_manager.ensure_active_scene_valid();
 		Ok(())
 	}
 
@@ -1332,11 +1432,19 @@ thumbs.db
 		}
 		self.resources = ResourceManager::new(project.asset_dir.clone());
 		self.asset_hot_reload = create_asset_hot_reload(&self.resources, Some(&project));
-		let scene_manager = match EditorSceneManager::load_project(&self.resources, &project) {
+		let ui_handle = self.scene_manager.as_ref().and_then(|m| m.ui_manager.clone());
+		let scene_manager = match EditorSceneManager::load_project(&self.resources, &project, ui_handle.clone()) {
 			Ok(manager) => manager,
 			Err(error) => {
 				ze_log::error!("failed to reload project scenes; opening empty editor scene: {error:?}");
-				EditorSceneManager::from_scene(create_default_editor_scene(), true)
+				let mut manager = EditorSceneManager::from_scene(create_default_editor_scene(), true);
+				if let Some(handle) = &ui_handle {
+					if let Some(scene) = manager.active_scene_mut() {
+						scene.add_system(UISystem::new(handle.clone()));
+					}
+					manager.ui_manager = Some(handle.clone());
+				}
+				manager
 			}
 		};
 		if let Some(editor_flow) = &mut self.editor_flow {
@@ -1393,7 +1501,8 @@ thumbs.db
 		self.project_config_dirty = false;
 		self.last_scene_file_scan = Instant::now();
 
-		let mut scene = load_project_scene(&self.resources, Some(project), scene_name)?;
+		let ui_handle = self.scene_manager.as_ref().and_then(|m| m.ui_manager.clone());
+		let mut scene = load_project_scene(&self.resources, Some(project), scene_name, ui_handle)?;
 		ensure_editor_runtime_entities(&mut scene, Some(project));
 
 		let scene_manager = self
@@ -1504,26 +1613,36 @@ fn update_editor_scene_before_render(
 	game_running: bool,
 	dt: f32,
 ) -> bool {
-	let Some(scene) = scene_manager.active_scene_mut() else {
-		ze_log::error!("cannot update editor because no active scene is loaded");
-		return false;
+	let asset_reload = {
+		let Some(scene) = scene_manager.active_scene_mut() else {
+			ze_log::error!("cannot update editor because no active scene is loaded");
+			return false;
+		};
+		let asset_reload = asset_hot_reload.poll(scene, game_running);
+		if game_running {
+			if let Err(error) = scene.update_system::<ScriptingSystem>(dt) {
+				ze_log::error!("failed to update scripting system: {error:?}");
+			}
+			if let Err(error) = scene.update_system::<PhysicsSystem>(dt) {
+				ze_log::error!("failed to update physics system: {error:?}");
+			}
+		}
+		asset_reload
 	};
-
-	let asset_reload = asset_hot_reload.poll(scene, game_running);
 	renderer.invalidate_textures(asset_reload.texture_assets());
 
-	if game_running {
-		if let Err(error) = scene.update_system::<ScriptingSystem>(dt) {
-			ze_log::error!("failed to update scripting system: {error:?}");
-		}
-		if let Err(error) = scene.update_system::<PhysicsSystem>(dt) {
-			ze_log::error!("failed to update physics system: {error:?}");
-		}
-		if scene_manager.apply_scripting_scene_load_commands(resources, active_project)
-			&& let Some(scene) = scene_manager.active_scene_mut()
-		{
-			editor_workspace::switch_viewport_camera(scene, editor_workspace::EditorMode::Play);
-		}
+	if game_running
+		&& scene_manager.apply_scripting_scene_load_commands(resources, active_project)
+		&& let Some(scene) = scene_manager.active_scene_mut()
+	{
+		editor_workspace::switch_viewport_camera(scene, editor_workspace::EditorMode::Play);
+	}
+
+	// Tick UISystem in both Edit and Play modes
+	if let Some(scene) = scene_manager.active_scene_mut()
+		&& let Err(error) = scene.update_system::<UISystem>(dt)
+	{
+		ze_log::error!("failed to update UI system: {error:?}");
 	}
 
 	true
@@ -1556,9 +1675,15 @@ fn project_scene_path_if_loaded(project: Option<&Project>, scene_name: &str) -> 
 }
 
 fn ensure_editor_runtime_entities(scene: &mut Scene, project: Option<&Project>) {
+	let before = scene
+		.world()
+		.run(|entities: ze_ecs::EntitiesView| entities.iter().count());
 	ensure_editor_camera(scene);
 	ensure_editor_physics_settings(scene, project);
 	editor_workspace::switch_viewport_camera(scene, editor_workspace::EditorMode::Edit);
+	let after = scene
+		.world()
+		.run(|entities: ze_ecs::EntitiesView| entities.iter().count());
 }
 
 fn ensure_editor_camera(scene: &mut Scene) {

@@ -1,8 +1,8 @@
 use ze_assets::{AssetRef, ResourceManager};
 use ze_core::{Mat4, Result, Vec2, Vec3};
 use ze_ecs::{
-	Collider, ColliderShape, EditorOnly, EntitiesView, EntityId, Inactive, Name, PhysicsSettings, RigidBody,
-	RigidBodyType, Scene, System, Tag, Transform,
+	ActiveCameraView, Collider, ColliderShape, EditorOnly, EntitiesView, EntityId, Inactive, Name, PhysicsSettings,
+	RigidBody, RigidBodyType, Scene, System, Tag, Transform,
 	shipyard::{IntoIter, View},
 };
 use ze_input::{Input, ZKeyCode};
@@ -63,6 +63,7 @@ impl RenderSystem {
 		let Some(camera) = Self::find_primary_camera(scene, renderer.aspect_ratio()) else {
 			self.items.clear();
 			self.debug_lines.clear();
+			let _ = scene.world().remove_unique::<ActiveCameraView>();
 			if self.missing_primary_camera_reported_scene.as_deref() != Some(&scene.name) {
 				self.missing_primary_camera_reported_scene = Some(scene.name.clone());
 				let name = if scene.name.is_empty() { "unnamed" } else { &scene.name };
@@ -73,7 +74,15 @@ impl RenderSystem {
 			};
 		};
 
+		let viewport_size = renderer.viewport_size();
+		scene.world().add_unique(ActiveCameraView {
+			view_projection: camera.view_projection,
+			viewport_size: Vec2::new(viewport_size.width as f32, viewport_size.height as f32),
+		});
+
+		let prev_count = self.items.len();
 		self.items = Self::collect_items(scene);
+
 		self.debug_lines = Self::collect_debug_lines(scene);
 		renderer.request_sprite_redraw(&self.items, &self.debug_lines, &camera, resources);
 		RenderStatus::Rendered
@@ -153,9 +162,17 @@ impl RenderSystem {
 		let mut items = Vec::new();
 		let world = scene.world();
 
+		let mut total_entities = 0u32;
+		let mut has_sprite = 0u32;
+		let mut has_inactive = 0u32;
+		let mut visible_sprites = 0u32;
+		let mut no_transform = 0u32;
+
 		world.run(|entities: EntitiesView| {
 			for entity in entities.iter() {
+				total_entities += 1;
 				if world.get::<&Inactive>(entity).is_ok() {
+					has_inactive += 1;
 					continue;
 				}
 
@@ -163,13 +180,18 @@ impl RenderSystem {
 					continue;
 				};
 
+				has_sprite += 1;
+
 				if !sprite.settings.visible {
 					continue;
 				}
 
 				let Some(transform) = scene.world_transform(entity) else {
+					no_transform += 1;
 					continue;
 				};
+
+				visible_sprites += 1;
 
 				let mut scale = transform.scale;
 				if sprite.settings.flip_x {

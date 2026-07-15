@@ -22,6 +22,17 @@ public unsafe struct EngineAPI
     public delegate* unmanaged[Cdecl]<ulong, float, float, void> add_2d_impulse;
     public delegate* unmanaged[Cdecl]<ulong, float> get_sprite_texture_rotation_degrees;
     public delegate* unmanaged[Cdecl]<ulong, float, void> set_sprite_texture_rotation_degrees;
+    public delegate* unmanaged[Cdecl]<ulong, float, float, float, float, void> set_button_color;
+    public delegate* unmanaged[Cdecl]<ulong, float, float, float, float, void> set_button_hover_color;
+    public delegate* unmanaged[Cdecl]<ulong, float, float, float, float, void> set_bar_color;
+    public delegate* unmanaged[Cdecl]<ulong, float, float, float, float, void> set_bar_bg_color;
+    public delegate* unmanaged[Cdecl]<ulong, float, float, float, float, void> set_text_color;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int, void> set_bar_label;
+    public delegate* unmanaged[Cdecl]<ulong, float, float, float, float, void> set_button_pressed_color;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int, void> set_button_text;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int, void> set_text_text;
+    public delegate* unmanaged[Cdecl]<ulong, float, void> set_text_font_size;
+    public delegate* unmanaged[Cdecl]<ulong, bool> is_button_clicked;
     public delegate* unmanaged[Cdecl]<byte*, int, void> scene_load;
     public delegate* unmanaged[Cdecl]<void> scene_load_main;
     public delegate* unmanaged[Cdecl]<void> scene_reload;

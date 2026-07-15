@@ -24,3 +24,4 @@ ze_ecs = { path = "../ze_ecs" }
 ze_input = { path = "../ze_input" }
 ze_log = { path = "../ze_log" }
 ze_renderer = { path = "../ze_renderer" }
+ze_ui = { path = "../ze_ui" }

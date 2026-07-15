@@ -1,0 +1,20 @@
+[package]
+name = "ze_ui"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ze_core = { path = "../ze_core" }
+ze_ecs = { path = "../ze_ecs" }
+ze_log = { path = "../ze_log" }
+yakui = { git = "https://github.com/SecondHalfGames/yakui" }
+yakui-wgpu = { git = "https://github.com/SecondHalfGames/yakui" }
+yakui-winit = { git = "https://github.com/SecondHalfGames/yakui" }
+wgpu = "29.0.3"
+winit = "0.30.13"

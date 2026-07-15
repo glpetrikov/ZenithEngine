@@ -11,6 +11,7 @@ pub use render_system::*;
 use wgpu::util::DeviceExt;
 use ze_assets::{AssetRef, ResourceManager};
 use ze_core::{Mat4, Vec3};
+use ze_ui::ui_manager::UiManagerHandle;
 
 use crate::backend::{
 	mesh::{Mesh, Vertex},
@@ -28,18 +29,11 @@ pub enum CompositeMode {
 }
 
 pub struct Renderer {
-	surface: wgpu::Surface<'static>,
-	device: wgpu::Device,
-	queue: wgpu::Queue,
-	config: wgpu::SurfaceConfiguration,
-	size: winit::dpi::PhysicalSize<u32>,
-	composite_mode: CompositeMode,
+	// GPU resources — dropped first while the device is still alive.
 	viewport_texture: wgpu::Texture,
 	viewport_view: wgpu::TextureView,
 	viewport_depth_texture: wgpu::Texture,
 	viewport_depth_view: wgpu::TextureView,
-	viewport_size: winit::dpi::PhysicalSize<u32>,
-	viewport_generation: u64,
 	pipeline: Pipeline,
 	debug_pipeline: Pipeline,
 	blit_pipeline: Pipeline,
@@ -52,10 +46,24 @@ pub struct Renderer {
 	blit_sampler: wgpu::Sampler,
 	blit_bind_group: wgpu::BindGroup,
 	ubo: Option<UboGroup>,
-	ubo_object_count: usize,
 	projection_ubo: Option<Ubo>,
+	ui_manager: Option<UiManagerHandle>,
+	// Core wgpu objects — dropped last in the correct order:
+	// queue → device → surface.
+	queue: wgpu::Queue,
+	device: wgpu::Device,
+	surface: wgpu::Surface<'static>,
+	// Pure data — order does not matter.
+	config: wgpu::SurfaceConfiguration,
+	size: winit::dpi::PhysicalSize<u32>,
+	composite_mode: CompositeMode,
+	viewport_size: winit::dpi::PhysicalSize<u32>,
+	viewport_generation: u64,
+	ubo_object_count: usize,
 }
-
+impl Drop for Renderer {
+	fn drop(&mut self) { self.device.poll(wgpu::PollType::wait_indefinitely()).ok(); }
+}
 impl Renderer {
 	pub async fn new(window: Arc<winit::window::Window>) -> ze_core::Result<Self> {
 		ze_log::info!("Creating renderer");
@@ -136,18 +144,10 @@ impl Renderer {
 		let materials = Vec::new();
 
 		Ok(Self {
-			surface,
-			device,
-			queue,
-			config,
-			size,
-			composite_mode: CompositeMode::Standalone,
 			viewport_texture,
 			viewport_view,
 			viewport_depth_texture,
 			viewport_depth_view,
-			viewport_size,
-			viewport_generation: 0,
 			pipeline: render_pipeline,
 			debug_pipeline,
 			blit_pipeline,
@@ -160,8 +160,17 @@ impl Renderer {
 			blit_sampler,
 			blit_bind_group,
 			ubo: None,
-			ubo_object_count: 0,
 			projection_ubo,
+			ui_manager: None,
+			queue,
+			device,
+			surface,
+			config,
+			size,
+			composite_mode: CompositeMode::Standalone,
+			viewport_size,
+			viewport_generation: 0,
+			ubo_object_count: 0,
 		})
 	}
 
@@ -185,6 +194,13 @@ impl Renderer {
 
 	pub fn invalidate_textures<'a>(&mut self, assets: impl IntoIterator<Item = &'a AssetRef>) -> usize {
 		self.texture_cache.invalidate_many(assets)
+	}
+
+	pub fn set_ui_manager(&mut self, handle: UiManagerHandle) {
+		handle
+			.borrow_mut()
+			.set_viewport_size(self.viewport_size.width as f32, self.viewport_size.height as f32);
+		self.ui_manager = Some(handle);
 	}
 
 	pub fn flush_game_pass(&self) {
@@ -247,6 +263,12 @@ impl Renderer {
 		self.viewport_size = new_size;
 		self.viewport_generation = self.viewport_generation.wrapping_add(1);
 		self.blit_bind_group = blit_bind_group;
+
+		if let Some(ref handle) = self.ui_manager {
+			handle
+				.borrow_mut()
+				.set_viewport_size(new_size.width as f32, new_size.height as f32);
+		}
 	}
 
 	fn reconfigure_surface(&self, reason: &str) {
@@ -428,19 +450,6 @@ impl Renderer {
 
 	pub fn aspect_ratio(&self) -> f32 { self.viewport_size.width as f32 / self.viewport_size.height.max(1) as f32 }
 
-	pub fn request_sprite_redraw(
-		&mut self,
-		items: &[render_system::SpriteRenderItem],
-		debug_lines: &[render_system::DebugLine],
-		camera: &render_system::CameraRenderData,
-		resources: &ResourceManager,
-	) {
-		self.render_sprite_items_to_viewport(items, debug_lines, camera, resources);
-		if self.composite_mode == CompositeMode::Standalone {
-			self.present_viewport();
-		}
-	}
-
 	pub fn present_editor<F>(&mut self, draw_editor: F)
 	where
 		F: FnOnce(
@@ -580,6 +589,31 @@ impl Renderer {
 		true
 	}
 
+	pub fn request_sprite_redraw(
+		&mut self,
+		items: &[render_system::SpriteRenderItem],
+		debug_lines: &[render_system::DebugLine],
+		camera: &render_system::CameraRenderData,
+		resources: &ResourceManager,
+	) {
+		self.render_sprite_items_to_viewport(items, debug_lines, camera, resources);
+
+		// Paint yakui UI overlay on top of sprites
+		if let Some(ref handle) = self.ui_manager {
+			let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+				label: Some("UI Overlay Encoder"),
+			});
+			handle
+				.borrow_mut()
+				.paint(&mut encoder, &self.viewport_view, VIEWPORT_TEXTURE_FORMAT, 1);
+			self.queue.submit(std::iter::once(encoder.finish()));
+		}
+
+		if self.composite_mode == CompositeMode::Standalone {
+			self.present_viewport();
+		}
+	}
+
 	fn render_sprite_items_to_viewport(
 		&mut self,
 		items: &[render_system::SpriteRenderItem],
@@ -604,7 +638,6 @@ impl Renderer {
 			let transform = item.transform * Mat4::from_scale(Vec3::new(sprite_size[0], sprite_size[1], 1.0));
 
 			let Some(ubo) = self.ubo.as_mut() else {
-				ze_log::error!("cannot upload sprite transform without object UBOs");
 				return;
 			};
 			ubo.upload(i as u64, &transform, &self.queue);
@@ -695,7 +728,6 @@ impl Renderer {
 		render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
 		render_pass.set_pipeline(&self.pipeline.render_pipeline);
 		let Some(projection_ubo) = self.projection_ubo.as_ref() else {
-			ze_log::error!("cannot render viewport without projection UBO");
 			return;
 		};
 		render_pass.set_bind_group(2, &projection_ubo.bind_group, &[]);

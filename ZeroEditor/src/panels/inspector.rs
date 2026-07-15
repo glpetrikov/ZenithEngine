@@ -19,6 +19,7 @@ use ze_renderer::{Camera, CameraProjection, Sprite, SpriteColorMode, SpriteColor
 use ze_scripting_cs::{
 	Script as ScriptData, ScriptFieldMetadata, ScriptFieldValue, ScriptingSystem, Scripts as ZeScripts,
 };
+use ze_ui::{UIBar, UIButton, UIRect, UIText};
 
 use super::{EditorPanelContext, EditorSelection, Panel};
 use crate::undo_redo::SceneSnapshotCommand;
@@ -84,10 +85,13 @@ enum InspectableComponent {
 	Collider,
 	PhysicsSettings,
 	EditorOnly,
+	UIButton,
+	UIBar,
+	UIText,
 }
 
 impl InspectableComponent {
-	const ADDABLE: [Self; 8] = [
+	const ADDABLE: [Self; 11] = [
 		Self::Tag,
 		Self::Transform,
 		Self::Inactive,
@@ -96,6 +100,9 @@ impl InspectableComponent {
 		Self::RigidBody,
 		Self::Collider,
 		Self::EditorOnly,
+		Self::UIButton,
+		Self::UIBar,
+		Self::UIText,
 	];
 
 	const fn label(self) -> &'static str {
@@ -109,6 +116,9 @@ impl InspectableComponent {
 			Self::Collider => "Collider",
 			Self::PhysicsSettings => "PhysicsSettings",
 			Self::EditorOnly => "EditorOnly",
+			Self::UIButton => "UI Button",
+			Self::UIBar => "UI Bar",
+			Self::UIText => "UI Text",
 		}
 	}
 
@@ -123,6 +133,9 @@ impl InspectableComponent {
 			Self::Collider => scene.world().get::<&Collider>(entity).is_ok(),
 			Self::PhysicsSettings => scene.world().get::<&PhysicsSettings>(entity).is_ok(),
 			Self::EditorOnly => scene.world().get::<&EditorOnly>(entity).is_ok(),
+			Self::UIButton => scene.world().get::<&UIButton>(entity).is_ok(),
+			Self::UIBar => scene.world().get::<&UIBar>(entity).is_ok(),
+			Self::UIText => scene.world().get::<&UIText>(entity).is_ok(),
 		}
 	}
 
@@ -155,6 +168,54 @@ impl InspectableComponent {
 			Self::EditorOnly => {
 				scene.entity_mut(entity).add_component(EditorOnly);
 			}
+			Self::UIButton => {
+				scene.entity_mut(entity).add_component(UIButton {
+					rect: UIRect {
+						x: 0.0,
+						y: 0.0,
+						width: 100.0,
+						height: 30.0,
+					},
+					text: "Button".to_string(),
+					font_size: 14.0,
+					color: [0.5, 0.5, 0.5, 1.0],
+					hover_color: [0.6, 0.6, 0.6, 1.0],
+					pressed_color: [0.35, 0.35, 0.35, 1.0],
+					pressed: false,
+					hovered: false,
+					z_index: 0,
+				});
+			}
+			Self::UIBar => {
+				scene.entity_mut(entity).add_component(UIBar {
+					rect: UIRect {
+						x: 0.0,
+						y: 0.0,
+						width: 200.0,
+						height: 20.0,
+					},
+					current: 50.0,
+					max: 100.0,
+					color: [0.0, 0.8, 0.2, 1.0],
+					bg_color: [0.2, 0.2, 0.2, 1.0],
+					text: None,
+					z_index: 0,
+				});
+			}
+			Self::UIText => {
+				scene.entity_mut(entity).add_component(UIText {
+					rect: UIRect {
+						x: 0.0,
+						y: 0.0,
+						width: 200.0,
+						height: 20.0,
+					},
+					text: "Text".to_string(),
+					font_size: 14.0,
+					color: [1.0, 1.0, 1.0, 1.0],
+					z_index: 0,
+				});
+			}
 		}
 	}
 
@@ -186,6 +247,15 @@ impl InspectableComponent {
 			}
 			Self::EditorOnly => {
 				let _ = scene.entity_mut(entity).remove_component::<EditorOnly>();
+			}
+			Self::UIButton => {
+				let _ = scene.entity_mut(entity).remove_component::<UIButton>();
+			}
+			Self::UIBar => {
+				let _ = scene.entity_mut(entity).remove_component::<UIBar>();
+			}
+			Self::UIText => {
+				let _ = scene.entity_mut(entity).remove_component::<UIText>();
 			}
 		}
 	}
@@ -352,6 +422,19 @@ impl InspectorPanel {
 
 		if let Some(settings) = cloned_component::<PhysicsSettings>(context.scene, entity) {
 			self.show_physics_settings(ui, context, entity, settings);
+			displayed += 1;
+		}
+
+		if let Some(button) = cloned_component::<UIButton>(context.scene, entity) {
+			self.show_ui_button(ui, context, entity, button);
+			displayed += 1;
+		}
+		if let Some(bar) = cloned_component::<UIBar>(context.scene, entity) {
+			self.show_ui_bar(ui, context, entity, bar);
+			displayed += 1;
+		}
+		if let Some(text) = cloned_component::<UIText>(context.scene, entity) {
+			self.show_ui_text(ui, context, entity, text);
 			displayed += 1;
 		}
 
@@ -2030,6 +2113,23 @@ fn show_script_field(
 				}
 			});
 		}
+		ScriptFieldKind::UInt => {
+			let mut value = match script_field_current_value(field, fields, kind) {
+				Some(ScriptFieldValue::UInt(value)) => value,
+				_ => 0,
+			};
+			ui.horizontal(|ui| {
+				ui.monospace(&field.name);
+				ui.label(":");
+				ui.monospace(&field.ty);
+				let response = ui.add(drag_value_u32(&mut value, 1.0));
+				let edit = response_field_edit(&response);
+				field_edit.include(edit);
+				if edit.changed {
+					fields.insert(field.name.clone(), ScriptFieldValue::UInt(value));
+				}
+			});
+		}
 		ScriptFieldKind::Float => {
 			let mut value = match script_field_current_value(field, fields, kind) {
 				Some(ScriptFieldValue::Float(value)) => value,
@@ -2132,6 +2232,7 @@ fn script_field_value_for_kind(value: &ScriptFieldValue, kind: ScriptFieldKind) 
 	match (kind, value) {
 		(ScriptFieldKind::Bool, ScriptFieldValue::Bool(value)) => Some(ScriptFieldValue::Bool(*value)),
 		(ScriptFieldKind::Int, ScriptFieldValue::Int(value)) => Some(ScriptFieldValue::Int(*value)),
+		(ScriptFieldKind::UInt, ScriptFieldValue::UInt(value)) => Some(ScriptFieldValue::UInt(*value)),
 		(ScriptFieldKind::Float, ScriptFieldValue::Float(value)) => Some(ScriptFieldValue::Float(*value)),
 		(ScriptFieldKind::String, ScriptFieldValue::String(value)) => Some(ScriptFieldValue::String(value.clone())),
 		(ScriptFieldKind::Vec2, ScriptFieldValue::Vec2(value)) => Some(ScriptFieldValue::Vec2(*value)),
@@ -2144,6 +2245,7 @@ fn script_field_value_for_kind(value: &ScriptFieldValue, kind: ScriptFieldKind) 
 enum ScriptFieldKind {
 	Bool,
 	Int,
+	UInt,
 	Float,
 	String,
 	Vec2,
@@ -2154,6 +2256,7 @@ fn script_field_kind(type_name: &str) -> Option<ScriptFieldKind> {
 	match type_name {
 		"bool" | "Boolean" => Some(ScriptFieldKind::Bool),
 		"int" | "Int32" => Some(ScriptFieldKind::Int),
+		"uint" | "UInt32" => Some(ScriptFieldKind::UInt),
 		"float" | "Single" => Some(ScriptFieldKind::Float),
 		"string" | "String" => Some(ScriptFieldKind::String),
 		"Vec2" | "Vector2" => Some(ScriptFieldKind::Vec2),
@@ -2392,6 +2495,284 @@ fn record_scene_edit(context: &mut EditorPanelContext<'_>, edit: impl FnOnce(&mu
 	context
 		.undo_redo
 		.record_executed(Box::new(SceneSnapshotCommand::new(before, after)));
+}
+
+impl InspectorPanel {
+	fn show_ui_button(
+		&mut self,
+		ui: &mut Ui,
+		context: &mut EditorPanelContext<'_>,
+		entity: EntityId,
+		mut button: UIButton,
+	) {
+		let response = show_removable_component(ui, InspectableComponent::UIButton.label(), |ui| {
+			let mut field_edit = FieldEdit::default();
+
+			ui.horizontal(|ui| {
+				ui.label("Text");
+				let response = ui.text_edit_singleline(&mut button.text);
+				field_edit.include(response_field_edit(&response));
+			});
+
+			field_edit.include(drag_f32(ui, "Font Size", &mut button.font_size));
+
+			ui.horizontal(|ui| {
+				ui.label("X");
+				field_edit.include(response_field_edit(&ui.add(egui::DragValue::new(&mut button.rect.x))));
+				ui.label("Y");
+				field_edit.include(response_field_edit(&ui.add(egui::DragValue::new(&mut button.rect.y))));
+			});
+			ui.horizontal(|ui| {
+				ui.label("Width");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut button.rect.width).range(0.0..=f32::MAX)),
+				));
+				ui.label("Height");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut button.rect.height).range(0.0..=f32::MAX)),
+				));
+			});
+
+			field_edit.include(drag_i32(ui, "Z Index", &mut button.z_index));
+
+			ui.horizontal(|ui| {
+				ui.label("Color R");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut button.color[0]).speed(0.01).range(0.0..=1.0)),
+				));
+				ui.label("G");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut button.color[1]).speed(0.01).range(0.0..=1.0)),
+				));
+				ui.label("B");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut button.color[2]).speed(0.01).range(0.0..=1.0)),
+				));
+				ui.label("A");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut button.color[3]).speed(0.01).range(0.0..=1.0)),
+				));
+			});
+			ui.horizontal(|ui| {
+				ui.label("Hover R");
+				field_edit.include(response_field_edit(
+					&ui.add(
+						egui::DragValue::new(&mut button.hover_color[0])
+							.speed(0.01)
+							.range(0.0..=1.0),
+					),
+				));
+				ui.label("G");
+				field_edit.include(response_field_edit(
+					&ui.add(
+						egui::DragValue::new(&mut button.hover_color[1])
+							.speed(0.01)
+							.range(0.0..=1.0),
+					),
+				));
+				ui.label("B");
+				field_edit.include(response_field_edit(
+					&ui.add(
+						egui::DragValue::new(&mut button.hover_color[2])
+							.speed(0.01)
+							.range(0.0..=1.0),
+					),
+				));
+				ui.label("A");
+				field_edit.include(response_field_edit(
+					&ui.add(
+						egui::DragValue::new(&mut button.hover_color[3])
+							.speed(0.01)
+							.range(0.0..=1.0),
+					),
+				));
+			});
+
+			self.apply_field_edit(context, field_edit, |scene| {
+				if let Ok(mut current) = scene.world_mut().get::<&mut UIButton>(entity) {
+					**current = button;
+				}
+			});
+		});
+		self.show_component_context_menu(&response, entity, context, InspectableComponent::UIButton);
+	}
+
+	fn show_ui_bar(&mut self, ui: &mut Ui, context: &mut EditorPanelContext<'_>, entity: EntityId, mut bar: UIBar) {
+		let response = show_removable_component(ui, InspectableComponent::UIBar.label(), |ui| {
+			let mut field_edit = FieldEdit::default();
+
+			field_edit.include(drag_f32(ui, "Current", &mut bar.current));
+			field_edit.include(drag_f32(ui, "Max", &mut bar.max));
+
+			ui.horizontal(|ui| {
+				ui.label("X");
+				field_edit.include(response_field_edit(&ui.add(egui::DragValue::new(&mut bar.rect.x))));
+				ui.label("Y");
+				field_edit.include(response_field_edit(&ui.add(egui::DragValue::new(&mut bar.rect.y))));
+			});
+			ui.horizontal(|ui| {
+				ui.label("Width");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut bar.rect.width).range(0.0..=f32::MAX)),
+				));
+				ui.label("Height");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut bar.rect.height).range(0.0..=f32::MAX)),
+				));
+			});
+
+			field_edit.include(drag_i32(ui, "Z Index", &mut bar.z_index));
+
+			let mut label_text = bar.text.clone().unwrap_or_default();
+			let mut has_label = bar.text.is_some();
+			field_edit.include(response_field_edit(&ui.checkbox(&mut has_label, "Show label")));
+			ui.horizontal(|ui| {
+				ui.label("Label");
+				if has_label {
+					let response = ui.text_edit_singleline(&mut label_text);
+					field_edit.include(response_field_edit(&response));
+				} else {
+					ui.label("None");
+				}
+			});
+			bar.text = has_label.then_some(label_text);
+
+			ui.horizontal(|ui| {
+				ui.label("Color R");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut bar.color[0]).speed(0.01).range(0.0..=1.0)),
+				));
+				ui.label("G");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut bar.color[1]).speed(0.01).range(0.0..=1.0)),
+				));
+				ui.label("B");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut bar.color[2]).speed(0.01).range(0.0..=1.0)),
+				));
+				ui.label("A");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut bar.color[3]).speed(0.01).range(0.0..=1.0)),
+				));
+			});
+			ui.horizontal(|ui| {
+				ui.label("BG R");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut bar.bg_color[0]).speed(0.01).range(0.0..=1.0)),
+				));
+				ui.label("G");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut bar.bg_color[1]).speed(0.01).range(0.0..=1.0)),
+				));
+				ui.label("B");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut bar.bg_color[2]).speed(0.01).range(0.0..=1.0)),
+				));
+				ui.label("A");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut bar.bg_color[3]).speed(0.01).range(0.0..=1.0)),
+				));
+			});
+
+			self.apply_field_edit(context, field_edit, |scene| {
+				if let Ok(mut current) = scene.world_mut().get::<&mut UIBar>(entity) {
+					**current = bar;
+				}
+			});
+		});
+		self.show_component_context_menu(&response, entity, context, InspectableComponent::UIBar);
+	}
+
+	fn show_ui_text(
+		&mut self,
+		ui: &mut Ui,
+		context: &mut EditorPanelContext<'_>,
+		entity: EntityId,
+		mut text_component: UIText,
+	) {
+		let response = show_removable_component(ui, InspectableComponent::UIText.label(), |ui| {
+			let mut field_edit = FieldEdit::default();
+
+			ui.horizontal(|ui| {
+				ui.label("Text");
+				let response = ui.text_edit_singleline(&mut text_component.text);
+				field_edit.include(response_field_edit(&response));
+			});
+
+			// A non-positive font_size hangs cosmic-text's line-layout (confirmed via
+			// debugger), so this field can't reuse the unbounded drag_f32 helper.
+			ui.horizontal(|ui| {
+				ui.label("Font Size");
+				let response = ui.add(drag_value_f32(&mut text_component.font_size, 0.05).range(1.0..=f32::MAX));
+				field_edit.include(response_field_edit(&response));
+			});
+
+			ui.horizontal(|ui| {
+				ui.label("X");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut text_component.rect.x)),
+				));
+				ui.label("Y");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut text_component.rect.y)),
+				));
+			});
+			ui.horizontal(|ui| {
+				ui.label("Width");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut text_component.rect.width).range(0.0..=f32::MAX)),
+				));
+				ui.label("Height");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut text_component.rect.height).range(0.0..=f32::MAX)),
+				));
+			});
+
+			field_edit.include(drag_i32(ui, "Z Index", &mut text_component.z_index));
+
+			ui.horizontal(|ui| {
+				ui.label("Color R");
+				field_edit.include(response_field_edit(
+					&ui.add(
+						egui::DragValue::new(&mut text_component.color[0])
+							.speed(0.01)
+							.range(0.0..=1.0),
+					),
+				));
+				ui.label("G");
+				field_edit.include(response_field_edit(
+					&ui.add(
+						egui::DragValue::new(&mut text_component.color[1])
+							.speed(0.01)
+							.range(0.0..=1.0),
+					),
+				));
+				ui.label("B");
+				field_edit.include(response_field_edit(
+					&ui.add(
+						egui::DragValue::new(&mut text_component.color[2])
+							.speed(0.01)
+							.range(0.0..=1.0),
+					),
+				));
+				ui.label("A");
+				field_edit.include(response_field_edit(
+					&ui.add(
+						egui::DragValue::new(&mut text_component.color[3])
+							.speed(0.01)
+							.range(0.0..=1.0),
+					),
+				));
+			});
+
+			self.apply_field_edit(context, field_edit, |scene| {
+				if let Ok(mut current) = scene.world_mut().get::<&mut UIText>(entity) {
+					**current = text_component;
+				}
+			});
+		});
+		self.show_component_context_menu(&response, entity, context, InspectableComponent::UIText);
+	}
 }
 
 impl Panel for InspectorPanel {

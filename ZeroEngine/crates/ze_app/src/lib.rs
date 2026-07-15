@@ -23,6 +23,7 @@ use ze_scripting_cs::{
 	SHUTDOWN_REQUESTED, ScriptingSceneLoadCommand, ScriptingSystem, drain_scripting_scene_load_commands,
 	register_scripting_components,
 };
+use ze_ui::{UISystem, register_ui_components, ui_manager::UiManagerHandle};
 
 const DEFAULT_SCENE_NAME: &str = "main";
 
@@ -41,12 +42,13 @@ pub struct App {
 	runtime: tokio::runtime::Runtime,
 	pub active_project: Option<Project>,
 	pub window: Option<Arc<Window>>,
+	scenes: HashMap<String, Scene>,
+	active_scene: String,
+	ui_manager: Option<UiManagerHandle>,
 	renderer: Option<ze_renderer::Renderer>,
 	focused: bool,
 	occluded: bool,
 	minimized: bool,
-	scenes: HashMap<String, Scene>,
-	active_scene: String,
 	last_frame_time: Instant,
 	resources: ResourceManager,
 	missing_primary_camera_dialog: MissingPrimaryCameraDialogState,
@@ -61,7 +63,7 @@ impl App {
 			|| ResourceManager::for_runtime("Sandbox/assets"),
 			|project| ResourceManager::new(project.asset_dir.clone()),
 		);
-		let scene = load_main_scene(&resources, active_project.as_ref())?;
+		let scene = load_main_scene(&resources, active_project.as_ref(), None)?;
 
 		if let Err(error) = resources.compile_game_shaders() {
 			ze_log::error!("Failed to compile game shaders: {error:?}");
@@ -84,6 +86,7 @@ impl App {
 			active_project,
 			window: None,
 			renderer: None,
+			ui_manager: None,
 			focused: true,
 			occluded: false,
 			minimized: false,
@@ -168,30 +171,40 @@ impl App {
 		self.load_and_activate_scene(&scene_name)
 	}
 
-	fn reload_active_scene(&mut self) -> Result<()> {
-		let scene_name = self.active_scene.clone();
-		self.load_and_activate_scene(&scene_name)
-	}
-
 	fn load_and_activate_scene(&mut self, scene_name: &str) -> Result<()> {
-		let scene = load_project_scene(&self.resources, self.active_project.as_ref(), scene_name)?;
+		let scene = load_project_scene(
+			&self.resources,
+			self.active_project.as_ref(),
+			scene_name,
+			self.ui_manager.clone(),
+		)?;
 		let loaded_name = scene.name.clone();
 		self.scenes.insert(loaded_name.clone(), scene);
 		self.active_scene = loaded_name;
 		self.missing_primary_camera_dialog = MissingPrimaryCameraDialogState::Hidden;
 		Ok(())
 	}
+
+	fn reload_active_scene(&mut self) -> Result<()> {
+		let scene_name = self.active_scene.clone();
+		self.load_and_activate_scene(&scene_name)
+	}
 }
 
-pub fn load_main_scene(resources: &ResourceManager, active_project: Option<&Project>) -> Result<Scene> {
+pub fn load_main_scene(
+	resources: &ResourceManager,
+	active_project: Option<&Project>,
+	ui_manager: Option<UiManagerHandle>,
+) -> Result<Scene> {
 	let scene_name = active_project.map_or(DEFAULT_SCENE_NAME, |project| project.main_scene.as_str());
-	load_project_scene(resources, active_project, scene_name)
+	load_project_scene(resources, active_project, scene_name, ui_manager)
 }
 
 pub fn load_project_scene(
 	resources: &ResourceManager,
 	active_project: Option<&Project>,
 	scene_name: &str,
+	ui_manager: Option<UiManagerHandle>,
 ) -> Result<Scene> {
 	validate_scene_name(scene_name)?;
 	let mut registry = registry::ComponentRegistry::new();
@@ -199,6 +212,7 @@ pub fn load_project_scene(
 	Scene::register_defaults(&mut registry);
 	register_renderer_components(&mut registry);
 	register_scripting_components(&mut registry);
+	register_ui_components(&mut registry);
 
 	let scene_path = resources
 		.game_assets_root()
@@ -217,6 +231,9 @@ pub fn load_project_scene(
 		);
 		Scene::from_registry(scene_name, registry)
 	};
+	let entity_count = scene
+		.world()
+		.run(|entities: ze_ecs::EntitiesView| entities.iter().count());
 
 	activate_runtime_camera(&mut scene);
 	apply_project_physics_defaults(&mut scene, active_project);
@@ -227,6 +244,9 @@ pub fn load_project_scene(
 	scene.add_system(scripting_system);
 	scene.add_system(PhysicsSystem::with_scripting(scripting_runtime));
 	scene.add_system(RenderSystem::new());
+	if let Some(handle) = ui_manager {
+		scene.add_system(UISystem::new(handle));
+	}
 	Ok(scene)
 }
 
@@ -481,14 +501,11 @@ fn exit_for_missing_primary_camera(
 
 impl ApplicationHandler<CustomEvents> for App {
 	fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-		ze_log::info!("Starting App");
-
 		let attrs = Window::default_attributes()
 			.with_title("ZeroEngine")
 			.with_inner_size(winit::dpi::LogicalSize::new(1280.0, 720.0));
 
 		// TODO: add asset manager and icon
-		ze_log::info!("Creating window");
 		let window = match event_loop.create_window(attrs) {
 			Ok(window) => Arc::new(window),
 			Err(error) => {
@@ -507,7 +524,11 @@ impl ApplicationHandler<CustomEvents> for App {
 
 		let renderer = self.runtime.block_on(ze_renderer::Renderer::new(window.clone()));
 		match renderer {
-			Ok(renderer) => {
+			Ok(mut renderer) => {
+				let ui_manager =
+					UiManagerHandle::new(ze_ui::UiManager::new(renderer.device(), renderer.queue(), &window));
+				renderer.set_ui_manager(ui_manager.clone());
+				self.ui_manager = Some(ui_manager);
 				self.renderer = Some(renderer);
 			}
 			Err(error) => {
@@ -557,6 +578,12 @@ impl ApplicationHandler<CustomEvents> for App {
 
 	fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
 		ze_log::trace!("window event");
+
+		// Forward events to yakui-winit for UI input tracking
+		if let Some(ref handle) = self.ui_manager {
+			handle.borrow_mut().handle_window_event(&event);
+		}
+
 		match event {
 			// === WINDOW STATE =============
 			WindowEvent::Resized(size) => {
@@ -682,6 +709,7 @@ mod tests {
 			active_project: None,
 			window: None,
 			renderer: None,
+			ui_manager: None,
 			focused: true,
 			occluded: false,
 			minimized: false,

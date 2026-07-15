@@ -14,4 +14,9 @@ public abstract class ZEComponent
     {
         EntityId = entityId;
     }
+
+    // Polled once per frame by ZEScript, before the owning script's OnUpdate(),
+    // so components can react to native state changes (e.g. a button click)
+    // even if the script never polls them directly.
+    internal virtual void PollEvents() { }
 }

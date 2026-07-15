@@ -335,6 +335,11 @@
                 "enabled": true,
                 "fields": {},
                 "path": "Test3Script"
+              },
+              {
+                "enabled": true,
+                "fields": {},
+                "path": "UITest"
               }
             ]
           }
@@ -364,6 +369,87 @@
               1.0,
               1.0
             ]
+          }
+        },
+        {
+          "component_type": "ze.ui.bar",
+          "value": {
+            "bg_color": [
+              0.20000000298023224,
+              0.20000000298023224,
+              0.20000000298023224,
+              1.0
+            ],
+            "color": [
+              0.0,
+              0.800000011920929,
+              0.20000000298023224,
+              1.0
+            ],
+            "current": 50.0,
+            "max": 100.0,
+            "rect": {
+              "height": 20.0,
+              "width": 200.0,
+              "x": -532.0,
+              "y": 126.0
+            },
+            "text": null,
+            "z_index": 0
+          }
+        },
+        {
+          "component_type": "ze.ui.button",
+          "value": {
+            "color": [
+              0.20000000298023224,
+              0.20000000298023224,
+              0.800000011920929,
+              1.0
+            ],
+            "font_size": 14.0,
+            "hover_color": [
+              0.30000001192092896,
+              0.30000001192092896,
+              0.8999999761581421,
+              1.0
+            ],
+            "hovered": false,
+            "pressed": false,
+            "pressed_color": [
+              0.10000000149011612,
+              0.10000000149011612,
+              0.5,
+              1.0
+            ],
+            "rect": {
+              "height": 35.0,
+              "width": 170.0,
+              "x": 132.0,
+              "y": -108.0
+            },
+            "text": "Button",
+            "z_index": 0
+          }
+        },
+        {
+          "component_type": "ze.ui.text",
+          "value": {
+            "color": [
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "font_size": 18.0,
+            "rect": {
+              "height": 20.0,
+              "width": 400.0,
+              "x": -471.0,
+              "y": -72.0
+            },
+            "text": "Text",
+            "z_index": 0
           }
         }
       ]

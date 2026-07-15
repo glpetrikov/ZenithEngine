@@ -1,3 +1,4 @@
+pub mod camera_view;
 pub mod components;
 pub mod definitions;
 pub mod entity;
@@ -6,6 +7,7 @@ pub mod scene;
 pub mod system;
 pub mod ze_entity_id;
 
+pub use camera_view::*;
 pub use components::*;
 pub use definitions::*;
 pub use entity::*;

@@ -23,6 +23,11 @@ public abstract class ZEScript
     private static string InstanceKey(ulong entityId, string classPath) => $"{entityId}:{classPath}";
     private static string? _lastBridgeError;
 
+    // Components handed out via GetComponent<T>() so they can be polled once
+    // per frame (see PollBoundComponents), e.g. to fire Button.SetOnClick
+    // callbacks without requiring the script to call IsClicked() itself.
+    private readonly List<ZEComponent> _boundComponents = new();
+
     public ulong EntityId { get; protected set; }
 
     public uint EntityIndex => (uint)(EntityId & 0xFFFFFFFF);
@@ -41,7 +46,16 @@ public abstract class ZEScript
                 $"Entity {EntityIndex}.{EntityGeneration} does not have component {typeof(T).Name}.");
         }
 
+        _boundComponents.Add(component);
         return component;
+    }
+
+    private void PollBoundComponents()
+    {
+        foreach (var component in _boundComponents)
+        {
+            component.PollEvents();
+        }
     }
 
     public virtual void OnCreate() { }
@@ -241,7 +255,9 @@ public abstract class ZEScript
         try
         {
             var classPath = Encoding.UTF8.GetString(classPathPtr, classPathLength);
-            Lookup(entityId, classPath).OnUpdate();
+            var instance = Lookup(entityId, classPath);
+            instance.PollBoundComponents();
+            instance.OnUpdate();
         }
         catch (Exception ex)
         {
@@ -473,7 +489,7 @@ public abstract class ZEScript
     }
 
     private static bool IsSupportedDefaultValueType(Type type) =>
-        type == typeof(bool) || type == typeof(int) || type == typeof(float) || type == typeof(string)
+        type == typeof(bool) || type == typeof(int) || type == typeof(uint) || type == typeof(float) || type == typeof(string)
         || type == typeof(Vector2) || type == typeof(Vector3);
 
     private static ZEScript CreateDefaultValueInstance(Type scriptType)
@@ -501,6 +517,11 @@ public abstract class ZEScript
             if (field.FieldType == typeof(int) && value is int intValue)
             {
                 return new ScriptFieldDefaultValuePayload { Kind = "int", Value = intValue };
+            }
+
+            if (field.FieldType == typeof(uint) && value is uint uintValue)
+            {
+                return new ScriptFieldDefaultValuePayload { Kind = "uint", Value = uintValue };
             }
 
             if (field.FieldType == typeof(float) && value is float floatValue)
@@ -619,6 +640,9 @@ public abstract class ZEScript
                     return true;
                 case "int" when fieldType == typeof(int):
                     value = payload.Value.GetInt32();
+                    return true;
+                case "uint" when fieldType == typeof(uint):
+                    value = payload.Value.GetUInt32();
                     return true;
                 case "float" when fieldType == typeof(float):
                     value = payload.Value.GetSingle();

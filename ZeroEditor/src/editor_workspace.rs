@@ -604,7 +604,6 @@ impl EditorWorkspace {
 							egui::Color32::WHITE,
 						);
 						if close_resp.clicked() {
-							ze_log::info!("Close requested");
 							self.close_requested = true;
 						}
 						self.titlebar_interactive_rects.push(close_resp.rect);

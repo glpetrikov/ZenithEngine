@@ -15,6 +15,7 @@ members = [
     "ZeroEngine/crates/ze_scripting_cs",
     "ZeroEngine/crates/zepack",
     "ZeroEngine/crates/ze_ecs",
+    "ZeroEngine/crates/ze_ui",
     "ZeroEngine/crates/zeroengine",
 ]
 resolver = "3"
