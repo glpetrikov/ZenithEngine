@@ -1,45 +1,61 @@
 name: CI
-
 on:
   push:
     branches: ["**"]
   pull_request:
     branches: [main]
-
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  rust:
+  fmt:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v5
-
-      - name: Install dependencies
-        run: sudo apt-get install -y libdrm-dev
-
-      - name: Install Rust stable
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup component add clippy rustfmt
-
       - name: Install Rust nightly (minimal profile)
         run: |
           rustup toolchain install nightly --profile minimal
           rustup component add rustfmt --toolchain nightly
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-
       - name: Format check (nightly)
         run: cargo +nightly fmt --all -- --check
 
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install dependencies
+        run: sudo apt-get install -y libdrm-dev
+      - name: Install Rust stable
+        run: rustup toolchain install stable --profile minimal
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
       - name: Check
         run: cargo check --workspace --all-targets
 
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install dependencies
+        run: sudo apt-get install -y libdrm-dev
+      - name: Install Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup component add clippy
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install dependencies
+        run: sudo apt-get install -y libdrm-dev
+      - name: Install Rust stable
+        run: rustup toolchain install stable --profile minimal
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
       - name: Test
         run: cargo test --workspace

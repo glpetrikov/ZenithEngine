@@ -92,7 +92,7 @@ fn resolve_screen_pos(scene: &Scene, camera: Option<&ActiveCameraView>, entity: 
 /// a hand-edited scene file) produces a negative `Constraints::tight` size.
 /// yakui's layout isn't guaranteed to handle that gracefully, so clamp at
 /// the source rather than let malformed data reach yakui at all.
-fn ui_rect_size(rect: &UIRect) -> Vec2 { Vec2::new(rect.width.max(0.0), rect.height.max(0.0)) }
+const fn ui_rect_size(rect: &UIRect) -> Vec2 { Vec2::new(rect.width.max(0.0), rect.height.max(0.0)) }
 
 pub struct UISystem {
 	ui_manager: Option<UiManagerHandle>,
@@ -119,6 +119,7 @@ impl UISystem {
 impl System for UISystem {
 	fn name(&self) -> &'static str { "UISystem" }
 
+	#[allow(clippy::too_many_lines)]
 	fn update(&mut self, scene: &mut Scene, _dt: f32) -> Result<()> {
 		let Some(ref handle) = self.ui_manager else {
 			return Ok(());
@@ -126,8 +127,11 @@ impl System for UISystem {
 
 		let mut manager = handle.borrow_mut();
 
-		let active_camera: Option<ActiveCameraView> =
-			scene.world().borrow::<UniqueView<ActiveCameraView>>().ok().map(|view| *view);
+		let active_camera: Option<ActiveCameraView> = scene
+			.world()
+			.borrow::<UniqueView<ActiveCameraView>>()
+			.ok()
+			.map(|view| *view);
 
 		// Pass 1: snapshot component data
 		let button_snapshots: Vec<ButtonSnapshot> = {
@@ -264,8 +268,8 @@ impl System for UISystem {
 				}
 				UiElement::Text(snap) => {
 					text_entities.push(snap.entity);
-					let font_size_changed = self.text_font_size_cache.insert(snap.entity, snap.font_size)
-						!= Some(snap.font_size);
+					let font_size_changed =
+						self.text_font_size_cache.insert(snap.entity, snap.font_size) != Some(snap.font_size);
 					let text = if font_size_changed {
 						// Zero-width space: invisible, but makes the text prop
 						// differ from last frame's so yakui's cached widget
@@ -290,7 +294,8 @@ impl System for UISystem {
 			}
 		}
 
-		self.text_font_size_cache.retain(|entity, _| text_entities.contains(entity));
+		self.text_font_size_cache
+			.retain(|entity, _| text_entities.contains(entity));
 
 		manager.yak.finish();
 

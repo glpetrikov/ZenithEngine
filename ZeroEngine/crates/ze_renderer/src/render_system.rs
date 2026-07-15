@@ -80,7 +80,7 @@ impl RenderSystem {
 			viewport_size: Vec2::new(viewport_size.width as f32, viewport_size.height as f32),
 		});
 
-		let prev_count = self.items.len();
+		let _prev_count = self.items.len();
 		self.items = Self::collect_items(scene);
 
 		self.debug_lines = Self::collect_debug_lines(scene);

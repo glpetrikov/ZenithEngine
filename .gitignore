@@ -7,3 +7,5 @@ target
 trace.json
 
 ZeroEngine.zip
+
+.claude/settings.local.json

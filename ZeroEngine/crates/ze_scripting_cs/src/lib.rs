@@ -1773,19 +1773,17 @@ fn apply_scripting_scene_commands(scene: &mut Scene) {
 					}
 				}
 			}
-			ScriptingSceneCommand::SetBarLabel { entity, text } => {
-				match scene.world_mut().get::<&mut UIBar>(entity) {
-					Ok(mut bar) => {
-						bar.text = if text.is_empty() { None } else { Some(text) };
-					}
-					Err(error) => {
-						ze_log::warn!(
-							"failed to apply bar label command for entity {}: {error:?}",
-							entity.index()
-						);
-					}
+			ScriptingSceneCommand::SetBarLabel { entity, text } => match scene.world_mut().get::<&mut UIBar>(entity) {
+				Ok(mut bar) => {
+					bar.text = if text.is_empty() { None } else { Some(text) };
 				}
-			}
+				Err(error) => {
+					ze_log::warn!(
+						"failed to apply bar label command for entity {}: {error:?}",
+						entity.index()
+					);
+				}
+			},
 			ScriptingSceneCommand::SetButtonPressedColor { entity, r, g, b, a } => {
 				match scene.world_mut().get::<&mut UIButton>(entity) {
 					Ok(mut button) => {
@@ -1812,19 +1810,17 @@ fn apply_scripting_scene_commands(scene: &mut Scene) {
 					}
 				}
 			}
-			ScriptingSceneCommand::SetTextText { entity, text } => {
-				match scene.world_mut().get::<&mut UIText>(entity) {
-					Ok(mut ui_text) => {
-						ui_text.text = text;
-					}
-					Err(error) => {
-						ze_log::warn!(
-							"failed to apply text content command for entity {}: {error:?}",
-							entity.index()
-						);
-					}
+			ScriptingSceneCommand::SetTextText { entity, text } => match scene.world_mut().get::<&mut UIText>(entity) {
+				Ok(mut ui_text) => {
+					ui_text.text = text;
 				}
-			}
+				Err(error) => {
+					ze_log::warn!(
+						"failed to apply text content command for entity {}: {error:?}",
+						entity.index()
+					);
+				}
+			},
 			ScriptingSceneCommand::SetTextFontSize { entity, font_size } => {
 				match scene.world_mut().get::<&mut UIText>(entity) {
 					Ok(mut ui_text) => {

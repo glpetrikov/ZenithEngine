@@ -1675,13 +1675,13 @@ fn project_scene_path_if_loaded(project: Option<&Project>, scene_name: &str) -> 
 }
 
 fn ensure_editor_runtime_entities(scene: &mut Scene, project: Option<&Project>) {
-	let before = scene
+	let _before = scene
 		.world()
 		.run(|entities: ze_ecs::EntitiesView| entities.iter().count());
 	ensure_editor_camera(scene);
 	ensure_editor_physics_settings(scene, project);
 	editor_workspace::switch_viewport_camera(scene, editor_workspace::EditorMode::Edit);
-	let after = scene
+	let _after = scene
 		.world()
 		.run(|entities: ze_ecs::EntitiesView| entities.iter().count());
 }

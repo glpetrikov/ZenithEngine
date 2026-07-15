@@ -231,7 +231,7 @@ pub fn load_project_scene(
 		);
 		Scene::from_registry(scene_name, registry)
 	};
-	let entity_count = scene
+	let _entity_count = scene
 		.world()
 		.run(|entities: ze_ecs::EntitiesView| entities.iter().count());
 

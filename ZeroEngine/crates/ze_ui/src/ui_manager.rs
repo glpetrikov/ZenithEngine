@@ -46,7 +46,8 @@ impl UiManager {
 	pub fn set_viewport_size(&mut self, width: f32, height: f32) {
 		let size = yakui::Vec2::new(width, height);
 		self.yak.set_surface_size(size);
-		self.yak.set_unscaled_viewport(yakui::Rect::from_pos_size(yakui::Vec2::ZERO, size));
+		self.yak
+			.set_unscaled_viewport(yakui::Rect::from_pos_size(yakui::Vec2::ZERO, size));
 	}
 
 	pub fn paint(
