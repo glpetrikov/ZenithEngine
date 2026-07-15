@@ -6,11 +6,14 @@ use std::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use shipyard::{Component, EntitiesView, EntityId, World};
-use ze_core::{Result, anyhow};
+use ze_core::{Result, Vec3, anyhow};
 
 use crate::{
-	components::{Collider, Inactive, Name, PhysicsSettings, RigidBody, Tag, Transform},
-	definitions::SaveFile,
+	components::{
+		Children, Collider, EditorOnly, Inactive, Name, Parent, PhysicsSettings, RigidBody, Tag, Transform,
+		TransformInheritance,
+	},
+	definitions::{SaveFile, SceneType},
 	entity::Entity,
 	registry::ComponentRegistry,
 	system::System,
@@ -18,11 +21,11 @@ use crate::{
 
 pub const SCENE_VERSION: &str = "0.1.0";
 pub const SCENE_EXTENSION: &str = "zescene.json";
-pub const SCENE_SCHEMA_FILE: &str = "zescene.schema.json";
-pub const SCENE_SCHEMA_REF: &str = "../schemas/zescene.schema.json";
 
 pub struct Scene {
 	pub name: String,
+	pub display_name: String,
+	pub scene_type: SceneType,
 	pub(crate) world: World,
 	pub(crate) registry: ComponentRegistry,
 	systems: Vec<Box<dyn System>>,
@@ -35,6 +38,8 @@ impl Scene {
 
 		Self {
 			name: name.to_string(),
+			display_name: name.to_string(),
+			scene_type: SceneType::Scene,
 			world: World::new(),
 			registry,
 			systems: Vec::new(),
@@ -44,6 +49,8 @@ impl Scene {
 	pub fn from_registry(name: &str, registry: ComponentRegistry) -> Self {
 		Self {
 			name: name.to_string(),
+			display_name: name.to_string(),
+			scene_type: SceneType::Scene,
 			world: World::new(),
 			registry,
 			systems: Vec::new(),
@@ -59,6 +66,8 @@ impl Scene {
 	pub const fn registry(&self) -> &ComponentRegistry { &self.registry }
 
 	pub const fn registry_mut(&mut self) -> &mut ComponentRegistry { &mut self.registry }
+
+	pub fn clear_world(&mut self) { self.world = World::new(); }
 }
 
 impl Scene {
@@ -78,6 +87,26 @@ impl Scene {
 				result = Err(error);
 				break;
 			}
+		}
+
+		self.systems = systems;
+		result
+	}
+
+	pub fn update_system<T>(&mut self, dt: f32) -> Result<bool>
+	where
+		T: System + 'static,
+	{
+		let mut systems = std::mem::take(&mut self.systems);
+		let mut result = Ok(false);
+
+		for system in &mut systems {
+			let Some(system) = system.as_any_mut().downcast_mut::<T>() else {
+				continue;
+			};
+
+			result = system.update(self, dt).map(|()| true);
+			break;
 		}
 
 		self.systems = systems;
@@ -117,7 +146,11 @@ impl Scene {
 	pub fn register_defaults(registry: &mut ComponentRegistry) {
 		registry.register::<Name>("ze.name");
 		registry.register::<Tag>("ze.tag");
+		registry.register::<Parent>("ze.parent");
+		registry.register::<TransformInheritance>("ze.transform_inheritance");
+		registry.register::<Children>("ze.children");
 		registry.register::<Inactive>("ze.inactive");
+		registry.register::<EditorOnly>("ze.editor.only");
 		registry.register::<Transform>("ze.transform");
 		registry.register::<RigidBody>("ze.physics_2d.rigidbody");
 		registry.register::<Collider>("ze.physics_2d.collider");
@@ -130,7 +163,95 @@ impl Scene {
 		self.world.add_entity((Name { name: name.to_string() },))
 	}
 
-	pub fn destroy_entity(&mut self, entity: EntityId) { self.world.delete_entity(entity); }
+	pub fn destroy_entity(&mut self, entity: EntityId) {
+		let mut entities = self.entity_tree_for_delete(entity);
+		entities.reverse();
+		for entity in entities {
+			self.cleanup_entity_links_for_delete(entity);
+			self.world.delete_entity(entity);
+		}
+	}
+
+	pub fn descendant_entities(&self, root: EntityId) -> Vec<EntityId> {
+		let mut entities = vec![root];
+		let mut index = 0usize;
+
+		while let Some(parent) = entities.get(index).copied() {
+			index += 1;
+			for child in self.children_of(parent) {
+				if !entities.contains(&child) {
+					entities.push(child);
+				}
+			}
+		}
+
+		entities
+	}
+
+	fn entity_tree_for_delete(&self, root: EntityId) -> Vec<EntityId> { self.descendant_entities(root) }
+
+	fn children_of(&self, parent: EntityId) -> Vec<EntityId> {
+		let mut children = Vec::new();
+
+		if let Ok(component) = self.world.get::<&Children>(parent) {
+			for id in &component.ids {
+				let child = EntityId::from(*id);
+				if !children.contains(&child) {
+					children.push(child);
+				}
+			}
+		}
+
+		let all_entities = self
+			.world
+			.run(|entities: EntitiesView| entities.iter().collect::<Vec<_>>());
+		for candidate in all_entities {
+			let is_child = self
+				.world
+				.get::<&Parent>(candidate)
+				.is_ok_and(|component| EntityId::from(component.id) == parent);
+			if is_child && !children.contains(&candidate) {
+				children.push(candidate);
+			}
+		}
+
+		children
+	}
+
+	fn cleanup_entity_links_for_delete(&mut self, entity: EntityId) {
+		let all_entities = self
+			.world
+			.run(|entities: EntitiesView| entities.iter().collect::<Vec<_>>());
+
+		for candidate in all_entities.iter().copied() {
+			if candidate == entity {
+				continue;
+			}
+
+			let parent_points_to_deleted = self
+				.world
+				.get::<&Parent>(candidate)
+				.is_ok_and(|component| EntityId::from(component.id) == entity);
+			if parent_points_to_deleted {
+				let _ = self.world.remove::<(Parent,)>(candidate);
+			}
+
+			self.remove_child_reference(candidate, entity);
+		}
+	}
+
+	fn remove_child_reference(&mut self, parent: EntityId, child: EntityId) {
+		let remove_children_component = if let Ok(mut children_component) = self.world.get::<&mut Children>(parent) {
+			children_component.ids.retain(|id| EntityId::from(*id) != child);
+			children_component.ids.is_empty()
+		} else {
+			false
+		};
+
+		if remove_children_component {
+			let _ = self.world.remove::<(Children,)>(parent);
+		}
+	}
 
 	pub const fn entity_mut(&mut self, entity: EntityId) -> Entity<'_> { Entity::new(entity, self) }
 
@@ -140,9 +261,65 @@ impl Scene {
 	{
 		self.world.add_component(entity, (component,));
 	}
+
+	pub fn world_transform(&self, entity: EntityId) -> Option<Transform> {
+		let mut visited = Vec::new();
+		self.world_transform_inner(entity, &mut visited)
+	}
+
+	pub fn set_world_transform(&mut self, entity: EntityId, world_transform: Transform) -> Result<()> {
+		let local_transform = self
+			.local_transform_from_world(entity, world_transform)
+			.ok_or_else(|| anyhow!("failed to resolve local transform for entity {}", entity.index()))?;
+
+		let mut current = self.world.get::<&mut Transform>(entity)?;
+		**current = local_transform;
+		Ok(())
+	}
 }
 
 impl Scene {
+	pub fn snapshot(&self) -> SaveFile {
+		self.world.run(|entities: EntitiesView| SaveFile {
+			version: SCENE_VERSION.to_string(),
+			name: self.display_name.clone(),
+			scene_type: self.scene_type,
+			entities: entities
+				.iter()
+				.map(|entity| self.registry.save_entity(entity, &self.world))
+				.collect(),
+		})
+	}
+
+	pub fn restore_snapshot(&mut self, snapshot: SaveFile) -> Result<()> {
+		self.display_name = if snapshot.name.is_empty() {
+			self.name.clone()
+		} else {
+			snapshot.name.clone()
+		};
+		self.scene_type = snapshot.scene_type;
+		self.clear_world();
+		let mut world = World::new();
+
+		for saved_entity in &snapshot.entities {
+			let entity = EntityId::from(saved_entity.id);
+			world.spawn(entity);
+		}
+
+		for saved_entity in snapshot.entities {
+			let entity = EntityId::from(saved_entity.id);
+
+			for component in saved_entity.components {
+				self.registry
+					.load_component(entity, &mut world, component)
+					.map_err(|err| anyhow!("Cannot restore scene snapshot: {err:?}"))?;
+			}
+		}
+
+		self.world = world;
+		Ok(())
+	}
+
 	pub fn from_name(directory: PathBuf, name: &str) -> Result<Self> {
 		let mut registry = ComponentRegistry::new();
 		Self::register_defaults(&mut registry);
@@ -177,6 +354,12 @@ impl Scene {
 			.and_then(|name| name.strip_suffix(".zescene.json"))
 			.unwrap_or("")
 			.to_string();
+		let display_name = if save_file.name.is_empty() {
+			name.clone()
+		} else {
+			save_file.name.clone()
+		};
+		let scene_type = save_file.scene_type;
 
 		let mut world = World::new();
 
@@ -197,6 +380,8 @@ impl Scene {
 
 		Ok(Self {
 			name,
+			display_name,
+			scene_type,
 			world,
 			registry,
 			systems: Vec::new(),
@@ -208,28 +393,8 @@ impl Scene {
 
 		let path = scene_path(directory, file_name);
 
-		let save_file = self.world.run(|entities: EntitiesView| SaveFile {
-			schema: SCENE_SCHEMA_REF.to_string(),
-			version: SCENE_VERSION.to_string(),
-			entities: entities
-				.iter()
-				.map(|entity| self.registry.save_entity(entity, &self.world))
-				.collect(),
-		});
-
+		let save_file = self.snapshot();
 		let json = serde_json::to_string_pretty(&save_file)?;
-		fs::write(path, json)?;
-
-		Ok(())
-	}
-
-	pub fn write_schema(directory: PathBuf) -> Result<()> {
-		fs::create_dir_all(&directory)?;
-
-		let path = schema_path(directory);
-		let schema = Self::schema_value();
-		let json = serde_json::to_string_pretty(&schema)?;
-
 		fs::write(path, json)?;
 
 		Ok(())
@@ -240,8 +405,218 @@ impl Scene {
 	}
 }
 
+impl Scene {
+	fn world_transform_inner(&self, entity: EntityId, visited: &mut Vec<EntityId>) -> Option<Transform> {
+		if visited.contains(&entity) {
+			return None;
+		}
+		visited.push(entity);
+
+		let local = self.world.get::<&Transform>(entity).ok()?.clone();
+		let Some(parent) = self.parent_entity(entity) else {
+			visited.pop();
+			return Some(local);
+		};
+
+		let parent_world = self.world_transform_inner(parent, visited)?;
+		visited.pop();
+		Some(compose_transform(&parent_world, &local, inheritance_for(self, entity)))
+	}
+
+	fn local_transform_from_world(&self, entity: EntityId, world: Transform) -> Option<Transform> {
+		let Some(parent) = self.parent_entity(entity) else {
+			return Some(world);
+		};
+
+		let parent_world = self.world_transform(parent)?;
+		let inheritance = inheritance_for(self, entity);
+		Some(decompose_transform(&parent_world, &world, inheritance))
+	}
+
+	fn parent_entity(&self, entity: EntityId) -> Option<EntityId> {
+		let parent = self.world.get::<&Parent>(entity).ok()?;
+		let parent = EntityId::from(parent.id);
+		self.world.get::<&Transform>(parent).ok()?;
+		Some(parent)
+	}
+}
+
 fn scene_path(directory: impl AsRef<Path>, name: &str) -> PathBuf {
 	directory.as_ref().join(format!("{name}.zescene.json"))
 }
 
-fn schema_path(directory: impl AsRef<Path>) -> PathBuf { directory.as_ref().join("zescene.schema.json") }
+fn inheritance_for(scene: &Scene, entity: EntityId) -> TransformInheritance {
+	scene
+		.world()
+		.get::<&TransformInheritance>(entity)
+		.ok()
+		.map(|inheritance| **inheritance)
+		.unwrap_or_default()
+}
+
+fn compose_transform(parent_world: &Transform, local: &Transform, inheritance: TransformInheritance) -> Transform {
+	let mut position = local.position;
+	if inheritance.inherit_scale {
+		position *= parent_world.scale;
+	}
+	if inheritance.inherit_rotation {
+		position = parent_world.rotation * position;
+	}
+	if inheritance.inherit_position {
+		position += parent_world.position;
+	}
+
+	let rotation = if inheritance.inherit_rotation {
+		parent_world.rotation * local.rotation
+	} else {
+		local.rotation
+	};
+
+	let scale = if inheritance.inherit_scale {
+		parent_world.scale * local.scale
+	} else {
+		local.scale
+	};
+
+	Transform {
+		position,
+		scale,
+		rotation,
+	}
+}
+
+fn decompose_transform(parent_world: &Transform, world: &Transform, inheritance: TransformInheritance) -> Transform {
+	let mut position = world.position;
+	if inheritance.inherit_position {
+		position -= parent_world.position;
+	}
+	if inheritance.inherit_rotation {
+		position = parent_world.rotation.conjugate() * position;
+	}
+	if inheritance.inherit_scale {
+		position *= safe_inverse_scale(parent_world.scale);
+	}
+
+	let rotation = if inheritance.inherit_rotation {
+		parent_world.rotation.conjugate() * world.rotation
+	} else {
+		world.rotation
+	};
+
+	let scale = if inheritance.inherit_scale {
+		world.scale * safe_inverse_scale(parent_world.scale)
+	} else {
+		world.scale
+	};
+
+	Transform {
+		position,
+		scale,
+		rotation,
+	}
+}
+
+fn safe_inverse_scale(scale: Vec3) -> Vec3 {
+	Vec3::new(
+		1.0 / scale.x.abs().max(f32::EPSILON).copysign(scale.x),
+		1.0 / scale.y.abs().max(f32::EPSILON).copysign(scale.y),
+		1.0 / scale.z.abs().max(f32::EPSILON).copysign(scale.z),
+	)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::ze_entity_id::ZeEntityId;
+
+	fn parent_child_scene() -> (Scene, EntityId, EntityId) {
+		let mut scene = Scene::new("Parent Child Test");
+		let parent = scene.create_entity("Parent");
+		let child = scene.create_entity("Child");
+
+		scene.world_mut().add_component(
+			child,
+			(Parent {
+				id: ZeEntityId::from(parent),
+			},),
+		);
+		scene.world_mut().add_component(
+			parent,
+			(Children {
+				ids: vec![ZeEntityId::from(child)],
+			},),
+		);
+
+		(scene, parent, child)
+	}
+
+	#[test]
+	fn deleting_parent_deletes_child() {
+		let (mut scene, parent, child) = parent_child_scene();
+
+		scene.destroy_entity(parent);
+
+		assert!(scene.world().get::<&Name>(parent).is_err());
+		assert!(scene.world().get::<&Name>(child).is_err());
+	}
+
+	#[test]
+	fn deleting_parent_deletes_descendants() {
+		let (mut scene, parent, child) = parent_child_scene();
+		let grandchild = scene.create_entity("Grandchild");
+		scene.world_mut().add_component(
+			grandchild,
+			(Parent {
+				id: ZeEntityId::from(child),
+			},),
+		);
+		scene.world_mut().add_component(
+			child,
+			(Children {
+				ids: vec![ZeEntityId::from(grandchild)],
+			},),
+		);
+
+		scene.destroy_entity(parent);
+
+		assert!(scene.world().get::<&Name>(parent).is_err());
+		assert!(scene.world().get::<&Name>(child).is_err());
+		assert!(scene.world().get::<&Name>(grandchild).is_err());
+	}
+
+	#[test]
+	fn deleting_child_removes_parent_children_link() {
+		let (mut scene, parent, child) = parent_child_scene();
+
+		scene.destroy_entity(child);
+
+		assert!(scene.world().get::<&Children>(parent).is_err());
+	}
+
+	#[test]
+	fn snapshot_includes_scene_metadata() {
+		let mut scene = Scene::new("internal_name");
+		scene.display_name = "Display Name".to_string();
+		scene.scene_type = SceneType::Prefab;
+
+		let snapshot = scene.snapshot();
+
+		assert_eq!(snapshot.name, "Display Name");
+		assert_eq!(snapshot.scene_type, SceneType::Prefab);
+	}
+
+	#[test]
+	fn legacy_snapshot_defaults_scene_metadata() {
+		let snapshot = serde_json::json!({
+			"version": SCENE_VERSION,
+			"entities": []
+		});
+
+		let schema = Scene::schema_value();
+		jsonschema::validate(&schema, &snapshot).expect("legacy scene metadata should be optional in schema");
+		let save_file: SaveFile = serde_json::from_value(snapshot).expect("legacy scene metadata should be optional");
+
+		assert_eq!(save_file.name, "");
+		assert_eq!(save_file.scene_type, SceneType::Scene);
+	}
+}

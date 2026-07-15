@@ -1,9 +1,11 @@
 [workspace]
 members = [
-    "ZeroEngine/",
+    "ZeroEngine",
+    "ZeroEditor",
     "ZeroEngine/cli/zepack",
     "ZeroEngine/crates/ze_app",
     "ZeroEngine/crates/ze_assets",
+    "ZeroEngine/crates/ze_project",
     "ZeroEngine/crates/ze_build",
     "ZeroEngine/crates/ze_core",
     "ZeroEngine/crates/ze_input",
@@ -13,6 +15,7 @@ members = [
     "ZeroEngine/crates/ze_scripting_cs",
     "ZeroEngine/crates/zepack",
     "ZeroEngine/crates/ze_ecs",
+    "ZeroEngine/crates/ze_ui",
     "ZeroEngine/crates/zeroengine",
 ]
 resolver = "3"

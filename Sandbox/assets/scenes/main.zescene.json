@@ -1,0 +1,836 @@
+{
+  "version": "0.1.0",
+  "name": "main",
+  "scene_type": "Scene",
+  "entities": [
+    {
+      "id": {
+        "index": 2,
+        "gen": 0
+      },
+      "components": [
+        {
+          "component_type": "ze.name",
+          "value": {
+            "name": "Square"
+          }
+        },
+        {
+          "component_type": "ze.physics_2d.collider",
+          "value": {
+            "density": 1.0,
+            "friction": 0.5,
+            "is_sensor": false,
+            "restitution": 0.0,
+            "shape": {
+              "Box": {
+                "half_extents": [
+                  0.5,
+                  0.5
+                ]
+              }
+            }
+          }
+        },
+        {
+          "component_type": "ze.physics_2d.rigidbody",
+          "value": {
+            "angular_damping": 0.0,
+            "body_type": "Dynamic",
+            "collision_detection": "Discrete",
+            "freeze_position_x": false,
+            "freeze_position_y": false,
+            "freeze_rotation_x": false,
+            "freeze_rotation_y": false,
+            "freeze_rotation_z": false,
+            "gravity_scale": 1.0,
+            "linear_damping": 0.05000000074505806,
+            "mass": null,
+            "use_gravity": true
+          }
+        },
+        {
+          "component_type": "ze.renderer.sprite",
+          "value": {
+            "color": {
+              "mode": "None",
+              "saturation_threshold": 0.15000000596046448,
+              "strength": 1.0,
+              "tint": null
+            },
+            "settings": {
+              "flip_x": false,
+              "flip_y": false,
+              "layer": 1,
+              "texture_rotation_degrees": 0.0,
+              "visible": true
+            },
+            "size": "Auto",
+            "texture": {
+              "path": "textures/square.png",
+              "source": "Game"
+            }
+          }
+        },
+        {
+          "component_type": "ze.tag",
+          "value": {
+            "tag": "Square"
+          }
+        },
+        {
+          "component_type": "ze.transform",
+          "value": {
+            "position": [
+              -2.9594461917877197,
+              0.9650135040283203,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.3826834559440613,
+              0.9238795042037964
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": {
+        "index": 3,
+        "gen": 0
+      },
+      "components": [
+        {
+          "component_type": "ze.inactive",
+          "value": null
+        },
+        {
+          "component_type": "ze.name",
+          "value": {
+            "name": "Triangle"
+          }
+        },
+        {
+          "component_type": "ze.parent",
+          "value": {
+            "id": [
+              5,
+              0
+            ]
+          }
+        },
+        {
+          "component_type": "ze.physics_2d.collider",
+          "value": {
+            "density": 1.0,
+            "friction": 0.5,
+            "is_sensor": false,
+            "restitution": 0.0,
+            "shape": {
+              "ConvexPolygon": {
+                "points": [
+                  [
+                    -0.5,
+                    -0.5
+                  ],
+                  [
+                    0.5,
+                    -0.5
+                  ],
+                  [
+                    0.0,
+                    0.5
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        {
+          "component_type": "ze.physics_2d.rigidbody",
+          "value": {
+            "angular_damping": 0.0,
+            "body_type": "Static",
+            "collision_detection": "Discrete",
+            "freeze_position_x": false,
+            "freeze_position_y": false,
+            "freeze_rotation_x": false,
+            "freeze_rotation_y": false,
+            "freeze_rotation_z": false,
+            "gravity_scale": 1.0,
+            "linear_damping": 0.05000000074505806,
+            "mass": null,
+            "use_gravity": true
+          }
+        },
+        {
+          "component_type": "ze.renderer.sprite",
+          "value": {
+            "color": {
+              "mode": "None",
+              "saturation_threshold": 0.15000000596046448,
+              "strength": 1.0,
+              "tint": null
+            },
+            "settings": {
+              "flip_x": false,
+              "flip_y": false,
+              "layer": 1,
+              "texture_rotation_degrees": 0.0,
+              "visible": true
+            },
+            "size": "Auto",
+            "texture": {
+              "path": "textures/triangle.png",
+              "source": "Game"
+            }
+          }
+        },
+        {
+          "component_type": "ze.tag",
+          "value": {
+            "tag": "Triangle"
+          }
+        },
+        {
+          "component_type": "ze.transform",
+          "value": {
+            "position": [
+              -1.0,
+              -0.8500000238418579,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "component_type": "ze.transform_inheritance",
+          "value": {
+            "inherit_position": false,
+            "inherit_rotation": false,
+            "inherit_scale": false
+          }
+        }
+      ]
+    },
+    {
+      "id": {
+        "index": 4,
+        "gen": 0
+      },
+      "components": [
+        {
+          "component_type": "ze.children",
+          "value": {
+            "ids": [
+              [
+                7,
+                0
+              ]
+            ]
+          }
+        },
+        {
+          "component_type": "ze.name",
+          "value": {
+            "name": "Circle"
+          }
+        },
+        {
+          "component_type": "ze.physics_2d.collider",
+          "value": {
+            "density": 1.0,
+            "friction": 0.5,
+            "is_sensor": false,
+            "restitution": 0.0,
+            "shape": {
+              "Circle": {
+                "radius": 0.5
+              }
+            }
+          }
+        },
+        {
+          "component_type": "ze.physics_2d.rigidbody",
+          "value": {
+            "angular_damping": 0.0,
+            "body_type": "Dynamic",
+            "collision_detection": "Discrete",
+            "freeze_position_x": false,
+            "freeze_position_y": false,
+            "freeze_rotation_x": false,
+            "freeze_rotation_y": false,
+            "freeze_rotation_z": false,
+            "gravity_scale": 1.0,
+            "linear_damping": 0.05000000074505806,
+            "mass": null,
+            "use_gravity": true
+          }
+        },
+        {
+          "component_type": "ze.renderer.sprite",
+          "value": {
+            "color": {
+              "mode": "None",
+              "saturation_threshold": 0.15000000596046448,
+              "strength": 1.0,
+              "tint": null
+            },
+            "settings": {
+              "flip_x": false,
+              "flip_y": false,
+              "layer": 1,
+              "texture_rotation_degrees": 0.0,
+              "visible": true
+            },
+            "size": "Auto",
+            "texture": {
+              "path": "textures/circle.png",
+              "source": "Game"
+            }
+          }
+        },
+        {
+          "component_type": "ze.scripting.scripts",
+          "value": {
+            "list": [
+              {
+                "enabled": true,
+                "fields": {
+                  "speed": {
+                    "kind": "float",
+                    "value": 2.0
+                  }
+                },
+                "path": "Script"
+              },
+              {
+                "enabled": true,
+                "fields": {},
+                "path": "Test"
+              },
+              {
+                "enabled": true,
+                "fields": {},
+                "path": "ScriptTest"
+              },
+              {
+                "enabled": true,
+                "fields": {},
+                "path": "Test3Script"
+              },
+              {
+                "enabled": true,
+                "fields": {},
+                "path": "UITest"
+              }
+            ]
+          }
+        },
+        {
+          "component_type": "ze.tag",
+          "value": {
+            "tag": "TestTag"
+          }
+        },
+        {
+          "component_type": "ze.transform",
+          "value": {
+            "position": [
+              0.0,
+              0.12927734851837158,
+              0.0
+            ],
+            "rotation": [
+              -0.0,
+              -0.0,
+              -0.0,
+              1.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "component_type": "ze.ui.bar",
+          "value": {
+            "bg_color": [
+              0.20000000298023224,
+              0.20000000298023224,
+              0.20000000298023224,
+              1.0
+            ],
+            "color": [
+              0.0,
+              0.800000011920929,
+              0.20000000298023224,
+              1.0
+            ],
+            "current": 50.0,
+            "max": 100.0,
+            "rect": {
+              "height": 20.0,
+              "width": 200.0,
+              "x": -532.0,
+              "y": 126.0
+            },
+            "text": null,
+            "z_index": 0
+          }
+        },
+        {
+          "component_type": "ze.ui.button",
+          "value": {
+            "color": [
+              0.20000000298023224,
+              0.20000000298023224,
+              0.800000011920929,
+              1.0
+            ],
+            "font_size": 14.0,
+            "hover_color": [
+              0.30000001192092896,
+              0.30000001192092896,
+              0.8999999761581421,
+              1.0
+            ],
+            "hovered": false,
+            "pressed": false,
+            "pressed_color": [
+              0.10000000149011612,
+              0.10000000149011612,
+              0.5,
+              1.0
+            ],
+            "rect": {
+              "height": 35.0,
+              "width": 170.0,
+              "x": 132.0,
+              "y": -108.0
+            },
+            "text": "Button",
+            "z_index": 0
+          }
+        },
+        {
+          "component_type": "ze.ui.text",
+          "value": {
+            "color": [
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "font_size": 18.0,
+            "rect": {
+              "height": 20.0,
+              "width": 400.0,
+              "x": -471.0,
+              "y": -72.0
+            },
+            "text": "Text",
+            "z_index": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": {
+        "index": 5,
+        "gen": 0
+      },
+      "components": [
+        {
+          "component_type": "ze.children",
+          "value": {
+            "ids": [
+              [
+                6,
+                0
+              ],
+              [
+                3,
+                0
+              ]
+            ]
+          }
+        },
+        {
+          "component_type": "ze.name",
+          "value": {
+            "name": "Ground"
+          }
+        },
+        {
+          "component_type": "ze.physics_2d.collider",
+          "value": {
+            "density": 1.0,
+            "friction": 0.5,
+            "is_sensor": false,
+            "restitution": 0.0,
+            "shape": {
+              "Box": {
+                "half_extents": [
+                  0.5,
+                  0.5
+                ]
+              }
+            }
+          }
+        },
+        {
+          "component_type": "ze.physics_2d.rigidbody",
+          "value": {
+            "angular_damping": 0.0,
+            "body_type": "Static",
+            "collision_detection": "Discrete",
+            "freeze_position_x": false,
+            "freeze_position_y": false,
+            "freeze_rotation_x": false,
+            "freeze_rotation_y": false,
+            "freeze_rotation_z": false,
+            "gravity_scale": 1.0,
+            "linear_damping": 0.05000000074505806,
+            "mass": null,
+            "use_gravity": true
+          }
+        },
+        {
+          "component_type": "ze.renderer.sprite",
+          "value": {
+            "color": {
+              "mode": "None",
+              "saturation_threshold": 0.15000000596046448,
+              "strength": 1.0,
+              "tint": null
+            },
+            "settings": {
+              "flip_x": false,
+              "flip_y": false,
+              "layer": 0,
+              "texture_rotation_degrees": 0.0,
+              "visible": true
+            },
+            "size": "Auto",
+            "texture": {
+              "path": "textures/square.png",
+              "source": "Game"
+            }
+          }
+        },
+        {
+          "component_type": "ze.tag",
+          "value": {
+            "tag": "Ground"
+          }
+        },
+        {
+          "component_type": "ze.transform",
+          "value": {
+            "position": [
+              0.0,
+              -1.5,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              -0.0,
+              1.0
+            ],
+            "scale": [
+              8.0,
+              0.30000001192092896,
+              1.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": {
+        "index": 6,
+        "gen": 0
+      },
+      "components": [
+        {
+          "component_type": "ze.name",
+          "value": {
+            "name": "Sensor"
+          }
+        },
+        {
+          "component_type": "ze.parent",
+          "value": {
+            "id": [
+              5,
+              0
+            ]
+          }
+        },
+        {
+          "component_type": "ze.physics_2d.collider",
+          "value": {
+            "density": 1.0,
+            "friction": 0.5,
+            "is_sensor": true,
+            "restitution": 0.0,
+            "shape": {
+              "Box": {
+                "half_extents": [
+                  0.5,
+                  0.5
+                ]
+              }
+            }
+          }
+        },
+        {
+          "component_type": "ze.physics_2d.rigidbody",
+          "value": {
+            "angular_damping": 0.0,
+            "body_type": "Static",
+            "collision_detection": "Discrete",
+            "freeze_position_x": false,
+            "freeze_position_y": false,
+            "freeze_rotation_x": false,
+            "freeze_rotation_y": false,
+            "freeze_rotation_z": false,
+            "gravity_scale": 1.0,
+            "linear_damping": 0.05000000074505806,
+            "mass": null,
+            "use_gravity": true
+          }
+        },
+        {
+          "component_type": "ze.scripting.scripts",
+          "value": {
+            "list": [
+              {
+                "enabled": true,
+                "fields": {},
+                "path": "Sandbox.TrapScript"
+              }
+            ]
+          }
+        },
+        {
+          "component_type": "ze.tag",
+          "value": {
+            "tag": "Sensor"
+          }
+        },
+        {
+          "component_type": "ze.transform",
+          "value": {
+            "position": [
+              0.08291912823915482,
+              2.706754684448242,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "scale": [
+              0.05428058281540871,
+              2.5693280696868896,
+              1.0
+            ]
+          }
+        },
+        {
+          "component_type": "ze.transform_inheritance",
+          "value": {
+            "inherit_position": true,
+            "inherit_rotation": true,
+            "inherit_scale": true
+          }
+        }
+      ]
+    },
+    {
+      "id": {
+        "index": 7,
+        "gen": 0
+      },
+      "components": [
+        {
+          "component_type": "ze.name",
+          "value": {
+            "name": "Camera"
+          }
+        },
+        {
+          "component_type": "ze.parent",
+          "value": {
+            "id": [
+              4,
+              0
+            ]
+          }
+        },
+        {
+          "component_type": "ze.renderer.camera",
+          "value": {
+            "clear_color": [
+              0.12000000476837158,
+              0.11999999731779099,
+              0.12999999523162842,
+              1.0
+            ],
+            "primary": false,
+            "projection": {
+              "Orthographic": {
+                "far": 1000.0,
+                "near": -1000.0,
+                "size": 10.0
+              }
+            }
+          }
+        },
+        {
+          "component_type": "ze.transform",
+          "value": {
+            "position": [
+              0.0,
+              0.0,
+              10.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "component_type": "ze.transform_inheritance",
+          "value": {
+            "inherit_position": true,
+            "inherit_rotation": false,
+            "inherit_scale": true
+          }
+        }
+      ]
+    },
+    {
+      "id": {
+        "index": 8,
+        "gen": 2
+      },
+      "components": [
+        {
+          "component_type": "ze.children",
+          "value": {
+            "ids": [
+              [
+                9,
+                0
+              ]
+            ]
+          }
+        },
+        {
+          "component_type": "ze.name",
+          "value": {
+            "name": "Entity"
+          }
+        },
+        {
+          "component_type": "ze.transform",
+          "value": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": {
+        "index": 9,
+        "gen": 0
+      },
+      "components": [
+        {
+          "component_type": "ze.name",
+          "value": {
+            "name": "Entity"
+          }
+        },
+        {
+          "component_type": "ze.parent",
+          "value": {
+            "id": [
+              8,
+              2
+            ]
+          }
+        },
+        {
+          "component_type": "ze.transform",
+          "value": {
+            "position": [
+              1.5790338516235352,
+              1.4351158142089844,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "scale": [
+              1.0,
+              2.926819086074829,
+              1.0
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

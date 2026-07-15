@@ -10,10 +10,9 @@ pub struct ZeEntityId {
 
 impl From<shipyard::EntityId> for ZeEntityId {
 	fn from(id: shipyard::EntityId) -> Self {
-		let inner = id.inner();
 		Self {
-			index: inner & 0xFFFF_FFFF,
-			generation: (inner >> 32) as u16,
+			index: id.index(),
+			generation: id.r#gen(),
 		}
 	}
 }

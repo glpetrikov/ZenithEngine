@@ -14,4 +14,7 @@ internal enum ComponentType : uint
     Sprite = 10,
     Camera = 11,
     Script = 12,
+    UIButton = 13,
+    UIBar = 14,
+    UIText = 15,
 }

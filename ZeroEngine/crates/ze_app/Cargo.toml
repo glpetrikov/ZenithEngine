@@ -20,5 +20,8 @@ ze_physics = { path = "../ze_physics" }
 ze_scripting_cs = { path = "../ze_scripting_cs" }
 winit = "0.30.13"
 ze_renderer = { version = "0.1.0", path = "../ze_renderer" }
+ze_ui = { path = "../ze_ui" }
 tokio = { version = "1.52.3", features = ["full"] }
 ze_build = { path = "../ze_build" }
+ze_project = { path = "../ze_project" }
+rfd = { version = "0.15", default-features = false, features = ["gtk3"] }

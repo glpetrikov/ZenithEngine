@@ -1,8 +1,10 @@
 [package]
 name = "ze_physics"
-version = "0.1.0"
-edition = "2024"
+edition.workspace = true
 license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
 
 [lints]
 workspace = true
@@ -12,3 +14,4 @@ rapier2d = "0.32.0"
 ze_core = { path = "../ze_core" }
 ze_ecs = { path = "../ze_ecs" }
 ze_scripting_cs = { path = "../ze_scripting_cs" }
+ze_log = { path = "../ze_log" }

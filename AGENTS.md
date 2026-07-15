@@ -30,6 +30,8 @@ Do not use `unsafe` unless the task explicitly requires it and the reason is exp
 
 Do not introduce global mutable state.
 
+If you add debug logs, use ze_log::debug! or ze_log::trace! but not ze_log::info!/warn!/error!
+
 ## Rust style
 
 Use idiomatic Rust.
@@ -126,8 +128,6 @@ Scene format compatibility matters. Do not redesign the scene format unless expl
 
 ## Reflection
 
-When adding reflection support, prefer compile-time requirements.
-
 Registered editor-visible or serializable components should implement the required reflection traits.
 
 Reflection should support future editor inspector UI, but should not replace the stable scene serialization format unless explicitly requested.
@@ -156,7 +156,7 @@ Keep backend code explicit and debuggable.
 
 ## Editor
 
-The planned editor uses egui.
+The editor uses egui.
 
 Editor UI code should be practical and simple.
 
