@@ -1172,7 +1172,8 @@ pub const fn script_arg_to_entity_id(entity: u64) -> EntityId {
 	EntityId::new_from_index_and_gen(index, generation)
 }
 
-/// A single 2D raycast result, mirrored 1:1 by the out-params `raycast_2d` writes for C#.
+/// A single 2D raycast result, mirrored 1:1 by the out-params `raycast_2d`
+/// writes for C#.
 #[derive(Debug, Clone, Copy)]
 pub struct RaycastHit2D {
 	pub point: Vec2,
@@ -1182,12 +1183,13 @@ pub struct RaycastHit2D {
 
 /// Bridges raycast queries from scripts into `ze_physics`'s rapier2d world.
 ///
-/// `ze_physics` owns rapier2d's query pipeline and can't be depended on from here directly --
-/// it already depends on `ze_scripting_cs`, so a reverse dependency would be circular. Instead
-/// `PhysicsSystem` registers a plain fn pointer + opaque context pointer for the duration of
-/// each `fixed_update` call it drives, the same "expose latest physics state to scripts" idea
-/// as the velocity cache, but for a query that takes arbitrary parameters instead of being
-/// keyed by entity.
+/// `ze_physics` owns rapier2d's query pipeline and can't be depended on from
+/// here directly -- it already depends on `ze_scripting_cs`, so a reverse
+/// dependency would be circular. Instead `PhysicsSystem` registers a plain fn
+/// pointer + opaque context pointer for the duration of each `fixed_update`
+/// call it drives, the same "expose latest physics state to scripts" idea
+/// as the velocity cache, but for a query that takes arbitrary parameters
+/// instead of being keyed by entity.
 pub type RaycastQueryFn = fn(*const (), Vec2, Vec2, f32) -> Option<RaycastHit2D>;
 
 thread_local! {
@@ -1195,15 +1197,14 @@ thread_local! {
 }
 
 /// # Safety
-/// `context` must stay valid for as long as the provider is registered. Callers must pair this
-/// with [`clear_raycast_provider`] before `context`'s pointee can be moved, reset, or dropped.
+/// `context` must stay valid for as long as the provider is registered. Callers
+/// must pair this with [`clear_raycast_provider`] before `context`'s pointee
+/// can be moved, reset, or dropped.
 pub unsafe fn set_raycast_provider(context: *const (), query: RaycastQueryFn) {
 	RAYCAST_PROVIDER.with(|cell| cell.set(Some((context, query))));
 }
 
-pub fn clear_raycast_provider() {
-	RAYCAST_PROVIDER.with(|cell| cell.set(None));
-}
+pub fn clear_raycast_provider() { RAYCAST_PROVIDER.with(|cell| cell.set(None)); }
 
 #[derive(Debug, Clone, Copy)]
 pub enum ScriptingApiCommand {
@@ -2165,6 +2166,7 @@ mod api {
 		collections::{HashMap, HashSet},
 	};
 
+	use ze_core::Vec2;
 	use ze_ecs::{
 		Children, Collider, EntitiesView, EntityId, Inactive, Name, Parent, PhysicsSettings, RigidBody, Scene, Tag,
 		Transform,
@@ -2172,8 +2174,6 @@ mod api {
 	use ze_input::{Input, ZKeyCode, ZMouseCode};
 	use ze_renderer::{Camera, Sprite};
 	use ze_ui::{UIBar, UIButton, UIText};
-
-	use ze_core::Vec2;
 
 	use crate::{
 		RAYCAST_PROVIDER, ScriptingApiCommand, ScriptingSceneCommand, ScriptingSceneLoadCommand, ScriptingTimeState,

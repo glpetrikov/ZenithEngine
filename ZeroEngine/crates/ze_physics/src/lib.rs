@@ -129,8 +129,9 @@ impl PhysicsWorld {
 
 	/// Casts a ray through the world and returns the closest hit, if any.
 	///
-	/// `direction` doesn't need to be a unit vector: it's normalized here so `max_distance`
-	/// always means world-space units to the caller, regardless of how they built it.
+	/// `direction` doesn't need to be a unit vector: it's normalized here so
+	/// `max_distance` always means world-space units to the caller, regardless
+	/// of how they built it.
 	pub fn raycast(&self, origin: Vec2, direction: Vec2, max_distance: f32) -> Option<RaycastHit2D> {
 		if max_distance <= 0.0 {
 			return None;
@@ -139,9 +140,10 @@ impl PhysicsWorld {
 		let direction = direction.try_normalize()?;
 		let ray = Ray::new(Vector::new(origin.x, origin.y), Vector::new(direction.x, direction.y));
 
-		// rapier 0.32's QueryPipeline is a borrowed view derived on demand from the broad-phase,
-		// unlike older rapier versions where a separate QueryPipeline had to be synced manually
-		// after every step. `broad_phase` is already current here since `step()` updates it.
+		// rapier 0.32's QueryPipeline is a borrowed view derived on demand from the
+		// broad-phase, unlike older rapier versions where a separate QueryPipeline
+		// had to be synced manually after every step. `broad_phase` is already
+		// current here since `step()` updates it.
 		let query_pipeline = self.broad_phase.as_query_pipeline(
 			self.narrow_phase.query_dispatcher(),
 			&self.rigid_bodies,
@@ -432,9 +434,10 @@ impl System for PhysicsSystem {
 			if let Some(scripting) = self.scripting.clone() {
 				refresh_scripting_api_velocity_cache(self.world.body_velocities());
 
-				// SAFETY: `&self.world` stays valid for the duration of this call frame, and the
-				// provider is always cleared before returning (even on error), so no dangling
-				// pointer can outlive it -- e.g. across a later `PhysicsSystem::reset()`.
+				// SAFETY: `&self.world` stays valid for the duration of this call frame, and
+				// the provider is always cleared before returning (even on error), so no
+				// dangling pointer can outlive it -- e.g. across a later
+				// `PhysicsSystem::reset()`.
 				unsafe {
 					set_raycast_provider((&raw const self.world).cast::<()>(), raycast_via_context);
 				}
@@ -664,8 +667,9 @@ impl PhysicsSystem {
 	}
 }
 
-/// Trampoline registered with `ze_scripting_cs::set_raycast_provider`; see the safety note at
-/// its call site in `PhysicsSystem::update` for why the raw pointer is sound here.
+/// Trampoline registered with `ze_scripting_cs::set_raycast_provider`; see the
+/// safety note at its call site in `PhysicsSystem::update` for why the raw
+/// pointer is sound here.
 fn raycast_via_context(context: *const (), origin: Vec2, direction: Vec2, max_distance: f32) -> Option<RaycastHit2D> {
 	let world = unsafe { &*context.cast::<PhysicsWorld>() };
 	world.raycast(origin, direction, max_distance)
