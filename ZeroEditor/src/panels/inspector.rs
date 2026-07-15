@@ -12,7 +12,9 @@ use ze_assets::AssetRef;
 use ze_core::{Quat, Vec2, Vec3};
 use ze_ecs::{
 	EditorOnly, EntityId, Name, Parent, SaveFile, Tag, Transform, TransformInheritance,
-	components::{Collider, ColliderShape, CollisionDetection, Inactive, PhysicsSettings, RigidBody, RigidBodyType},
+	components::{
+		AudioSource, Collider, ColliderShape, CollisionDetection, Inactive, PhysicsSettings, RigidBody, RigidBodyType,
+	},
 };
 use ze_project::{GameData, PROJECT_FILE_NAME, Project};
 use ze_renderer::{Camera, CameraProjection, Sprite, SpriteColorMode, SpriteColorSettings, SpriteSettings, SpriteSize};
@@ -88,10 +90,11 @@ enum InspectableComponent {
 	UIButton,
 	UIBar,
 	UIText,
+	AudioSource,
 }
 
 impl InspectableComponent {
-	const ADDABLE: [Self; 11] = [
+	const ADDABLE: [Self; 12] = [
 		Self::Tag,
 		Self::Transform,
 		Self::Inactive,
@@ -103,6 +106,7 @@ impl InspectableComponent {
 		Self::UIButton,
 		Self::UIBar,
 		Self::UIText,
+		Self::AudioSource,
 	];
 
 	const fn label(self) -> &'static str {
@@ -119,6 +123,7 @@ impl InspectableComponent {
 			Self::UIButton => "UI Button",
 			Self::UIBar => "UI Bar",
 			Self::UIText => "UI Text",
+			Self::AudioSource => "Audio Source",
 		}
 	}
 
@@ -136,6 +141,7 @@ impl InspectableComponent {
 			Self::UIButton => scene.world().get::<&UIButton>(entity).is_ok(),
 			Self::UIBar => scene.world().get::<&UIBar>(entity).is_ok(),
 			Self::UIText => scene.world().get::<&UIText>(entity).is_ok(),
+			Self::AudioSource => scene.world().get::<&AudioSource>(entity).is_ok(),
 		}
 	}
 
@@ -216,6 +222,9 @@ impl InspectableComponent {
 					z_index: 0,
 				});
 			}
+			Self::AudioSource => {
+				scene.entity_mut(entity).add_component(AudioSource::default());
+			}
 		}
 	}
 
@@ -256,6 +265,9 @@ impl InspectableComponent {
 			}
 			Self::UIText => {
 				let _ = scene.entity_mut(entity).remove_component::<UIText>();
+			}
+			Self::AudioSource => {
+				let _ = scene.entity_mut(entity).remove_component::<AudioSource>();
 			}
 		}
 	}
@@ -435,6 +447,11 @@ impl InspectorPanel {
 		}
 		if let Some(text) = cloned_component::<UIText>(context.scene, entity) {
 			self.show_ui_text(ui, context, entity, text);
+			displayed += 1;
+		}
+
+		if let Some(audio_source) = cloned_component::<AudioSource>(context.scene, entity) {
+			self.show_audio_source(ui, context, entity, audio_source);
 			displayed += 1;
 		}
 
@@ -1771,6 +1788,46 @@ impl InspectorPanel {
 			});
 		});
 		self.show_component_context_menu(&response, entity, context, InspectableComponent::RigidBody);
+	}
+
+	fn show_audio_source(
+		&mut self,
+		ui: &mut Ui,
+		context: &mut EditorPanelContext<'_>,
+		entity: EntityId,
+		mut audio_source: AudioSource,
+	) {
+		let response = show_removable_component(ui, InspectableComponent::AudioSource.label(), |ui| {
+			let mut field_edit = FieldEdit::default();
+
+			ui.horizontal(|ui| {
+				ui.label("Clip Path");
+				let response = ui.text_edit_singleline(&mut audio_source.clip_path);
+				field_edit.include(response_field_edit(&response));
+			});
+
+			ui.horizontal(|ui| {
+				ui.label("Volume");
+				let response = ui.add(
+					egui::DragValue::new(&mut audio_source.volume)
+						.speed(0.01)
+						.range(0.0..=1.0),
+				);
+				field_edit.include(response_field_edit(&response));
+			});
+
+			field_edit.include(response_field_edit(&ui.checkbox(&mut audio_source.looping, "Looping")));
+			field_edit.include(response_field_edit(
+				&ui.checkbox(&mut audio_source.play_on_start, "Play On Start"),
+			));
+
+			self.apply_field_edit(context, field_edit, |scene| {
+				if let Ok(mut current) = scene.world_mut().get::<&mut AudioSource>(entity) {
+					**current = audio_source;
+				}
+			});
+		});
+		self.show_component_context_menu(&response, entity, context, InspectableComponent::AudioSource);
 	}
 }
 

@@ -10,8 +10,8 @@ use ze_core::{Result, Vec3, anyhow};
 
 use crate::{
 	components::{
-		Children, Collider, EditorOnly, Inactive, Name, Parent, PhysicsSettings, RigidBody, Tag, Transform,
-		TransformInheritance,
+		AudioSource, Children, Collider, EditorOnly, Inactive, Name, Parent, PhysicsSettings, RigidBody, Tag,
+		Transform, TransformInheritance,
 	},
 	definitions::{SaveFile, SceneType},
 	entity::Entity,
@@ -155,6 +155,7 @@ impl Scene {
 		registry.register::<RigidBody>("ze.physics_2d.rigidbody");
 		registry.register::<Collider>("ze.physics_2d.collider");
 		registry.register::<PhysicsSettings>("ze.physics_2d.settings");
+		registry.register::<AudioSource>("ze.audio.source");
 	}
 }
 

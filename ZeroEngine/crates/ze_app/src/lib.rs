@@ -13,6 +13,7 @@ use winit::{
 	window::{Window, WindowId},
 };
 use ze_assets::ResourceManager;
+use ze_audio::AudioSystem;
 use ze_core::{Result, Vec2, bail};
 use ze_ecs::{EditorOnly, EntitiesView, PhysicsSettings, Scene, System, registry};
 use ze_input::{Input, ZKeyCode, ZMouseCode};
@@ -209,6 +210,10 @@ pub fn load_project_scene(
 	validate_scene_name(scene_name)?;
 	let mut registry = registry::ComponentRegistry::new();
 
+	// `AudioSource` (unlike UI/scripting components) is registered inside
+	// `Scene::register_defaults` itself, alongside
+	// `RigidBody`/`Collider`/`PhysicsSettings` -- see ze_ecs/src/components.rs for
+	// why.
 	Scene::register_defaults(&mut registry);
 	register_renderer_components(&mut registry);
 	register_scripting_components(&mut registry);
@@ -246,6 +251,12 @@ pub fn load_project_scene(
 	scene.add_system(RenderSystem::new());
 	if let Some(handle) = ui_manager {
 		scene.add_system(UISystem::new(handle));
+	}
+	// Non-fatal on failure (e.g. no audio device in CI/headless) -- audio is a
+	// jam nice-to-have, not something the rest of the engine should depend on.
+	match AudioSystem::new(resources.clone()) {
+		Ok(audio) => scene.add_system(audio),
+		Err(error) => ze_log::error!("failed to initialize audio system: {error:?}"),
 	}
 	Ok(scene)
 }

@@ -21,6 +21,10 @@ public unsafe struct EngineAPI
     public delegate* unmanaged[Cdecl]<ulong, float*, float*, void> get_velocity;
     public delegate* unmanaged[Cdecl]<ulong, float, float, void> add_2d_force;
     public delegate* unmanaged[Cdecl]<ulong, float, float, void> add_2d_impulse;
+    public delegate* unmanaged[Cdecl]<ulong, void> play_audio;
+    public delegate* unmanaged[Cdecl]<ulong, void> stop_audio;
+    public delegate* unmanaged[Cdecl]<ulong, float, void> set_audio_volume;
+    public delegate* unmanaged[Cdecl]<ulong, bool> is_audio_playing;
     public delegate* unmanaged[Cdecl]<float, float, float, float, float, float*, float*, float*, float*, ulong*, bool> raycast_2d;
     public delegate* unmanaged[Cdecl]<ulong, float> get_sprite_texture_rotation_degrees;
     public delegate* unmanaged[Cdecl]<ulong, float, void> set_sprite_texture_rotation_degrees;

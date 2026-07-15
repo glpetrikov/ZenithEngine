@@ -199,3 +199,31 @@ pub enum ColliderShape {
 		points: Vec<Vec2>,
 	},
 }
+
+/// Config for an entity-scoped playable sound; `ze_audio::AudioSystem` does the
+/// actual playback.
+///
+/// Lives here (rather than in `ze_audio`, which actually simulates it) for the
+/// same reason `RigidBody`/`Collider`/`PhysicsSettings` do: `ze_scripting_cs`
+/// needs to reference the component type directly for the
+/// `GetComponent<Audio>()` existence check, but can't depend on `ze_audio`
+/// (that dependency already runs the other way).
+#[derive(Component, Reflect, Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct AudioSource {
+	pub clip_path: String,
+	pub volume: f32,
+	pub looping: bool,
+	pub play_on_start: bool,
+}
+
+impl Default for AudioSource {
+	fn default() -> Self {
+		Self {
+			clip_path: String::new(),
+			volume: 1.0,
+			looping: false,
+			play_on_start: false,
+		}
+	}
+}

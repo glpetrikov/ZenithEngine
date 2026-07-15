@@ -14,6 +14,7 @@ public class Script : ZEScript
 
     private Rigidbody? rb;
     private Transform? transform;
+    private Audio? jumpAudio;
     private bool moveLeft;
     private bool moveRight;
 
@@ -23,6 +24,7 @@ public class Script : ZEScript
     {
         rb = GetComponent<Rigidbody>();
         transform = GetComponent<Transform>();
+        jumpAudio = GetComponent<Audio>();
     }
 
     public override void OnUpdate()
@@ -54,7 +56,7 @@ public class Script : ZEScript
 
     public override void OnFixedUpdate()
     {
-        if (rb is null || transform is null) return;
+        if (rb is null || transform is null || jumpAudio is null) return;
 
         const float jumpForce = 2.0f;
         var maxVelocity = new Vector2(2.5f, 5.0f);
@@ -81,6 +83,7 @@ public class Script : ZEScript
             if (grounded)
             {
                 rb.Add2DForceWithMax(new Vector2(0.0f, jumpForce), maxVelocity, ForceMode.Impulse);
+                jumpAudio.Play();
             }
 
             jumpRequested = false;

@@ -35,6 +35,7 @@ use winit::{
 };
 use ze_app::load_project_scene;
 use ze_assets::ResourceManager;
+use ze_audio::AudioSystem;
 use ze_core::{Context as _, Quat, Vec3, anyhow, bail};
 use ze_ecs::{EditorOnly, EntityId, Name, PhysicsSettings, SaveFile, Scene, Tag, Transform, shipyard::IntoIter};
 use ze_physics::PhysicsSystem;
@@ -1626,6 +1627,9 @@ fn update_editor_scene_before_render(
 			if let Err(error) = scene.update_system::<PhysicsSystem>(dt) {
 				ze_log::error!("failed to update physics system: {error:?}");
 			}
+			if let Err(error) = scene.update_system::<AudioSystem>(dt) {
+				ze_log::error!("failed to update audio system: {error:?}");
+			}
 		}
 		asset_reload
 	};
@@ -1651,6 +1655,11 @@ fn update_editor_scene_before_render(
 fn reset_scene_runtime_systems(scene: &mut Scene) {
 	scene.with_system_mut::<PhysicsSystem, _>(|physics, _scene| physics.reset());
 	scene.with_system_mut::<ScriptingSystem, _>(|scripting, _scene| scripting.reset());
+	// Stop mode doesn't re-create the scene's systems (only ECS state is
+	// snapshotted/restored), so without this any audio started during Play --
+	// looping music or a still-playing SFX -- would otherwise keep playing
+	// forever once back in Edit mode.
+	scene.with_system_mut::<AudioSystem, _>(|audio, _scene| audio.stop_all());
 }
 
 fn project_scenes_dir(project: &Project) -> PathBuf { project.asset_dir.join("scenes") }

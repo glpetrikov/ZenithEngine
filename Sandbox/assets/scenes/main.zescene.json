@@ -451,6 +451,15 @@
             "text": "Text",
             "z_index": 0
           }
+        },
+        {
+          "component_type": "ze.audio.source",
+          "value": {
+            "clip_path": "sounds/jump.wav",
+            "volume": 1.0,
+            "looping": false,
+            "play_on_start": false
+          }
         }
       ]
     },
@@ -828,6 +837,50 @@
               2.926819086074829,
               1.0
             ]
+          }
+        }
+      ]
+    },
+    {
+      "id": {
+        "index": 10,
+        "gen": 0
+      },
+      "components": [
+        {
+          "component_type": "ze.name",
+          "value": {
+            "name": "Music"
+          }
+        },
+        {
+          "component_type": "ze.transform",
+          "value": {
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        },
+        {
+          "component_type": "ze.audio.source",
+          "value": {
+            "clip_path": "sounds/music_loop.wav",
+            "volume": 1.0,
+            "looping": true,
+            "play_on_start": true
           }
         }
       ]

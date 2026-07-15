@@ -17,4 +17,5 @@ internal enum ComponentType : uint
     UIButton = 13,
     UIBar = 14,
     UIText = 15,
+    Audio = 16,
 }

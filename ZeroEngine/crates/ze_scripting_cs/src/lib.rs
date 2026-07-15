@@ -58,6 +58,10 @@ pub struct EngineAPI {
 	pub get_velocity: extern "C" fn(u64, *mut f32, *mut f32),
 	pub add_2d_force: extern "C" fn(u64, f32, f32),
 	pub add_2d_impulse: extern "C" fn(u64, f32, f32),
+	pub play_audio: extern "C" fn(u64),
+	pub stop_audio: extern "C" fn(u64),
+	pub set_audio_volume: extern "C" fn(u64, f32),
+	pub is_audio_playing: extern "C" fn(u64) -> bool,
 	pub raycast_2d: extern "C" fn(f32, f32, f32, f32, f32, *mut f32, *mut f32, *mut f32, *mut f32, *mut u64) -> bool,
 	pub get_sprite_texture_rotation_degrees: extern "C" fn(u64) -> f32,
 	pub set_sprite_texture_rotation_degrees: extern "C" fn(u64, f32),
@@ -133,6 +137,10 @@ static ENGINE_API: EngineAPI = EngineAPI {
 	get_velocity: api::get_velocity,
 	add_2d_force: api::add_2d_force,
 	add_2d_impulse: api::add_2d_impulse,
+	play_audio: api::play_audio,
+	stop_audio: api::stop_audio,
+	set_audio_volume: api::set_audio_volume,
+	is_audio_playing: api::is_audio_playing,
 	raycast_2d: api::raycast_2d,
 	get_sprite_texture_rotation_degrees: api::get_sprite_texture_rotation_degrees,
 	set_sprite_texture_rotation_degrees: api::set_sprite_texture_rotation_degrees,
@@ -1212,6 +1220,21 @@ pub enum ScriptingApiCommand {
 	Add2DImpulse { entity: EntityId, x: f32, y: f32 },
 }
 
+/// Fire-and-forget audio commands queued by C# scripts.
+///
+/// Drained by `ze_audio`'s `AudioSystem`, the same relationship
+/// `ScriptingApiCommand` has with `ze_physics`. Every variant is entity-keyed
+/// -- the entity's own `AudioSource` component (`ze_ecs::components`) is what
+/// says which clip/volume/looping to use, so unlike the earlier
+/// single-global-music-channel design there's no ambiguity about "which" sound
+/// a command targets.
+#[derive(Debug, Clone, Copy)]
+pub enum AudioApiCommand {
+	Play { entity: EntityId },
+	Stop { entity: EntityId },
+	SetVolume { entity: EntityId, volume: f32 },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScriptingSceneLoadCommand {
 	Load { name: String },
@@ -1291,6 +1314,12 @@ pub fn refresh_scripting_api_velocity_cache(velocities: impl IntoIterator<Item =
 }
 
 pub fn drain_scripting_api_commands() -> Vec<ScriptingApiCommand> { api::drain_commands() }
+
+pub fn drain_audio_api_commands() -> Vec<AudioApiCommand> { api::drain_audio_commands() }
+
+pub fn refresh_scripting_api_audio_playing_cache(playing: impl IntoIterator<Item = (EntityId, bool)>) {
+	api::refresh_audio_playing_cache(playing);
+}
 
 pub fn drain_scripting_scene_load_commands() -> Vec<ScriptingSceneLoadCommand> { api::drain_scene_load_commands() }
 
@@ -2168,21 +2197,22 @@ mod api {
 
 	use ze_core::Vec2;
 	use ze_ecs::{
-		Children, Collider, EntitiesView, EntityId, Inactive, Name, Parent, PhysicsSettings, RigidBody, Scene, Tag,
-		Transform,
+		AudioSource, Children, Collider, EntitiesView, EntityId, Inactive, Name, Parent, PhysicsSettings, RigidBody,
+		Scene, Tag, Transform,
 	};
 	use ze_input::{Input, ZKeyCode, ZMouseCode};
 	use ze_renderer::{Camera, Sprite};
 	use ze_ui::{UIBar, UIButton, UIText};
 
 	use crate::{
-		RAYCAST_PROVIDER, ScriptingApiCommand, ScriptingSceneCommand, ScriptingSceneLoadCommand, ScriptingTimeState,
-		Scripts, entity_id_to_script_arg, script_arg_to_entity_id,
+		AudioApiCommand, RAYCAST_PROVIDER, ScriptingApiCommand, ScriptingSceneCommand, ScriptingSceneLoadCommand,
+		ScriptingTimeState, Scripts, entity_id_to_script_arg, script_arg_to_entity_id,
 	};
 
 	#[derive(Default)]
 	struct ApiState {
 		commands: Vec<ScriptingApiCommand>,
+		audio_commands: Vec<AudioApiCommand>,
 		scene_load_commands: Vec<ScriptingSceneLoadCommand>,
 		scene_commands: Vec<ScriptingSceneCommand>,
 		components: HashSet<(EntityId, ComponentKind)>,
@@ -2190,6 +2220,7 @@ mod api {
 		velocities: HashMap<EntityId, (f32, f32)>,
 		sprite_texture_rotations: HashMap<EntityId, f32>,
 		button_clicked: HashMap<EntityId, bool>,
+		audio_playing: HashMap<EntityId, bool>,
 	}
 
 	struct TimeStateCell(UnsafeCell<ScriptingTimeState>);
@@ -2215,6 +2246,7 @@ mod api {
 		UIButton = 13,
 		UIBar = 14,
 		UIText = 15,
+		Audio = 16,
 	}
 
 	thread_local! {
@@ -2223,6 +2255,10 @@ mod api {
 
 	pub fn drain_commands() -> Vec<ScriptingApiCommand> {
 		API_STATE.with(|state| state.borrow_mut().commands.drain(..).collect())
+	}
+
+	pub fn drain_audio_commands() -> Vec<AudioApiCommand> {
+		API_STATE.with(|state| state.borrow_mut().audio_commands.drain(..).collect())
 	}
 
 	pub fn drain_scene_load_commands() -> Vec<ScriptingSceneLoadCommand> {
@@ -2324,6 +2360,9 @@ mod api {
 				if world.get::<&UIText>(entity).is_ok() {
 					components.insert((entity, ComponentKind::UIText));
 				}
+				if world.get::<&AudioSource>(entity).is_ok() {
+					components.insert((entity, ComponentKind::Audio));
+				}
 			}
 		});
 
@@ -2339,6 +2378,12 @@ mod api {
 	pub fn refresh_velocity_cache(velocities: impl IntoIterator<Item = (EntityId, f32, f32)>) {
 		API_STATE.with(|state| {
 			state.borrow_mut().velocities = velocities.into_iter().map(|(entity, x, y)| (entity, (x, y))).collect();
+		});
+	}
+
+	pub fn refresh_audio_playing_cache(playing: impl IntoIterator<Item = (EntityId, bool)>) {
+		API_STATE.with(|state| {
+			state.borrow_mut().audio_playing = playing.into_iter().collect();
 		});
 	}
 
@@ -2435,6 +2480,30 @@ mod api {
 			x,
 			y,
 		});
+	}
+
+	pub extern "C" fn play_audio(entity: u64) {
+		push_audio_command(AudioApiCommand::Play {
+			entity: script_arg_to_entity_id(entity),
+		});
+	}
+
+	pub extern "C" fn stop_audio(entity: u64) {
+		push_audio_command(AudioApiCommand::Stop {
+			entity: script_arg_to_entity_id(entity),
+		});
+	}
+
+	pub extern "C" fn set_audio_volume(entity: u64, volume: f32) {
+		push_audio_command(AudioApiCommand::SetVolume {
+			entity: script_arg_to_entity_id(entity),
+			volume,
+		});
+	}
+
+	pub extern "C" fn is_audio_playing(entity: u64) -> bool {
+		let entity = script_arg_to_entity_id(entity);
+		API_STATE.with(|state| state.borrow().audio_playing.get(&entity).copied().unwrap_or(false))
 	}
 
 	#[allow(clippy::too_many_arguments)]
@@ -2690,6 +2759,12 @@ mod api {
 		});
 	}
 
+	fn push_audio_command(command: AudioApiCommand) {
+		API_STATE.with(|state| {
+			state.borrow_mut().audio_commands.push(command);
+		});
+	}
+
 	fn push_scene_load_command(command: ScriptingSceneLoadCommand) {
 		API_STATE.with(|state| {
 			state.borrow_mut().scene_load_commands.push(command);
@@ -2821,6 +2896,7 @@ mod api {
 			13 => Some(ComponentKind::UIButton),
 			14 => Some(ComponentKind::UIBar),
 			15 => Some(ComponentKind::UIText),
+			16 => Some(ComponentKind::Audio),
 			_ => None,
 		}
 	}
