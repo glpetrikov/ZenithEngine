@@ -10,7 +10,8 @@ use ze_ecs::{
 	RigidBodyType, Scene, System, Transform,
 };
 use ze_scripting_cs::{
-	ScriptingApiCommand, ScriptingRuntimeHandle, drain_scripting_api_commands, refresh_scripting_api_velocity_cache,
+	RaycastHit2D, ScriptingApiCommand, ScriptingRuntimeHandle, clear_raycast_provider, drain_scripting_api_commands,
+	refresh_scripting_api_velocity_cache, set_raycast_provider,
 };
 
 pub const DEFAULT_GRAVITY: Vec2 = Vec2::new(0.0, -9.81);
@@ -124,6 +125,39 @@ impl PhysicsWorld {
 				})
 			})
 			.collect()
+	}
+
+	/// Casts a ray through the world and returns the closest hit, if any.
+	///
+	/// `direction` doesn't need to be a unit vector: it's normalized here so `max_distance`
+	/// always means world-space units to the caller, regardless of how they built it.
+	pub fn raycast(&self, origin: Vec2, direction: Vec2, max_distance: f32) -> Option<RaycastHit2D> {
+		if max_distance <= 0.0 {
+			return None;
+		}
+
+		let direction = direction.try_normalize()?;
+		let ray = Ray::new(Vector::new(origin.x, origin.y), Vector::new(direction.x, direction.y));
+
+		// rapier 0.32's QueryPipeline is a borrowed view derived on demand from the broad-phase,
+		// unlike older rapier versions where a separate QueryPipeline had to be synced manually
+		// after every step. `broad_phase` is already current here since `step()` updates it.
+		let query_pipeline = self.broad_phase.as_query_pipeline(
+			self.narrow_phase.query_dispatcher(),
+			&self.rigid_bodies,
+			&self.colliders,
+			QueryFilter::default(),
+		);
+
+		let (collider_handle, intersection) = query_pipeline.cast_ray_and_get_normal(&ray, max_distance, true)?;
+		let entity = self.entity_for_collider(collider_handle)?;
+		let hit_point = ray.point_at(intersection.time_of_impact);
+
+		Some(RaycastHit2D {
+			point: Vec2::new(hit_point.x, hit_point.y),
+			normal: Vec2::new(intersection.normal.x, intersection.normal.y),
+			entity,
+		})
 	}
 
 	pub fn step(&mut self, dt: f32) -> Vec<CollisionEvent> {
@@ -397,7 +431,17 @@ impl System for PhysicsSystem {
 
 			if let Some(scripting) = self.scripting.clone() {
 				refresh_scripting_api_velocity_cache(self.world.body_velocities());
-				scripting.fixed_update(scene, fixed_dt)?;
+
+				// SAFETY: `&self.world` stays valid for the duration of this call frame, and the
+				// provider is always cleared before returning (even on error), so no dangling
+				// pointer can outlive it -- e.g. across a later `PhysicsSystem::reset()`.
+				unsafe {
+					set_raycast_provider((&raw const self.world).cast::<()>(), raycast_via_context);
+				}
+				let fixed_update_result = scripting.fixed_update(scene, fixed_dt);
+				clear_raycast_provider();
+				fixed_update_result?;
+
 				self.apply_scripting_api_commands();
 				self.dispatch_script_collision_events(&scripting, collision_events);
 				self.apply_scripting_api_commands();
@@ -618,6 +662,13 @@ impl PhysicsSystem {
 			self.world.entity_for_collider(collider2)?,
 		))
 	}
+}
+
+/// Trampoline registered with `ze_scripting_cs::set_raycast_provider`; see the safety note at
+/// its call site in `PhysicsSystem::update` for why the raw pointer is sound here.
+fn raycast_via_context(context: *const (), origin: Vec2, direction: Vec2, max_distance: f32) -> Option<RaycastHit2D> {
+	let world = unsafe { &*context.cast::<PhysicsWorld>() };
+	world.raycast(origin, direction, max_distance)
 }
 
 fn collider_pair_key(collider1: ColliderHandle, collider2: ColliderHandle) -> ColliderPairKey {

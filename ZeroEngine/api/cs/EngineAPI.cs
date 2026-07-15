@@ -17,9 +17,11 @@ public unsafe struct EngineAPI
     public delegate* unmanaged[Cdecl]<float*, float*, void> get_mouse_delta;
     public delegate* unmanaged[Cdecl]<TimeState*> get_time_state_ptr;
     public delegate* unmanaged[Cdecl]<ulong, uint, bool> has_component;
+    public delegate* unmanaged[Cdecl]<ulong, float*, float*, void> get_position;
     public delegate* unmanaged[Cdecl]<ulong, float*, float*, void> get_velocity;
     public delegate* unmanaged[Cdecl]<ulong, float, float, void> add_2d_force;
     public delegate* unmanaged[Cdecl]<ulong, float, float, void> add_2d_impulse;
+    public delegate* unmanaged[Cdecl]<float, float, float, float, float, float*, float*, float*, float*, ulong*, bool> raycast_2d;
     public delegate* unmanaged[Cdecl]<ulong, float> get_sprite_texture_rotation_degrees;
     public delegate* unmanaged[Cdecl]<ulong, float, void> set_sprite_texture_rotation_degrees;
     public delegate* unmanaged[Cdecl]<ulong, float, float, float, float, void> set_button_color;

@@ -7,7 +7,13 @@ public class Script : ZEScript
     [ZeroField]
     private float speed = 0.5f;
 
+    // Matches the Circle collider's radius in the scene; used to find the "feet" point for
+    // the ground raycast, since scripts can't query a collider's shape/size directly.
+    [ZeroField]
+    private float colliderRadius = 0.5f;
+
     private Rigidbody? rb;
+    private Transform? transform;
     private bool moveLeft;
     private bool moveRight;
 
@@ -16,6 +22,7 @@ public class Script : ZEScript
     public override void OnStart()
     {
         rb = GetComponent<Rigidbody>();
+        transform = GetComponent<Transform>();
     }
 
     public override void OnUpdate()
@@ -47,7 +54,7 @@ public class Script : ZEScript
 
     public override void OnFixedUpdate()
     {
-        if (rb is null) return;
+        if (rb is null || transform is null) return;
 
         const float jumpForce = 2.0f;
         var maxVelocity = new Vector2(2.5f, 5.0f);
@@ -63,7 +70,19 @@ public class Script : ZEScript
 
         if (jumpRequested)
         {
-            rb.Add2DForceWithMax(new Vector2(0.0f, jumpForce), maxVelocity, ForceMode.Impulse);
+            // Ground check: cast a short ray from just below the feet straight down. Starting
+            // a hair outside the character's own collider (rather than exactly on its boundary)
+            // avoids a degenerate self-hit at t=0; the remaining distance is what stops the
+            // jump from re-triggering every fixed step while airborne.
+            const float skin = 0.02f;
+            var feet = transform.Position - new Vector2(0.0f, colliderRadius + skin);
+            bool grounded = Physics.Raycast(feet, new Vector2(0.0f, -1.0f), 0.1f, out _);
+
+            if (grounded)
+            {
+                rb.Add2DForceWithMax(new Vector2(0.0f, jumpForce), maxVelocity, ForceMode.Impulse);
+            }
+
             jumpRequested = false;
         }
     }

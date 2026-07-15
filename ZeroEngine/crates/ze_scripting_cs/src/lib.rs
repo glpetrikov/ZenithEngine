@@ -1,6 +1,6 @@
 use std::{
 	any::Any,
-	cell::RefCell,
+	cell::{Cell, RefCell},
 	collections::{BTreeMap, HashMap, HashSet},
 	env, fs,
 	path::{Path, PathBuf},
@@ -54,9 +54,11 @@ pub struct EngineAPI {
 	pub get_mouse_delta: extern "C" fn(*mut f32, *mut f32),
 	pub get_time_state_ptr: extern "C" fn() -> *const ScriptingTimeState,
 	pub has_component: extern "C" fn(u64, u32) -> bool,
+	pub get_position: extern "C" fn(u64, *mut f32, *mut f32),
 	pub get_velocity: extern "C" fn(u64, *mut f32, *mut f32),
 	pub add_2d_force: extern "C" fn(u64, f32, f32),
 	pub add_2d_impulse: extern "C" fn(u64, f32, f32),
+	pub raycast_2d: extern "C" fn(f32, f32, f32, f32, f32, *mut f32, *mut f32, *mut f32, *mut f32, *mut u64) -> bool,
 	pub get_sprite_texture_rotation_degrees: extern "C" fn(u64) -> f32,
 	pub set_sprite_texture_rotation_degrees: extern "C" fn(u64, f32),
 	pub set_button_color: extern "C" fn(u64, f32, f32, f32, f32),
@@ -127,9 +129,11 @@ static ENGINE_API: EngineAPI = EngineAPI {
 	get_mouse_delta: api::get_mouse_delta,
 	get_time_state_ptr: api::get_time_state_ptr,
 	has_component: api::has_component,
+	get_position: api::get_position,
 	get_velocity: api::get_velocity,
 	add_2d_force: api::add_2d_force,
 	add_2d_impulse: api::add_2d_impulse,
+	raycast_2d: api::raycast_2d,
 	get_sprite_texture_rotation_degrees: api::get_sprite_texture_rotation_degrees,
 	set_sprite_texture_rotation_degrees: api::set_sprite_texture_rotation_degrees,
 	set_button_color: api::set_button_color,
@@ -1168,6 +1172,39 @@ pub const fn script_arg_to_entity_id(entity: u64) -> EntityId {
 	EntityId::new_from_index_and_gen(index, generation)
 }
 
+/// A single 2D raycast result, mirrored 1:1 by the out-params `raycast_2d` writes for C#.
+#[derive(Debug, Clone, Copy)]
+pub struct RaycastHit2D {
+	pub point: Vec2,
+	pub normal: Vec2,
+	pub entity: EntityId,
+}
+
+/// Bridges raycast queries from scripts into `ze_physics`'s rapier2d world.
+///
+/// `ze_physics` owns rapier2d's query pipeline and can't be depended on from here directly --
+/// it already depends on `ze_scripting_cs`, so a reverse dependency would be circular. Instead
+/// `PhysicsSystem` registers a plain fn pointer + opaque context pointer for the duration of
+/// each `fixed_update` call it drives, the same "expose latest physics state to scripts" idea
+/// as the velocity cache, but for a query that takes arbitrary parameters instead of being
+/// keyed by entity.
+pub type RaycastQueryFn = fn(*const (), Vec2, Vec2, f32) -> Option<RaycastHit2D>;
+
+thread_local! {
+	static RAYCAST_PROVIDER: Cell<Option<(*const (), RaycastQueryFn)>> = const { Cell::new(None) };
+}
+
+/// # Safety
+/// `context` must stay valid for as long as the provider is registered. Callers must pair this
+/// with [`clear_raycast_provider`] before `context`'s pointee can be moved, reset, or dropped.
+pub unsafe fn set_raycast_provider(context: *const (), query: RaycastQueryFn) {
+	RAYCAST_PROVIDER.with(|cell| cell.set(Some((context, query))));
+}
+
+pub fn clear_raycast_provider() {
+	RAYCAST_PROVIDER.with(|cell| cell.set(None));
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum ScriptingApiCommand {
 	Add2DForce { entity: EntityId, x: f32, y: f32 },
@@ -2124,7 +2161,7 @@ const fn default_enabled() -> bool { true }
 
 mod api {
 	use std::{
-		cell::{RefCell, UnsafeCell},
+		cell::{Cell, RefCell, UnsafeCell},
 		collections::{HashMap, HashSet},
 	};
 
@@ -2136,9 +2173,11 @@ mod api {
 	use ze_renderer::{Camera, Sprite};
 	use ze_ui::{UIBar, UIButton, UIText};
 
+	use ze_core::Vec2;
+
 	use crate::{
-		ScriptingApiCommand, ScriptingSceneCommand, ScriptingSceneLoadCommand, ScriptingTimeState, Scripts,
-		script_arg_to_entity_id,
+		RAYCAST_PROVIDER, ScriptingApiCommand, ScriptingSceneCommand, ScriptingSceneLoadCommand, ScriptingTimeState,
+		Scripts, entity_id_to_script_arg, script_arg_to_entity_id,
 	};
 
 	#[derive(Default)]
@@ -2147,6 +2186,7 @@ mod api {
 		scene_load_commands: Vec<ScriptingSceneLoadCommand>,
 		scene_commands: Vec<ScriptingSceneCommand>,
 		components: HashSet<(EntityId, ComponentKind)>,
+		transform_positions: HashMap<EntityId, (f32, f32)>,
 		velocities: HashMap<EntityId, (f32, f32)>,
 		sprite_texture_rotations: HashMap<EntityId, f32>,
 		button_clicked: HashMap<EntityId, bool>,
@@ -2222,6 +2262,7 @@ mod api {
 	pub fn refresh_scene_cache(scene: &Scene) {
 		let world = scene.world();
 		let mut components = HashSet::new();
+		let mut transform_positions = HashMap::new();
 		let mut sprite_texture_rotations = HashMap::new();
 		let mut button_clicked = HashMap::new();
 
@@ -2235,6 +2276,11 @@ mod api {
 				}
 				if world.get::<&Transform>(entity).is_ok() {
 					components.insert((entity, ComponentKind::Transform));
+					// World-space, not the raw local `Transform`, so it matches what raycasts
+					// (which operate in the physics world's coordinate space) expect.
+					if let Some(world_transform) = scene.world_transform(entity) {
+						transform_positions.insert(entity, (world_transform.position.x, world_transform.position.y));
+					}
 				}
 				if world.get::<&Parent>(entity).is_ok() {
 					components.insert((entity, ComponentKind::Parent));
@@ -2284,6 +2330,7 @@ mod api {
 		API_STATE.with(|state| {
 			let mut state = state.borrow_mut();
 			state.components = components;
+			state.transform_positions = transform_positions;
 			state.sprite_texture_rotations = sprite_texture_rotations;
 			state.button_clicked = button_clicked;
 		});
@@ -2348,6 +2395,19 @@ mod api {
 		API_STATE.with(|state| state.borrow().components.contains(&(entity, component_kind)))
 	}
 
+	pub extern "C" fn get_position(entity: u64, out_x: *mut f32, out_y: *mut f32) {
+		if out_x.is_null() || out_y.is_null() {
+			return;
+		}
+
+		let entity = script_arg_to_entity_id(entity);
+		let (x, y) = API_STATE
+			.with(|state| state.borrow().transform_positions.get(&entity).copied())
+			.unwrap_or((0.0, 0.0));
+
+		write_position(out_x, out_y, x, y);
+	}
+
 	pub extern "C" fn get_velocity(entity: u64, out_x: *mut f32, out_y: *mut f32) {
 		if out_x.is_null() || out_y.is_null() {
 			return;
@@ -2375,6 +2435,47 @@ mod api {
 			x,
 			y,
 		});
+	}
+
+	#[allow(clippy::too_many_arguments)]
+	pub extern "C" fn raycast_2d(
+		origin_x: f32,
+		origin_y: f32,
+		dir_x: f32,
+		dir_y: f32,
+		max_distance: f32,
+		out_point_x: *mut f32,
+		out_point_y: *mut f32,
+		out_normal_x: *mut f32,
+		out_normal_y: *mut f32,
+		out_entity_id: *mut u64,
+	) -> bool {
+		let Some((context, query)) = RAYCAST_PROVIDER.with(Cell::get) else {
+			return false;
+		};
+
+		let Some(hit) = query(
+			context,
+			Vec2::new(origin_x, origin_y),
+			Vec2::new(dir_x, dir_y),
+			max_distance,
+		) else {
+			return false;
+		};
+
+		if !out_point_x.is_null() && !out_point_y.is_null() {
+			write_position(out_point_x, out_point_y, hit.point.x, hit.point.y);
+		}
+		if !out_normal_x.is_null() && !out_normal_y.is_null() {
+			write_position(out_normal_x, out_normal_y, hit.normal.x, hit.normal.y);
+		}
+		if !out_entity_id.is_null() {
+			unsafe {
+				*out_entity_id = entity_id_to_script_arg(hit.entity);
+			}
+		}
+
+		true
 	}
 
 	pub extern "C" fn get_sprite_texture_rotation_degrees(entity: u64) -> f32 {
