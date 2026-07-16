@@ -298,6 +298,7 @@ impl System for UISystem {
 			.retain(|entity, _| text_entities.contains(entity));
 
 		manager.yak.finish();
+		manager.mark_laid_out();
 
 		// Pass 3: write interaction results back
 		let world = scene.world_mut();

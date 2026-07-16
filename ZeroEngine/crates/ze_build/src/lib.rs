@@ -262,18 +262,35 @@ fn publish_self_contained_scripts(
 ) -> ze_core::Result<()> {
 	let project_path = project.generate_csproj_with_api_source(api_source_dir)?;
 
+	// The generated csproj hardcodes `<OutputPath>bin/</OutputPath>` (with
+	// `Append{TargetFramework,RuntimeIdentifier}ToOutputPath` both false), so
+	// it resolves to the same `assets/bin/` directory regardless of
+	// configuration/RID/self-contained-ness. `dotnet publish` runs a normal
+	// Build first and writes *that* intermediate output to `OutputPath`
+	// before copying the publish-ready result to `-o` -- so without
+	// overriding `OutputPath` here, this self-contained/RID-specific
+	// publish's own internal build step would silently overwrite the
+	// framework-dependent `Sandbox.dll`/`Sandbox.runtimeconfig.json` that
+	// `build_scripts_assembly` just produced in `assets/bin/`, in place,
+	// every time a dist build runs.
+	let build_output_dir = publish_output_dir.join("build");
 	let status = Command::new("dotnet")
 		.arg("publish")
 		.arg(&project_path)
 		.arg("--configuration")
 		.arg(configuration)
 		.arg("--self-contained")
-		.arg("false")
+		.arg("true")
 		.arg("-r")
 		.arg(rid)
 		.arg("--nologo")
 		.arg("-o")
 		.arg(publish_output_dir)
+		.arg(format!(
+			"-p:OutputPath={}{}",
+			build_output_dir.display(),
+			std::path::MAIN_SEPARATOR
+		))
 		.arg("-p:EnableDynamicLoading=true")
 		.status()
 		.map_err(|error| {
@@ -282,6 +299,20 @@ fn publish_self_contained_scripts(
 				format!("failed to run dotnet publish for {}: {error}", project_path.display()),
 			)
 		})?;
+
+	// Publishing with -r/--self-contained leaves a self-contained-flavored
+	// restore graph (RID-specific assets, `includedFrameworks` instead of
+	// `frameworks` in runtimeconfig.json) cached in the project's obj/
+	// directory. `dotnet build` (in `build_scripts_assembly`) shares that
+	// obj/ directory, so without clearing it here, the *next* plain build of
+	// this project would silently pick up the cached self-contained restore
+	// and regenerate `Sandbox.runtimeconfig.json` -- the one actually shipped
+	// and loaded via `hostfxr_initialize_for_runtime_config` at runtime -- in
+	// the self-contained shape, which that hosting API does not support
+	// ("Initialization for self-contained components is not supported").
+	if let Some(project_dir) = project_path.parent() {
+		let _ = fs::remove_dir_all(project_dir.join("obj"));
+	}
 
 	if !status.success() {
 		ze_core::bail!("dotnet publish failed for {}", project_path.display());
@@ -292,13 +323,13 @@ fn publish_self_contained_scripts(
 
 fn copy_dotnet_runtime_to_dist(project: &Project, output_dir: &Path, publish_dir: &Path) -> ze_core::Result<()> {
 	if !publish_dir.exists() {
-		ze_log::warn!("self-contained publish output not found at {}", publish_dir.display());
-		return Ok(());
+		ze_core::bail!("self-contained publish output not found at {}", publish_dir.display());
 	}
 
 	let dotnet_dir = output_dir.join("dotnet");
 	fs::create_dir_all(&dotnet_dir)?;
 
+	let mut copied_any = false;
 	for entry in fs::read_dir(publish_dir)? {
 		let entry = entry?;
 		let path = entry.path();
@@ -337,6 +368,15 @@ fn copy_dotnet_runtime_to_dist(project: &Project, output_dir: &Path, publish_dir
 		}
 
 		copy_recursive(&path, &dotnet_dir.join(&file_name))?;
+		copied_any = true;
+	}
+
+	if !copied_any {
+		ze_core::bail!(
+			"self-contained publish output at {} contained no runtime files to copy into {}",
+			publish_dir.display(),
+			dotnet_dir.display()
+		);
 	}
 
 	Ok(())

@@ -1177,6 +1177,7 @@ fn default_sprite() -> Sprite {
 		size: SpriteSize::Auto,
 		color: SpriteColorSettings::default(),
 		settings: SpriteSettings::default(),
+		glow_strength: 0.0,
 	}
 }
 
@@ -1596,6 +1597,16 @@ impl InspectorPanel {
 				"Saturation threshold",
 				&mut sprite.color.saturation_threshold,
 			));
+
+			ui.horizontal(|ui| {
+				ui.label("Glow strength");
+				let response = ui.add(
+					egui::DragValue::new(&mut sprite.glow_strength)
+						.speed(0.05)
+						.range(0.0..=200.0),
+				);
+				field_edit.include(response_field_edit(&response));
+			});
 
 			self.apply_field_edit(context, field_edit, |scene| {
 				if let Ok(mut current) = scene.world_mut().get::<&mut Sprite>(entity) {

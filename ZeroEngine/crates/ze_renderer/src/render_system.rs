@@ -28,6 +28,7 @@ pub struct SpriteRenderItem {
 	pub color: SpriteColorSettings,
 	pub layer: i32,
 	pub texture_rotation_degrees: f32,
+	pub glow_strength: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -210,6 +211,7 @@ impl RenderSystem {
 					color: sprite.color.clone(),
 					layer: sprite.settings.layer,
 					texture_rotation_degrees: sprite.settings.texture_rotation_degrees,
+					glow_strength: sprite.glow_strength,
 				});
 			}
 		});

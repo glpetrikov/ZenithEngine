@@ -248,10 +248,13 @@ pub fn load_project_scene(
 	let scripting_runtime = scripting_system.runtime();
 	scene.add_system(scripting_system);
 	scene.add_system(PhysicsSystem::with_scripting(scripting_runtime));
-	scene.add_system(RenderSystem::new());
+	// update_systems() ticks systems in add_system() push order (no explicit
+	// ordering contract) -- put UISystem before RenderSystem so a frame's UI
+	// state is fresh by the time rendering-adjacent systems run.
 	if let Some(handle) = ui_manager {
 		scene.add_system(UISystem::new(handle));
 	}
+	scene.add_system(RenderSystem::new());
 	// Non-fatal on failure (e.g. no audio device in CI/headless) -- audio is a
 	// jam nice-to-have, not something the rest of the engine should depend on.
 	match AudioSystem::new(resources.clone()) {
@@ -539,8 +542,19 @@ impl ApplicationHandler<CustomEvents> for App {
 				let ui_manager =
 					UiManagerHandle::new(ze_ui::UiManager::new(renderer.device(), renderer.queue(), &window));
 				renderer.set_ui_manager(ui_manager.clone());
-				self.ui_manager = Some(ui_manager);
+				self.ui_manager = Some(ui_manager.clone());
 				self.renderer = Some(renderer);
+
+				// The initial scene was loaded in `App::new()`, before the window (and
+				// therefore the UI manager) existed, so `load_project_scene` was called
+				// with `ui_manager: None` and never added a `UISystem` -- scenes loaded
+				// after this point via scripting scene-load commands already pass
+				// `self.ui_manager`, so only the startup scene needs patching up here.
+				if let Some(scene) = self.active_scene_mut()
+					&& scene.with_system_mut::<UISystem, _>(|_, _| ()).is_none()
+				{
+					scene.add_system(UISystem::new(ui_manager));
+				}
 			}
 			Err(error) => {
 				ze_log::error!("Failed to create renderer: {error:?}");

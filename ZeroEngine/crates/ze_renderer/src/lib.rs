@@ -1,7 +1,10 @@
 mod backend;
+mod bloom;
 pub mod components;
 pub mod editor_camera_system;
+mod gbuffer;
 pub mod render_system;
+mod render_target;
 
 use std::sync::Arc;
 
@@ -13,11 +16,15 @@ use ze_assets::{AssetRef, ResourceManager};
 use ze_core::{Mat4, Vec3};
 use ze_ui::ui_manager::UiManagerHandle;
 
-use crate::backend::{
-	mesh::{Mesh, Vertex},
-	pipeline::{self, Pipeline},
-	texture::{SpriteMaterial, SpriteMaterialUniform, TextureCache},
-	ubo::{Ubo, UboGroup},
+use crate::{
+	backend::{
+		mesh::{Mesh, Vertex},
+		pipeline::{self, Pipeline},
+		texture::{SpriteMaterial, SpriteMaterialUniform, TextureCache},
+		ubo::{Ubo, UboGroup},
+	},
+	bloom::BloomChain,
+	gbuffer::{ALBEDO_FORMAT, EMISSIVE_FORMAT, GBuffer, NORMAL_FORMAT},
 };
 
 const VIEWPORT_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -45,6 +52,12 @@ pub struct Renderer {
 	blit_bind_group_layout: wgpu::BindGroupLayout,
 	blit_sampler: wgpu::Sampler,
 	blit_bind_group: wgpu::BindGroup,
+	gbuffer: GBuffer,
+	bloom: BloomChain,
+	composite_pipeline: Pipeline,
+	composite_bind_group_layout: wgpu::BindGroupLayout,
+	composite_sampler: wgpu::Sampler,
+	composite_bind_group: wgpu::BindGroup,
 	ubo: Option<UboGroup>,
 	projection_ubo: Option<Ubo>,
 	ui_manager: Option<UiManagerHandle>,
@@ -134,6 +147,22 @@ impl Renderer {
 		let blit_bind_group =
 			Self::create_blit_bind_group(&device, &blit_bind_group_layout, &viewport_view, &blit_sampler);
 
+		// gbuffer before bloom (bloom needs the emissive view's identity); both
+		// before the composite bind group (needs albedo + bloom's result view).
+		let gbuffer = GBuffer::new(&device, viewport_size);
+		let bloom = BloomChain::new(&device, viewport_size, gbuffer.emissive.view())?;
+		let composite_bind_group_layout = Self::create_composite_bind_group_layout(&device);
+		let composite_sampler = Self::create_composite_sampler(&device);
+		let composite_bind_group = Self::create_composite_bind_group(
+			&device,
+			&composite_bind_group_layout,
+			gbuffer.albedo.view(),
+			bloom.result_view(),
+			&composite_sampler,
+		);
+		let composite_pipeline =
+			Self::create_composite_pipeline(&device, VIEWPORT_TEXTURE_FORMAT, &composite_bind_group_layout)?;
+
 		let render_pipeline =
 			Self::create_scene_pipeline(&device, &material_bind_group_layout, &ubo_bind_group_layout)?;
 		let debug_pipeline = Self::create_debug_pipeline(&device, &ubo_bind_group_layout)?;
@@ -159,6 +188,12 @@ impl Renderer {
 			blit_bind_group_layout,
 			blit_sampler,
 			blit_bind_group,
+			gbuffer,
+			bloom,
+			composite_pipeline,
+			composite_bind_group_layout,
+			composite_sampler,
+			composite_bind_group,
 			ubo: None,
 			projection_ubo,
 			ui_manager: None,
@@ -249,11 +284,22 @@ impl Renderer {
 
 		let (viewport_texture, viewport_view) = Self::create_viewport_texture(&self.device, new_size);
 		let (viewport_depth_texture, viewport_depth_view) = Self::create_depth_texture(&self.device, new_size);
+
+		self.gbuffer.resize(&self.device, new_size);
+		self.bloom.resize(&self.device, new_size, self.gbuffer.emissive.view());
+
 		let blit_bind_group = Self::create_blit_bind_group(
 			&self.device,
 			&self.blit_bind_group_layout,
 			&viewport_view,
 			&self.blit_sampler,
+		);
+		let composite_bind_group = Self::create_composite_bind_group(
+			&self.device,
+			&self.composite_bind_group_layout,
+			self.gbuffer.albedo.view(),
+			self.bloom.result_view(),
+			&self.composite_sampler,
 		);
 
 		self.viewport_texture = viewport_texture;
@@ -263,6 +309,7 @@ impl Renderer {
 		self.viewport_size = new_size;
 		self.viewport_generation = self.viewport_generation.wrapping_add(1);
 		self.blit_bind_group = blit_bind_group;
+		self.composite_bind_group = composite_bind_group;
 
 		if let Some(ref handle) = self.ui_manager {
 			handle
@@ -363,7 +410,15 @@ impl Renderer {
 		};
 		pipeline::Builder::new(device)
 			.with_shader_source(shader_source)
-			.with_pixel_format(VIEWPORT_TEXTURE_FORMAT)
+			.with_pixel_formats([ALBEDO_FORMAT, EMISSIVE_FORMAT, NORMAL_FORMAT])
+			// Albedo/emissive alpha-blend consistently (overlapping semi-transparent
+			// sprites should composite the same way on both); normal is a pure
+			// overwrite -- nothing ever accumulates into it, blending is meaningless.
+			.with_blend_states([
+				Some(wgpu::BlendState::ALPHA_BLENDING),
+				Some(wgpu::BlendState::ALPHA_BLENDING),
+				None,
+			])
 			.with_vertex_buffer_layout(Vertex::get_layout())
 			.with_depth_write_enabled(false)
 			.with_depth_compare(wgpu::CompareFunction::Always)
@@ -377,7 +432,7 @@ impl Renderer {
 		pipeline::Builder::new(device)
 			.with_name("Physics Debug Draw")
 			.with_shader_source(DEBUG_LINE_SHADER)
-			.with_pixel_format(VIEWPORT_TEXTURE_FORMAT)
+			.with_pixel_formats([ALBEDO_FORMAT, EMISSIVE_FORMAT, NORMAL_FORMAT])
 			.with_vertex_buffer_layout(Vertex::get_layout())
 			.with_bind_group_layout(ubo_layout)
 			.with_topology(wgpu::PrimitiveTopology::LineList)
@@ -398,6 +453,95 @@ impl Renderer {
 			.with_shader_source(VIEWPORT_BLIT_SHADER)
 			.with_pixel_format(surface_format)
 			.with_bind_group_layout(blit_layout)
+			.with_depth_stencil_enabled(false)
+			.build()
+	}
+
+	fn create_composite_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+		device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+			label: Some("Composite Bind Group Layout"),
+			entries: &[
+				wgpu::BindGroupLayoutEntry {
+					binding: 0,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Texture {
+						sample_type: wgpu::TextureSampleType::Float { filterable: true },
+						view_dimension: wgpu::TextureViewDimension::D2,
+						multisampled: false,
+					},
+					count: None,
+				},
+				wgpu::BindGroupLayoutEntry {
+					binding: 1,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Texture {
+						sample_type: wgpu::TextureSampleType::Float { filterable: true },
+						view_dimension: wgpu::TextureViewDimension::D2,
+						multisampled: false,
+					},
+					count: None,
+				},
+				wgpu::BindGroupLayoutEntry {
+					binding: 2,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+					count: None,
+				},
+			],
+		})
+	}
+
+	fn create_composite_sampler(device: &wgpu::Device) -> wgpu::Sampler {
+		device.create_sampler(&wgpu::SamplerDescriptor {
+			label: Some("Composite Sampler"),
+			address_mode_u: wgpu::AddressMode::ClampToEdge,
+			address_mode_v: wgpu::AddressMode::ClampToEdge,
+			address_mode_w: wgpu::AddressMode::ClampToEdge,
+			mag_filter: wgpu::FilterMode::Linear,
+			min_filter: wgpu::FilterMode::Linear,
+			mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+			..wgpu::SamplerDescriptor::default()
+		})
+	}
+
+	fn create_composite_bind_group(
+		device: &wgpu::Device,
+		layout: &wgpu::BindGroupLayout,
+		albedo_view: &wgpu::TextureView,
+		bloom_view: &wgpu::TextureView,
+		sampler: &wgpu::Sampler,
+	) -> wgpu::BindGroup {
+		device.create_bind_group(&wgpu::BindGroupDescriptor {
+			label: Some("Composite Bind Group"),
+			layout,
+			entries: &[
+				wgpu::BindGroupEntry {
+					binding: 0,
+					resource: wgpu::BindingResource::TextureView(albedo_view),
+				},
+				wgpu::BindGroupEntry {
+					binding: 1,
+					resource: wgpu::BindingResource::TextureView(bloom_view),
+				},
+				wgpu::BindGroupEntry {
+					binding: 2,
+					resource: wgpu::BindingResource::Sampler(sampler),
+				},
+			],
+		})
+	}
+
+	fn create_composite_pipeline(
+		device: &wgpu::Device,
+		output_format: wgpu::TextureFormat,
+		layout: &wgpu::BindGroupLayout,
+	) -> ze_core::Result<Pipeline> {
+		pipeline::Builder::new(device)
+			.with_name("Bloom Composite")
+			.with_shader_source(COMPOSITE_SHADER)
+			.with_pixel_format(output_format)
+			.with_blend_state(None)
+			.with_bind_group_layout(layout)
 			.with_depth_stencil_enabled(false)
 			.build()
 	}
@@ -656,6 +800,7 @@ impl Renderer {
 					item.color.saturation_threshold,
 					item.texture_rotation_degrees.to_radians(),
 				],
+				emissive: [item.glow_strength, 0.0, 0.0, 0.0],
 			};
 
 			self.materials.push(SpriteMaterial::new(
@@ -694,22 +839,87 @@ impl Renderer {
 			label: Some("Viewport Render Encoder"),
 		});
 
-		let mut render_pass = command_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-			label: Some("Viewport Render Pass"),
-			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-				view: &self.viewport_view,
-				resolve_target: None,
-				depth_slice: None,
-				ops: wgpu::Operations {
-					load: wgpu::LoadOp::Clear(wgpu::Color {
-						r: f64::from(camera.clear_color[0]),
-						g: f64::from(camera.clear_color[1]),
-						b: f64::from(camera.clear_color[2]),
-						a: f64::from(camera.clear_color[3]),
-					}),
-					store: wgpu::StoreOp::Store,
-				},
-			})],
+		if !self.record_geometry_pass(
+			&mut command_encoder,
+			&debug_vertices,
+			debug_vertex_buffer.as_ref(),
+			camera,
+		) {
+			// Mirrors the previous early-return behavior: the encoder is dropped
+			// without being finished/submitted, discarding whatever was recorded.
+			return;
+		}
+
+		self.bloom.record(&mut command_encoder);
+		self.record_composite_pass(&mut command_encoder);
+
+		self.queue.submit(std::iter::once(command_encoder.finish()));
+	}
+
+	/// Records the `GBuffer` pass (sprites + physics debug lines, 3 color
+	/// attachments + shared depth) into `encoder`. Returns `false` if required
+	/// per-frame resources (object UBOs / projection UBO) are unexpectedly
+	/// missing; the caller must not submit `encoder` in that case.
+	fn record_geometry_pass(
+		&self,
+		encoder: &mut wgpu::CommandEncoder,
+		debug_vertices: &[Vertex],
+		debug_vertex_buffer: Option<&wgpu::Buffer>,
+		camera: &render_system::CameraRenderData,
+	) -> bool {
+		let Some(projection_ubo) = self.projection_ubo.as_ref() else {
+			return false;
+		};
+		let Some(ubo) = self.ubo.as_ref() else {
+			ze_log::error!("cannot render sprite without object UBOs");
+			return false;
+		};
+
+		let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+			label: Some("GBuffer Geometry Pass"),
+			color_attachments: &[
+				Some(wgpu::RenderPassColorAttachment {
+					view: self.gbuffer.albedo.view(),
+					resolve_target: None,
+					depth_slice: None,
+					ops: wgpu::Operations {
+						load: wgpu::LoadOp::Clear(wgpu::Color {
+							r: f64::from(camera.clear_color[0]),
+							g: f64::from(camera.clear_color[1]),
+							b: f64::from(camera.clear_color[2]),
+							a: f64::from(camera.clear_color[3]),
+						}),
+						store: wgpu::StoreOp::Store,
+					},
+				}),
+				Some(wgpu::RenderPassColorAttachment {
+					view: self.gbuffer.emissive.view(),
+					resolve_target: None,
+					depth_slice: None,
+					// Background never blooms -- only what the fragment shader
+					// actually writes as emissive should contribute to bloom.
+					ops: wgpu::Operations {
+						load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+						store: wgpu::StoreOp::Store,
+					},
+				}),
+				Some(wgpu::RenderPassColorAttachment {
+					view: self.gbuffer.normal.view(),
+					resolve_target: None,
+					depth_slice: None,
+					// Flat (0,0,1) normal encoded to [0,1] -- placeholder, nothing
+					// consumes this attachment yet.
+					ops: wgpu::Operations {
+						load: wgpu::LoadOp::Clear(wgpu::Color {
+							r: 0.5,
+							g: 0.5,
+							b: 1.0,
+							a: 1.0,
+						}),
+						store: wgpu::StoreOp::Store,
+					},
+				}),
+			],
 			depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
 				view: &self.viewport_depth_view,
 				depth_ops: Some(wgpu::Operations {
@@ -727,19 +937,12 @@ impl Renderer {
 		render_pass.set_viewport(0.0, 0.0, viewport_width as f32, viewport_height as f32, 0.0, 1.0);
 		render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
 		render_pass.set_pipeline(&self.pipeline.render_pipeline);
-		let Some(projection_ubo) = self.projection_ubo.as_ref() else {
-			return;
-		};
 		render_pass.set_bind_group(2, &projection_ubo.bind_group, &[]);
 
 		for (i, material) in self.materials.iter().enumerate() {
-			let Some(ubo) = self.ubo.as_ref() else {
-				ze_log::error!("cannot render sprite without object UBOs");
-				return;
-			};
 			let Some(object_bind_group) = ubo.bind_groups.get(i) else {
 				ze_log::error!("missing object UBO bind group for sprite {i}");
-				return;
+				return false;
 			};
 
 			render_pass.set_bind_group(0, &material.bind_group, &[]);
@@ -753,15 +956,39 @@ impl Renderer {
 			render_pass.draw_indexed(0..6, 0, 0..1);
 		}
 
-		if let Some(debug_vertex_buffer) = &debug_vertex_buffer {
+		if let Some(debug_vertex_buffer) = debug_vertex_buffer {
 			render_pass.set_pipeline(&self.debug_pipeline.render_pipeline);
 			render_pass.set_bind_group(0, &projection_ubo.bind_group, &[]);
 			render_pass.set_vertex_buffer(0, debug_vertex_buffer.slice(..));
 			render_pass.draw(0..debug_vertices.len() as u32, 0..1);
 		}
 
-		drop(render_pass);
-		self.queue.submit(std::iter::once(command_encoder.finish()));
+		true
+	}
+
+	/// The new last write to `viewport_view` before the existing present paths
+	/// sample it -- `finalColor = albedo + bloom * intensity`, or effectively a
+	/// passthrough of albedo while the bloom chain has nothing to contribute.
+	fn record_composite_pass(&self, encoder: &mut wgpu::CommandEncoder) {
+		let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+			label: Some("Composite Pass"),
+			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+				view: &self.viewport_view,
+				resolve_target: None,
+				depth_slice: None,
+				ops: wgpu::Operations {
+					load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+					store: wgpu::StoreOp::Store,
+				},
+			})],
+			depth_stencil_attachment: None,
+			occlusion_query_set: None,
+			timestamp_writes: None,
+			multiview_mask: None,
+		});
+		render_pass.set_pipeline(&self.composite_pipeline.render_pipeline);
+		render_pass.set_bind_group(0, &self.composite_bind_group, &[]);
+		render_pass.draw(0..3, 0..1);
 	}
 }
 
@@ -786,9 +1013,19 @@ fn vs_main(vertex: Vertex) -> VertexOutput {
     return out;
 }
 
+struct FragmentOutput {
+    @location(0) albedo: vec4<f32>,
+    @location(1) emissive: vec4<f32>,
+    @location(2) normal: vec4<f32>,
+}
+
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return in.color;
+fn fs_main(in: VertexOutput) -> FragmentOutput {
+    var out: FragmentOutput;
+    out.albedo = in.color;
+    out.emissive = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    out.normal = vec4<f32>(0.5, 0.5, 1.0, 1.0);
+    return out;
 }
 ";
 
@@ -818,6 +1055,40 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     return textureSample(viewport_texture, viewport_sampler, in.uv);
+}
+";
+
+const COMPOSITE_SHADER: &str = r"
+@group(0) @binding(0) var albedo_texture: texture_2d<f32>;
+@group(0) @binding(1) var bloom_texture: texture_2d<f32>;
+@group(0) @binding(2) var composite_sampler: sampler;
+
+const BLOOM_INTENSITY: f32 = 0.4;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+}
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let positions = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>(3.0, -1.0),
+        vec2<f32>(-1.0, 3.0),
+    );
+    let pos = positions[vertex_index];
+    out.position = vec4<f32>(pos, 0.0, 1.0);
+    out.uv = vec2<f32>(pos.x * 0.5 + 0.5, 1.0 - (pos.y * 0.5 + 0.5));
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let albedo = textureSample(albedo_texture, composite_sampler, in.uv);
+    let bloom = textureSample(bloom_texture, composite_sampler, in.uv);
+    return vec4<f32>(albedo.rgb + bloom.rgb * BLOOM_INTENSITY, albedo.a);
 }
 ";
 

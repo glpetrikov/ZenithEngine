@@ -7,6 +7,13 @@ pub struct UiManager {
 	pub winit: yakui_winit::YakuiWinit,
 	pub wgpu: yakui_wgpu::YakuiWgpu,
 	pub buffers: yakui_wgpu::Buffers,
+	// The windowing system can deliver the first RedrawRequested before
+	// UISystem has ever ticked (e.g. an implicit initial redraw on window
+	// creation, which fires before the app's first about_to_wait-driven
+	// system update). Painting `yak` before it has had one start()/finish()
+	// layout pass panics inside yakui's paint_dom on a missing layout entry,
+	// so paint() must no-op until UISystem has run at least once.
+	has_laid_out: bool,
 }
 
 impl UiManager {
@@ -30,8 +37,14 @@ impl UiManager {
 			winit,
 			wgpu,
 			buffers,
+			has_laid_out: false,
 		}
 	}
+
+	/// Marks that `yak` has completed at least one `start()`/`finish()` layout
+	/// pass, so `paint()` is now safe to call. Called by `UISystem` after
+	/// `yak.finish()`.
+	pub const fn mark_laid_out(&mut self) { self.has_laid_out = true; }
 
 	pub fn handle_window_event(&mut self, event: &winit::event::WindowEvent) {
 		self.winit.handle_window_event(&mut self.yak, event);
@@ -57,6 +70,10 @@ impl UiManager {
 		format: wgpu::TextureFormat,
 		sample_count: u32,
 	) {
+		if !self.has_laid_out {
+			return;
+		}
+
 		let surface_info = SurfaceInfo {
 			format,
 			sample_count,

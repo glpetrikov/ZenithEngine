@@ -9,6 +9,13 @@ pub struct Sprite {
 	pub size: SpriteSize,
 	pub color: SpriteColorSettings,
 	pub settings: SpriteSettings,
+	/// Opt-in emissive/glow strength fed into the `GBuffer`'s emissive
+	/// attachment (and from there, bloom). `0.0` (default) means "doesn't
+	/// glow"; values above `1.0` are expected for strongly emissive sprites
+	/// (engine trails, lasers, explosions) -- the emissive attachment is HDR
+	/// (`Rgba16Float`) specifically to have headroom for that.
+	#[serde(default)]
+	pub glow_strength: f32,
 }
 
 impl ze_ecs::Component for Sprite {

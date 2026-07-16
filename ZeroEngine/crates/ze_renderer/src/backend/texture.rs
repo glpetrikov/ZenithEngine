@@ -13,6 +13,10 @@ use super::bind_group;
 pub struct SpriteMaterialUniform {
 	pub tint: [f32; 4],
 	pub params: [f32; 4],
+	/// `.x` = glow strength (see `Sprite::glow_strength`); `.yzw` reserved.
+	/// A separate `vec4`-aligned field rather than growing `params` (already
+	/// full at 4 slots) or breaking its existing std140-style alignment.
+	pub emissive: [f32; 4],
 }
 
 pub struct TextureResource {

@@ -15,7 +15,8 @@ pub struct Builder<'a> {
 	shader_source: Option<ShaderSource>,
 	vertex_entry: String,
 	fragment_entry: String,
-	pixel_format: wgpu::TextureFormat,
+	pixel_formats: Vec<wgpu::TextureFormat>,
+	blend_states: Vec<Option<wgpu::BlendState>>,
 	vertex_buffer_layouts: Vec<wgpu::VertexBufferLayout<'static>>,
 	topology: wgpu::PrimitiveTopology,
 	polygon_mode: wgpu::PolygonMode,
@@ -37,7 +38,8 @@ impl<'a> Builder<'a> {
 			shader_source: None,
 			vertex_entry: "vs_main".to_string(),
 			fragment_entry: "fs_main".to_string(),
-			pixel_format: wgpu::TextureFormat::Bgra8UnormSrgb,
+			pixel_formats: vec![wgpu::TextureFormat::Bgra8UnormSrgb],
+			blend_states: vec![Some(wgpu::BlendState::ALPHA_BLENDING)],
 			vertex_buffer_layouts: vec![],
 			topology: wgpu::PrimitiveTopology::TriangleList,
 			polygon_mode: wgpu::PolygonMode::Fill,
@@ -88,8 +90,29 @@ impl<'a> Builder<'a> {
 		self
 	}
 
-	pub const fn with_pixel_format(mut self, format: wgpu::TextureFormat) -> Self {
-		self.pixel_format = format;
+	pub fn with_pixel_format(mut self, format: wgpu::TextureFormat) -> Self {
+		self.pixel_formats = vec![format];
+		self.blend_states.resize(1, Some(wgpu::BlendState::ALPHA_BLENDING));
+		self
+	}
+
+	pub fn with_pixel_formats(mut self, formats: impl Into<Vec<wgpu::TextureFormat>>) -> Self {
+		self.pixel_formats = formats.into();
+		self.blend_states
+			.resize(self.pixel_formats.len(), Some(wgpu::BlendState::ALPHA_BLENDING));
+		self
+	}
+
+	/// Fills every attachment's blend state with the same value. For
+	/// per-attachment control (e.g. a `GBuffer` pass where some attachments
+	/// blend and others don't), use `with_blend_states` instead.
+	pub fn with_blend_state(mut self, blend: Option<wgpu::BlendState>) -> Self {
+		self.blend_states = vec![blend; self.pixel_formats.len().max(1)];
+		self
+	}
+
+	pub fn with_blend_states(mut self, blends: impl Into<Vec<Option<wgpu::BlendState>>>) -> Self {
+		self.blend_states = blends.into();
 		self
 	}
 
@@ -162,11 +185,18 @@ impl<'a> Builder<'a> {
 		};
 		let pipeline_layout = self.device.create_pipeline_layout(&pipeline_layout_descriptor);
 
-		let render_targets = [Some(wgpu::ColorTargetState {
-			format: self.pixel_format,
-			blend: Some(wgpu::BlendState::ALPHA_BLENDING), // TODO: add enum BlendMode
-			write_mask: wgpu::ColorWrites::ALL,
-		})];
+		let render_targets: Vec<Option<wgpu::ColorTargetState>> = self
+			.pixel_formats
+			.iter()
+			.zip(self.blend_states.iter())
+			.map(|(format, blend)| {
+				Some(wgpu::ColorTargetState {
+					format: *format,
+					blend: *blend,
+					write_mask: wgpu::ColorWrites::ALL,
+				})
+			})
+			.collect();
 
 		let depth_stencil = self.depth_stencil_enabled.then_some(wgpu::DepthStencilState {
 			format: wgpu::TextureFormat::Depth32Float,
