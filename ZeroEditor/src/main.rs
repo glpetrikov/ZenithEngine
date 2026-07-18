@@ -38,10 +38,12 @@ use ze_app::load_project_scene;
 use ze_assets::ResourceManager;
 use ze_audio::AudioSystem;
 use ze_core::{Context as _, Quat, Vec3, anyhow, bail};
-use ze_ecs::{EditorOnly, EntityId, Name, PhysicsSettings, SaveFile, Scene, Tag, Transform, shipyard::IntoIter};
+use ze_ecs::{
+	EditorOnly, EntityId, Name, PhysicsSettings, SaveFile, Scene, Tag, Transform, ViewportInfo, shipyard::IntoIter,
+};
 use ze_physics::PhysicsSystem;
 use ze_project::Project;
-use ze_renderer::{Camera, CameraProjection, CompositeMode, RenderSystem, Renderer};
+use ze_renderer::{Camera, CameraProjection, CameraViewSystem, CompositeMode, RenderSystem, Renderer};
 use ze_scripting_cs::{
 	SHUTDOWN_REQUESTED, ScriptingSceneLoadCommand, ScriptingSystem, drain_scripting_scene_load_commands,
 };
@@ -1633,6 +1635,20 @@ fn update_editor_scene_before_render(
 				ze_log::error!("failed to update audio system: {error:?}");
 			}
 		}
+
+		// Refresh ActiveCameraView from this tick's (post-physics) camera
+		// transform before UISystem runs below, so resolve_screen_pos doesn't
+		// project entity positions with last frame's view-projection matrix --
+		// see CameraViewSystem's doc comment for why that one-frame lag caused
+		// jittering/ghosting UI during fast camera motion.
+		let viewport_size = renderer.viewport_size();
+		scene.world().add_unique(ViewportInfo {
+			size: ze_core::Vec2::new(viewport_size.width as f32, viewport_size.height as f32),
+		});
+		if let Err(error) = scene.update_system::<CameraViewSystem>(dt) {
+			ze_log::error!("failed to update camera view system: {error:?}");
+		}
+
 		asset_reload
 	};
 	renderer.invalidate_textures(asset_reload.texture_assets());

@@ -16,6 +16,21 @@ pub struct ActiveCameraView {
 
 impl Unique for ActiveCameraView {}
 
+/// Current window viewport size, refreshed once per frame (before systems
+/// run) by the app shell, which is the only place that owns the `Renderer`.
+/// Lets `CameraViewSystem` compute a fresh `ActiveCameraView` from inside
+/// `Scene::update_systems` without needing a `&Renderer` reference of its own.
+#[derive(Debug, Clone, Copy)]
+pub struct ViewportInfo {
+	pub size: Vec2,
+}
+
+impl Unique for ViewportInfo {}
+
+impl ViewportInfo {
+	pub fn aspect_ratio(&self) -> f32 { self.size.x / self.size.y.max(1.0) }
+}
+
 impl ActiveCameraView {
 	/// Projects a world-space position to screen-space pixel coordinates
 	/// (origin top-left, +Y down), matching the convention used by the

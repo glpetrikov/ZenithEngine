@@ -15,11 +15,13 @@ use winit::{
 use ze_assets::ResourceManager;
 use ze_audio::AudioSystem;
 use ze_core::{Result, Vec2, bail};
-use ze_ecs::{EditorOnly, EntitiesView, PhysicsSettings, Scene, System, registry};
+use ze_ecs::{EditorOnly, EntitiesView, PhysicsSettings, Scene, System, ViewportInfo, registry};
 use ze_input::{Input, ZKeyCode, ZMouseCode};
 use ze_physics::PhysicsSystem;
 use ze_project::Project;
-use ze_renderer::{Camera, EditorCameraSystem, RenderStatus, RenderSystem, register_renderer_components};
+use ze_renderer::{
+	Camera, CameraViewSystem, EditorCameraSystem, RenderStatus, RenderSystem, register_renderer_components,
+};
 use ze_scripting_cs::{
 	SHUTDOWN_REQUESTED, ScriptingSceneLoadCommand, ScriptingSystem, drain_scripting_scene_load_commands,
 	register_scripting_components,
@@ -135,9 +137,23 @@ impl App {
 	}
 
 	pub fn update_active_scene_systems(&mut self, dt: f32) -> Result<()> {
+		// `CameraViewSystem` (runs inside `scene.update_systems`, between
+		// `PhysicsSystem` and `UISystem`) needs the viewport size to rebuild
+		// `ActiveCameraView`, but only `App` owns the `Renderer`. Stash it as a
+		// unique each tick rather than threading a `&Renderer` through the
+		// `System` trait.
+		let viewport = self.renderer.as_ref().map(|renderer| {
+			let size = renderer.viewport_size();
+			Vec2::new(size.width as f32, size.height as f32)
+		});
+
 		let Some(scene) = self.active_scene_mut() else {
 			return Ok(());
 		};
+
+		if let Some(size) = viewport {
+			scene.world().add_unique(ViewportInfo { size });
+		}
 
 		scene.with_system_mut::<PhysicsSystem, _>(|physics, scene| {
 			physics.remove_inactive_entities(scene);
@@ -249,8 +265,13 @@ pub fn load_project_scene(
 	scene.add_system(scripting_system);
 	scene.add_system(PhysicsSystem::with_scripting(scripting_runtime));
 	// update_systems() ticks systems in add_system() push order (no explicit
-	// ordering contract) -- put UISystem before RenderSystem so a frame's UI
-	// state is fresh by the time rendering-adjacent systems run.
+	// ordering contract) -- CameraViewSystem must run after PhysicsSystem (so
+	// it sees this tick's post-physics camera transform) and before UISystem
+	// (so UISystem's resolve_screen_pos projects with a fresh, not
+	// last-frame's, view-projection matrix); UISystem itself goes before
+	// RenderSystem so a frame's UI state is fresh by the time
+	// rendering-adjacent systems run.
+	scene.add_system(CameraViewSystem::new());
 	if let Some(handle) = ui_manager {
 		scene.add_system(UISystem::new(handle));
 	}

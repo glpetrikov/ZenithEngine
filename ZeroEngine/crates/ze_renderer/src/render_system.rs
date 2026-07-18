@@ -2,8 +2,8 @@ use ze_assets::ResourceManager;
 use ze_core::{Mat4, Result, Vec2, Vec3};
 use ze_ecs::{
 	ActiveCameraView, Collider, ColliderShape, EditorOnly, EntitiesView, EntityId, Inactive, Name, PhysicsSettings,
-	RigidBody, RigidBodyType, Scene, System, Tag, Transform,
-	shipyard::{IntoIter, View},
+	RigidBody, RigidBodyType, Scene, System, Tag, Transform, ViewportInfo,
+	shipyard::{IntoIter, UniqueView, View},
 };
 use ze_input::{Input, ZKeyCode};
 
@@ -293,6 +293,55 @@ impl System for RenderSystem {
 			Self::toggle_debug_draw(scene)?;
 		}
 
+		Ok(())
+	}
+
+	fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+}
+
+/// Refreshes `ActiveCameraView` from the primary camera's *current-tick*
+/// transform, before `UISystem` runs.
+///
+/// `ActiveCameraView` used to only be written by `RenderSystem::render_scene`,
+/// which runs during `RedrawRequested`, strictly after `UISystem::update` had
+/// already run for that tick inside `Scene::update_systems`. `UISystem`
+/// projects entity positions with this matrix (see `resolve_screen_pos`), so
+/// it was always one whole frame behind: fine while the camera is still, but
+/// visibly-lagging UI anchors relative to the sprite during fast camera
+/// motion. Recomputing it here -- registered after `PhysicsSystem` and before
+/// `UISystem` -- makes it fresh for this tick's `UISystem` run. `render_scene`
+/// still recomputes its own copy for the actual draw; that's a few redundant
+/// matrix multiplies, not a correctness concern, since both computations read
+/// the same already-physics-stepped transform.
+#[derive(Default)]
+pub struct CameraViewSystem;
+
+impl CameraViewSystem {
+	pub fn new() -> Self { Self::default() }
+}
+
+impl System for CameraViewSystem {
+	fn name(&self) -> &'static str { "CameraViewSystem" }
+
+	fn update(&mut self, scene: &mut Scene, _dt: f32) -> Result<()> {
+		let Some(viewport) = scene
+			.world()
+			.borrow::<UniqueView<ViewportInfo>>()
+			.ok()
+			.map(|view| *view)
+		else {
+			return Ok(());
+		};
+
+		let Some(camera) = RenderSystem::find_primary_camera(scene, viewport.aspect_ratio()) else {
+			let _ = scene.world().remove_unique::<ActiveCameraView>();
+			return Ok(());
+		};
+
+		scene.world().add_unique(ActiveCameraView {
+			view_projection: camera.view_projection,
+			viewport_size: viewport.size,
+		});
 		Ok(())
 	}
 
