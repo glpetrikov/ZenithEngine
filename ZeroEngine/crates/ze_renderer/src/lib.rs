@@ -18,11 +18,12 @@ use ze_ui::ui_manager::UiManagerHandle;
 
 use crate::{
 	backend::{
+		instance::SpriteInstanceRaw,
 		mesh::{Mesh, Vertex},
 		pipeline::{self, Pipeline},
 		sheet::SheetCache,
-		texture::{SpriteMaterial, SpriteMaterialUniform, TextureCache},
-		ubo::{Ubo, UboGroup},
+		texture::{SpriteMaterial, TextureCache},
+		ubo::Ubo,
 	},
 	bloom::BloomChain,
 	gbuffer::{ALBEDO_FORMAT, EMISSIVE_FORMAT, GBuffer, NORMAL_FORMAT},
@@ -34,6 +35,16 @@ const VIEWPORT_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8U
 pub enum CompositeMode {
 	Standalone,
 	Editor,
+}
+
+/// One instanced draw call: every sprite in `instance_range` samples
+/// `material`'s texture. Built by coalescing consecutive same-texture runs
+/// out of the (already layer-sorted) frame's sprite list, so draw order --
+/// and therefore on-screen stacking, since sprites are drawn with depth
+/// testing disabled -- exactly matches the old one-`draw`-call-per-sprite loop.
+struct SpriteBatch {
+	material: SpriteMaterial,
+	instance_range: std::ops::Range<u32>,
 }
 
 pub struct Renderer {
@@ -48,9 +59,9 @@ pub struct Renderer {
 	quad_mesh: Mesh,
 	texture_cache: TextureCache,
 	sheet_cache: SheetCache,
-	materials: Vec<SpriteMaterial>,
+	sprite_batches: Vec<SpriteBatch>,
+	instance_buffer: Option<wgpu::Buffer>,
 	material_bind_group_layout: wgpu::BindGroupLayout,
-	ubo_bind_group_layout: wgpu::BindGroupLayout,
 	blit_bind_group_layout: wgpu::BindGroupLayout,
 	blit_sampler: wgpu::Sampler,
 	blit_bind_group: wgpu::BindGroup,
@@ -60,7 +71,6 @@ pub struct Renderer {
 	composite_bind_group_layout: wgpu::BindGroupLayout,
 	composite_sampler: wgpu::Sampler,
 	composite_bind_group: wgpu::BindGroup,
-	ubo: Option<UboGroup>,
 	projection_ubo: Option<Ubo>,
 	ui_manager: Option<UiManagerHandle>,
 	// Core wgpu objects — dropped last in the correct order:
@@ -74,7 +84,6 @@ pub struct Renderer {
 	composite_mode: CompositeMode,
 	viewport_size: winit::dpi::PhysicalSize<u32>,
 	viewport_generation: u64,
-	ubo_object_count: usize,
 }
 impl Drop for Renderer {
 	fn drop(&mut self) { self.device.poll(wgpu::PollType::wait_indefinitely()).ok(); }
@@ -173,7 +182,7 @@ impl Renderer {
 		let projection_ubo = Some(Ubo::new(&device, &ubo_bind_group_layout));
 		let texture_cache = TextureCache::new(&device, &queue);
 		let sheet_cache = SheetCache::new();
-		let materials = Vec::new();
+		let sprite_batches = Vec::new();
 
 		Ok(Self {
 			viewport_texture,
@@ -186,9 +195,9 @@ impl Renderer {
 			quad_mesh,
 			texture_cache,
 			sheet_cache,
-			materials,
+			sprite_batches,
+			instance_buffer: None,
 			material_bind_group_layout,
-			ubo_bind_group_layout,
 			blit_bind_group_layout,
 			blit_sampler,
 			blit_bind_group,
@@ -198,7 +207,6 @@ impl Renderer {
 			composite_bind_group_layout,
 			composite_sampler,
 			composite_bind_group,
-			ubo: None,
 			projection_ubo,
 			ui_manager: None,
 			queue,
@@ -209,7 +217,6 @@ impl Renderer {
 			composite_mode: CompositeMode::Standalone,
 			viewport_size,
 			viewport_generation: 0,
-			ubo_object_count: 0,
 		})
 	}
 
@@ -252,19 +259,6 @@ impl Renderer {
 	pub fn flush_game_pass(&self) {
 		if let Err(error) = self.device.poll(wgpu::PollType::Poll) {
 			ze_log::warn!("failed to poll renderer device after game pass: {error:?}");
-		}
-	}
-
-	pub fn build_ubos_for_objects(&mut self, objects_count: usize) {
-		let objects_count = objects_count.max(1);
-		self.ubo = Some(UboGroup::new(&self.device, objects_count, &self.ubo_bind_group_layout));
-		self.ubo_object_count = objects_count;
-	}
-
-	fn ensure_ubos_for_objects(&mut self, objects_count: usize) {
-		let objects_count = objects_count.max(1);
-		if self.ubo.is_none() || self.ubo_object_count != objects_count {
-			self.build_ubos_for_objects(objects_count);
 		}
 	}
 
@@ -340,7 +334,7 @@ impl Renderer {
 
 	fn create_material_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
 		let mut builder = backend::bind_group_layout::Builder::new(device);
-		builder.add_material();
+		builder.add_texture();
 		builder.build("Material Bind Group Layout")
 	}
 
@@ -431,10 +425,10 @@ impl Renderer {
 				None,
 			])
 			.with_vertex_buffer_layout(Vertex::get_layout())
+			.with_vertex_buffer_layout(SpriteInstanceRaw::get_layout())
 			.with_depth_write_enabled(false)
 			.with_depth_compare(wgpu::CompareFunction::Always)
 			.with_bind_group_layout(material_layout)
-			.with_bind_group_layout(ubo_layout)
 			.with_bind_group_layout(ubo_layout)
 			.build()
 	}
@@ -776,16 +770,16 @@ impl Renderer {
 		camera: &render_system::CameraRenderData,
 		resources: &ResourceManager,
 	) {
-		self.ensure_ubos_for_objects(items.len());
 		if !self.update_projection(camera) {
 			return;
 		}
 
-		self.materials.clear();
-		self.materials
-			.reserve(items.len().saturating_sub(self.materials.capacity()));
-
-		for (i, item) in items.iter().enumerate() {
+		// Pass 1: resolve every sprite's texture + per-instance data. Each
+		// `get_or_load` borrow only needs to live for its own iteration (its
+		// dimensions are read immediately), so this can freely interleave
+		// texture cache lookups without fighting the borrow checker.
+		let mut resolved: Vec<(AssetRef, SpriteInstanceRaw)> = Vec::with_capacity(items.len());
+		for item in items {
 			let (asset_ref, pending_cell) =
 				resolve_texture_source(&item.texture_source, &mut self.sheet_cache, resources);
 			let texture = self
@@ -795,36 +789,62 @@ impl Renderer {
 			let sprite_size = sprite_size_to_world_scale(&item.size, effective_dimensions);
 			let transform = item.transform * Mat4::from_scale(Vec3::new(sprite_size[0], sprite_size[1], 1.0));
 
-			let Some(ubo) = self.ubo.as_mut() else {
-				return;
-			};
-			ubo.upload(i as u64, &transform, &self.queue);
-
 			let tint = item.color.tint.unwrap_or([1.0, 1.0, 1.0, 1.0]);
 			let mode = match item.color.mode {
 				components::SpriteColorMode::None => 0.0,
 				components::SpriteColorMode::Multiply => 1.0,
 				components::SpriteColorMode::GrayscaleTint => 2.0,
 			};
-			let uniform = SpriteMaterialUniform {
-				tint,
-				params: [
-					mode,
-					item.color.strength,
-					item.color.saturation_threshold,
-					item.texture_rotation_degrees.to_radians(),
-				],
-				emissive: [item.glow_strength, 0.0, 0.0, 0.0],
-				uv_rect,
-			};
 
-			self.materials.push(SpriteMaterial::new(
+			resolved.push((
+				asset_ref,
+				SpriteInstanceRaw {
+					model: transform.to_cols_array_2d(),
+					uv_rect,
+					tint,
+					params: [
+						mode,
+						item.color.strength,
+						item.color.saturation_threshold,
+						item.texture_rotation_degrees.to_radians(),
+					],
+					emissive: [item.glow_strength, 0.0, 0.0, 0.0],
+				},
+			));
+		}
+
+		self.instance_buffer = (!resolved.is_empty()).then(|| {
+			let instances: Vec<SpriteInstanceRaw> = resolved.iter().map(|(_, raw)| *raw).collect();
+			self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+				label: Some("Sprite Instance Buffer"),
+				contents: bytemuck::cast_slice(&instances),
+				usage: wgpu::BufferUsages::VERTEX,
+			})
+		});
+
+		// Pass 2: coalesce consecutive runs of the same resolved texture (the
+		// items are already layer-sorted by `RenderSystem::collect_items`)
+		// into one instanced batch each. Draw order across batches is left
+		// unchanged from the per-sprite order, which is what keeps on-screen
+		// stacking identical -- sprites are drawn with depth testing off, so
+		// stacking is purely a function of draw order.
+		self.sprite_batches.clear();
+		let keys: Vec<&AssetRef> = resolved.iter().map(|(asset_ref, _)| asset_ref).collect();
+		for range in group_consecutive(&keys) {
+			let asset_ref = keys[range.start];
+			let texture = self
+				.texture_cache
+				.get_or_load(asset_ref, resources, &self.device, &self.queue);
+			let material = SpriteMaterial::new(
 				"Sprite Material",
 				texture,
-				uniform,
 				&self.device,
 				&self.material_bind_group_layout,
-			));
+			);
+			self.sprite_batches.push(SpriteBatch {
+				material,
+				instance_range: range.start as u32..range.end as u32,
+			});
 		}
 
 		let debug_vertices = debug_lines
@@ -873,8 +893,8 @@ impl Renderer {
 
 	/// Records the `GBuffer` pass (sprites + physics debug lines, 3 color
 	/// attachments + shared depth) into `encoder`. Returns `false` if required
-	/// per-frame resources (object UBOs / projection UBO) are unexpectedly
-	/// missing; the caller must not submit `encoder` in that case.
+	/// per-frame resources (projection UBO) are unexpectedly missing; the
+	/// caller must not submit `encoder` in that case.
 	fn record_geometry_pass(
 		&self,
 		encoder: &mut wgpu::CommandEncoder,
@@ -883,10 +903,6 @@ impl Renderer {
 		camera: &render_system::CameraRenderData,
 	) -> bool {
 		let Some(projection_ubo) = self.projection_ubo.as_ref() else {
-			return false;
-		};
-		let Some(ubo) = self.ubo.as_ref() else {
-			ze_log::error!("cannot render sprite without object UBOs");
 			return false;
 		};
 
@@ -952,23 +968,20 @@ impl Renderer {
 		render_pass.set_viewport(0.0, 0.0, viewport_width as f32, viewport_height as f32, 0.0, 1.0);
 		render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
 		render_pass.set_pipeline(&self.pipeline.render_pipeline);
-		render_pass.set_bind_group(2, &projection_ubo.bind_group, &[]);
+		render_pass.set_bind_group(1, &projection_ubo.bind_group, &[]);
 
-		for (i, material) in self.materials.iter().enumerate() {
-			let Some(object_bind_group) = ubo.bind_groups.get(i) else {
-				ze_log::error!("missing object UBO bind group for sprite {i}");
-				return false;
-			};
-
-			render_pass.set_bind_group(0, &material.bind_group, &[]);
-			render_pass.set_bind_group(1, object_bind_group, &[]);
-
+		if let Some(instance_buffer) = self.instance_buffer.as_ref() {
 			render_pass.set_vertex_buffer(0, self.quad_mesh.buffer.slice(..self.quad_mesh.offset));
 			render_pass.set_index_buffer(
 				self.quad_mesh.buffer.slice(self.quad_mesh.offset..),
 				wgpu::IndexFormat::Uint16,
 			);
-			render_pass.draw_indexed(0..6, 0, 0..1);
+			render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
+
+			for batch in &self.sprite_batches {
+				render_pass.set_bind_group(0, &batch.material.bind_group, &[]);
+				render_pass.draw_indexed(0..6, 0, batch.instance_range.clone());
+			}
 		}
 
 		if let Some(debug_vertex_buffer) = debug_vertex_buffer {
@@ -1107,6 +1120,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 ";
 
+/// Contiguous index ranges over `keys` where every element within a range is
+/// equal, in original order (e.g. `[a, a, b, a]` -> `[0..2, 2..3, 3..4]`).
+/// Used to turn a layer-sorted sprite list into per-texture instanced draw
+/// batches without disturbing draw order between different textures.
+fn group_consecutive<K: PartialEq>(keys: &[K]) -> Vec<std::ops::Range<usize>> {
+	let mut groups = Vec::new();
+	let mut start = 0;
+	while start < keys.len() {
+		let mut end = start + 1;
+		while end < keys.len() && keys[end] == keys[start] {
+			end += 1;
+		}
+		groups.push(start..end);
+		start = end;
+	}
+	groups
+}
+
 fn sprite_size_to_world_scale(size: &components::SpriteSize, dimensions: (u32, u32)) -> [f32; 2] {
 	match size {
 		components::SpriteSize::Auto => auto_sprite_size(dimensions.0, dimensions.1),
@@ -1219,6 +1250,38 @@ fn resolve_uv_rect(pending: PendingGridCell, texture_dimensions: (u32, u32)) -> 
 	];
 
 	(uv_rect, size)
+}
+
+#[cfg(test)]
+mod sprite_batching_tests {
+	use super::*;
+
+	#[test]
+	fn a_large_uniform_tilemap_collapses_to_a_single_draw_call() {
+		// The motivating case: a big Paint-Tiles area, all sampling one
+		// Texture Sheet source. Confirms the batcher turns what used to be
+		// one draw call per tile into exactly one instanced draw call.
+		let keys = vec!["sheet.png"; 2500];
+		let groups = group_consecutive(&keys);
+		assert_eq!(groups, vec![0..2500]);
+	}
+
+	#[test]
+	fn different_textures_on_the_same_layer_stay_in_draw_order() {
+		// Same layer, interleaved textures: batching must not reorder
+		// draws relative to the original (layer-sorted) list, since sprites
+		// are drawn with depth testing disabled and stacking is purely a
+		// function of draw order.
+		let keys = vec!["a", "a", "b", "a", "a"];
+		let groups = group_consecutive(&keys);
+		assert_eq!(groups, vec![0..2, 2..3, 3..5]);
+	}
+
+	#[test]
+	fn empty_input_yields_no_groups() {
+		let keys: Vec<&str> = vec![];
+		assert!(group_consecutive(&keys).is_empty());
+	}
 }
 
 #[cfg(test)]

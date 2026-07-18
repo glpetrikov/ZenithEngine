@@ -20,7 +20,7 @@ impl<'a> Builder<'a> {
 
 	fn reset(&mut self) { self.entries.clear(); }
 
-	pub fn add_material(&mut self, view: &'a wgpu::TextureView, sampler: &'a wgpu::Sampler, buffer: &'a wgpu::Buffer) {
+	pub fn add_texture(&mut self, view: &'a wgpu::TextureView, sampler: &'a wgpu::Sampler) {
 		self.entries.push(wgpu::BindGroupEntry {
 			binding: self.entries.len() as u32,
 			resource: wgpu::BindingResource::TextureView(view),
@@ -30,13 +30,6 @@ impl<'a> Builder<'a> {
 			binding: self.entries.len() as u32,
 			resource: wgpu::BindingResource::Sampler(sampler),
 		});
-
-		self.add_buffer(
-			buffer,
-			0,
-			NonZeroU64::new(std::mem::size_of::<crate::backend::texture::SpriteMaterialUniform>() as u64)
-				.expect("size of SpriteMaterialUniform is zero"),
-		);
 	}
 
 	pub fn add_buffer(&mut self, buffer: &'a wgpu::Buffer, offset: u64, size: NonZeroU64) {

@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use egui::{Key, Sense, Ui};
 use ze_ecs::{
 	Children, Collider, Component, EditorOnly, EntitiesView, EntityId, Inactive, Name, Parent, PhysicsSettings,
@@ -30,8 +32,17 @@ impl Panel for SceneHierarchyPanel {
 		let previous_interact_size = ui.spacing_mut().interact_size;
 		ui.spacing_mut().interact_size.y = 16.0;
 
-		for entity in root_entities(context.scene) {
-			self.show_entity(ui, context, entity, 0, &mut Vec::new());
+		// Built once per frame: `show_entity`'s recursion needs "children of
+		// X" and "does Y exist" for every entity in the tree, and doing that
+		// via a fresh full-scene scan per lookup (the `children_of`/
+		// `entity_exists` free functions below, meant for one-off calls from
+		// user actions like drag-reparenting) is quadratic-to-cubic in entity
+		// count -- fine for an occasional call, disastrous once per node
+		// every single frame. This index turns the whole tree walk into one
+		// linear pass over the scene instead.
+		let index = HierarchyIndex::build(context.scene);
+		for &entity in &index.roots {
+			self.show_entity(ui, context, &index, entity, 0, &mut Vec::new());
 		}
 
 		ui.spacing_mut().interact_size = previous_interact_size;
@@ -60,6 +71,7 @@ impl SceneHierarchyPanel {
 		&mut self,
 		ui: &mut Ui,
 		context: &mut EditorPanelContext<'_>,
+		index: &HierarchyIndex,
 		entity: EntityId,
 		depth: usize,
 		visited: &mut Vec<EntityId>,
@@ -73,7 +85,7 @@ impl SceneHierarchyPanel {
 		}
 		visited.push(entity);
 
-		let children = children_of(context.scene, entity);
+		let children = index.children_of(entity);
 		let has_children = !children.is_empty();
 		let selected = context.selection.as_ref().is_some_and(
 			|selected| matches!(selected, EditorSelection::Entity(selected_entity) if *selected_entity == entity),
@@ -165,8 +177,8 @@ impl SceneHierarchyPanel {
 		});
 
 		if !collapsed {
-			for child in children {
-				self.show_entity(ui, context, child, depth + 1, visited);
+			for &child in children {
+				self.show_entity(ui, context, index, child, depth + 1, visited);
 			}
 		}
 		visited.retain(|visited_entity| *visited_entity != entity);
@@ -221,6 +233,96 @@ impl SceneHierarchyPanel {
 		self.rename_buffer = self.rename_original_name.clone();
 		self.finish_rename();
 	}
+}
+
+/// A one-shot, per-frame index of the scene's parent/child structure, built
+/// with a single linear pass (see `build`). Exists purely so the tree walk in
+/// `SceneHierarchyPanel::show` doesn't repeat `children_of`/`entity_exists`'s
+/// full-scene rescans (each an O(entity count) scan on its own) once per
+/// entity in the tree -- which made the whole panel quadratic-to-cubic in
+/// entity count and, at a few hundred painted tiles, the dominant cost of an
+/// editor frame. `children_of`/`parent_of`/`entity_exists` below stay as they
+/// are for the other call sites in this file (drag-reparent, duplicate,
+/// cycle checks), which run only on user action rather than every frame.
+struct HierarchyIndex {
+	children: HashMap<EntityId, Vec<EntityId>>,
+	roots: Vec<EntityId>,
+}
+
+impl HierarchyIndex {
+	fn build(scene: &ze_ecs::Scene) -> Self {
+		let entities = scene_entities(scene);
+		let existing: HashSet<EntityId> = entities.iter().copied().collect();
+		let visible: HashSet<EntityId> = entities
+			.iter()
+			.copied()
+			.filter(|&entity| hierarchy_visible(scene, entity))
+			.collect();
+
+		// Same "parent" resolution `parent_of` uses (a `Parent` component
+		// whose target still exists), inverted into parent -> children so it
+		// can be built with one pass instead of one `parent_of` call (itself
+		// an O(n) `entity_exists` scan) per candidate child.
+		let mut children_via_parent: HashMap<EntityId, Vec<EntityId>> = HashMap::new();
+		for &entity in &entities {
+			if !visible.contains(&entity) {
+				continue;
+			}
+			if let Some(parent) = cloned_component::<Parent>(scene, entity).map(|parent| EntityId::from(parent.id))
+				&& existing.contains(&parent)
+			{
+				children_via_parent.entry(parent).or_default().push(entity);
+			}
+		}
+
+		// Same union `children_of` computes -- a parent's explicit `Children`
+		// list plus any entity whose own `Parent` points back at it, deduped
+		// -- just assembled from the precomputed maps above instead of a
+		// fresh scene scan per parent.
+		let mut children: HashMap<EntityId, Vec<EntityId>> = HashMap::new();
+		for &entity in &entities {
+			let mut list = Vec::new();
+			let mut seen = HashSet::new();
+
+			if let Ok(component) = scene.world().get::<&Children>(entity) {
+				for id in &component.ids {
+					let child = EntityId::from(*id);
+					if existing.contains(&child) && visible.contains(&child) && seen.insert(child) {
+						list.push(child);
+					}
+				}
+			}
+			if let Some(via_parent) = children_via_parent.get(&entity) {
+				for &child in via_parent {
+					if seen.insert(child) {
+						list.push(child);
+					}
+				}
+			}
+
+			if !list.is_empty() {
+				sort_entities(scene, &mut list);
+				children.insert(entity, list);
+			}
+		}
+
+		let mut roots: Vec<EntityId> = entities
+			.iter()
+			.copied()
+			.filter(|&entity| visible.contains(&entity))
+			.filter(|&entity| {
+				cloned_component::<Parent>(scene, entity)
+					.map(|parent| EntityId::from(parent.id))
+					.filter(|parent| existing.contains(parent))
+					.is_none_or(|parent| !visible.contains(&parent))
+			})
+			.collect();
+		sort_entities(scene, &mut roots);
+
+		Self { children, roots }
+	}
+
+	fn children_of(&self, entity: EntityId) -> &[EntityId] { self.children.get(&entity).map_or(&[], Vec::as_slice) }
 }
 
 fn create_and_start_rename(
@@ -428,16 +530,6 @@ fn detach_from_parent(scene: &mut ze_ecs::Scene, child: EntityId) {
 
 fn scene_entities(scene: &ze_ecs::Scene) -> Vec<EntityId> {
 	scene.world().run(|entities: EntitiesView| entities.iter().collect())
-}
-
-fn root_entities(scene: &ze_ecs::Scene) -> Vec<EntityId> {
-	let mut entities = scene_entities(scene)
-		.into_iter()
-		.filter(|entity| hierarchy_visible(scene, *entity))
-		.filter(|entity| parent_of(scene, *entity).is_none_or(|parent| !hierarchy_visible(scene, parent)))
-		.collect::<Vec<_>>();
-	sort_entities(scene, &mut entities);
-	entities
 }
 
 fn children_of(scene: &ze_ecs::Scene, parent: EntityId) -> Vec<EntityId> {

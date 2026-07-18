@@ -12,6 +12,9 @@ public class Script : ZEScript
     [ZeroField]
     private float colliderRadius = 0.5f;
 
+    [ZeroField]
+    private float jumpForce = 5.0f;
+
     private Rigidbody? rb;
     private Transform? transform;
     private Audio? jumpAudio;
@@ -58,8 +61,7 @@ public class Script : ZEScript
     {
         if (rb is null || transform is null || jumpAudio is null) return;
 
-        const float jumpForce = 2.0f;
-        var maxVelocity = new Vector2(2.5f, 5.0f);
+        var maxVelocity = new Vector2(20.0f, 20.0f);
 
         if (moveLeft)
         {

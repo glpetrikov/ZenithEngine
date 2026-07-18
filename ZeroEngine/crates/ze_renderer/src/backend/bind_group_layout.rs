@@ -14,7 +14,11 @@ impl<'a> Builder<'a> {
 
 	fn reset(&mut self) { self.entries.clear(); }
 
-	pub fn add_material(&mut self) {
+	/// A texture + sampler pair, shared by every instance drawn against it.
+	/// Per-sprite parameters (tint, uv rect, glow, ...) travel as per-instance
+	/// vertex attributes instead of a per-draw-call material uniform, so this
+	/// bind group no longer carries a uniform buffer.
+	pub fn add_texture(&mut self) {
 		self.entries.push(wgpu::BindGroupLayoutEntry {
 			binding: self.entries.len() as u32,
 			visibility: wgpu::ShaderStages::FRAGMENT,
@@ -30,17 +34,6 @@ impl<'a> Builder<'a> {
 			binding: self.entries.len() as u32,
 			visibility: wgpu::ShaderStages::FRAGMENT,
 			ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-			count: None,
-		});
-
-		self.entries.push(wgpu::BindGroupLayoutEntry {
-			binding: self.entries.len() as u32,
-			visibility: wgpu::ShaderStages::FRAGMENT,
-			ty: wgpu::BindingType::Buffer {
-				ty: wgpu::BufferBindingType::Uniform,
-				has_dynamic_offset: false,
-				min_binding_size: None,
-			},
 			count: None,
 		});
 	}

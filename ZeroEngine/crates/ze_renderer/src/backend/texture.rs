@@ -1,30 +1,10 @@
 use std::collections::HashMap;
 
-use bytemuck::{Pod, Zeroable};
 use image::GenericImageView;
-use wgpu::util::DeviceExt;
 use ze_assets::{AssetRef, ResourceManager};
 use ze_core::Result;
 
 use super::bind_group;
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-pub struct SpriteMaterialUniform {
-	pub tint: [f32; 4],
-	pub params: [f32; 4],
-	/// `.x` = glow strength (see `Sprite::glow_strength`); `.yzw` reserved.
-	/// A separate `vec4`-aligned field rather than growing `params` (already
-	/// full at 4 slots) or breaking its existing std140-style alignment.
-	pub emissive: [f32; 4],
-	/// `.xy` = UV offset, `.zw` = UV scale, both normalized 0..1 against the
-	/// resolved texture's full pixel dimensions. `[0.0, 0.0, 1.0, 1.0]` for a
-	/// `TextureSource::File` sprite (samples the whole texture, matching
-	/// pre-`TextureSheet` behavior exactly); a `SheetCell` sprite on a
-	/// `UniformGrid` sheet narrows this to the cell's trimmed sub-rect.
-	/// Another separate vec4 for the same alignment reason as `emissive`.
-	pub uv_rect: [f32; 4],
-}
 
 pub struct TextureResource {
 	_texture: wgpu::Texture,
@@ -36,7 +16,6 @@ pub struct TextureResource {
 
 pub struct SpriteMaterial {
 	pub bind_group: wgpu::BindGroup,
-	_material_buffer: wgpu::Buffer,
 }
 
 pub struct TextureCache {
@@ -136,28 +115,13 @@ impl TextureResource {
 }
 
 impl SpriteMaterial {
-	pub fn new(
-		label: &str,
-		texture: &TextureResource,
-		uniform: SpriteMaterialUniform,
-		device: &wgpu::Device,
-		layout: &wgpu::BindGroupLayout,
-	) -> Self {
-		let material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some("Sprite Material"),
-			contents: bytemuck::bytes_of(&uniform),
-			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-		});
-
+	pub fn new(label: &str, texture: &TextureResource, device: &wgpu::Device, layout: &wgpu::BindGroupLayout) -> Self {
 		let mut builder = bind_group::Builder::new(device);
 		builder.set_layout(layout);
-		builder.add_material(&texture.view, &texture.sampler, &material_buffer);
+		builder.add_texture(&texture.view, &texture.sampler);
 		let bind_group = builder.build(label);
 
-		Self {
-			bind_group,
-			_material_buffer: material_buffer,
-		}
+		Self { bind_group }
 	}
 }
 
