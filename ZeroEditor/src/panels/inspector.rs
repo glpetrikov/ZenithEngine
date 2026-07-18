@@ -17,7 +17,9 @@ use ze_ecs::{
 	},
 };
 use ze_project::{GameData, PROJECT_FILE_NAME, Project};
-use ze_renderer::{Camera, CameraProjection, Sprite, SpriteColorMode, SpriteColorSettings, SpriteSettings, SpriteSize};
+use ze_renderer::{
+	Camera, CameraProjection, Sprite, SpriteColorMode, SpriteColorSettings, SpriteSettings, SpriteSize, TextureSource,
+};
 use ze_scripting_cs::{
 	Script as ScriptData, ScriptFieldMetadata, ScriptFieldValue, ScriptingSystem, Scripts as ZeScripts,
 };
@@ -1173,7 +1175,7 @@ fn label_matches_search(label: &str, query: &str) -> bool { query.is_empty() || 
 
 fn default_sprite() -> Sprite {
 	Sprite {
-		texture: AssetRef::game(""),
+		texture: TextureSource::File(AssetRef::game("")),
 		size: SpriteSize::Auto,
 		color: SpriteColorSettings::default(),
 		settings: SpriteSettings::default(),
@@ -1503,14 +1505,24 @@ impl InspectorPanel {
 		let response = show_removable_component(ui, InspectableComponent::Sprite.label(), |ui| {
 			let mut field_edit = FieldEdit::default();
 
-			let mut texture_path = sprite.texture.path.clone();
-			ui.horizontal(|ui| {
-				ui.label("Texture");
-				let response = ui.text_edit_singleline(&mut texture_path);
-				field_edit.include(response_field_edit(&response));
-			});
-			if field_edit.changed {
-				sprite.texture = AssetRef::game(texture_path);
+			match sprite.texture.clone() {
+				TextureSource::File(asset_ref) => {
+					let mut texture_path = asset_ref.path.clone();
+					ui.horizontal(|ui| {
+						ui.label("Texture");
+						let response = ui.text_edit_singleline(&mut texture_path);
+						field_edit.include(response_field_edit(&response));
+					});
+					if field_edit.changed {
+						sprite.texture = TextureSource::File(AssetRef::game(texture_path));
+					}
+				}
+				TextureSource::SheetCell { sheet_path, cell_id } => {
+					ui.horizontal(|ui| {
+						ui.label("Texture");
+						ui.label(format!("Sheet cell: {sheet_path} #{}", cell_id.0));
+					});
+				}
 			}
 
 			ui.horizontal(|ui| {

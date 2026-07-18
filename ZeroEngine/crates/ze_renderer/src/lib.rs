@@ -12,7 +12,7 @@ pub use components::*;
 pub use editor_camera_system::*;
 pub use render_system::*;
 use wgpu::util::DeviceExt;
-use ze_assets::{AssetRef, ResourceManager};
+use ze_assets::{AssetRef, ResourceManager, TextureSheetMode};
 use ze_core::{Mat4, Vec3};
 use ze_ui::ui_manager::UiManagerHandle;
 
@@ -20,6 +20,7 @@ use crate::{
 	backend::{
 		mesh::{Mesh, Vertex},
 		pipeline::{self, Pipeline},
+		sheet::SheetCache,
 		texture::{SpriteMaterial, SpriteMaterialUniform, TextureCache},
 		ubo::{Ubo, UboGroup},
 	},
@@ -46,6 +47,7 @@ pub struct Renderer {
 	blit_pipeline: Pipeline,
 	quad_mesh: Mesh,
 	texture_cache: TextureCache,
+	sheet_cache: SheetCache,
 	materials: Vec<SpriteMaterial>,
 	material_bind_group_layout: wgpu::BindGroupLayout,
 	ubo_bind_group_layout: wgpu::BindGroupLayout,
@@ -170,6 +172,7 @@ impl Renderer {
 
 		let projection_ubo = Some(Ubo::new(&device, &ubo_bind_group_layout));
 		let texture_cache = TextureCache::new(&device, &queue);
+		let sheet_cache = SheetCache::new();
 		let materials = Vec::new();
 
 		Ok(Self {
@@ -182,6 +185,7 @@ impl Renderer {
 			blit_pipeline,
 			quad_mesh,
 			texture_cache,
+			sheet_cache,
 			materials,
 			material_bind_group_layout,
 			ubo_bind_group_layout,
@@ -229,6 +233,13 @@ impl Renderer {
 
 	pub fn invalidate_textures<'a>(&mut self, assets: impl IntoIterator<Item = &'a AssetRef>) -> usize {
 		self.texture_cache.invalidate_many(assets)
+	}
+
+	/// Invalidates cached `TextureSheet` JSON so edits made in the Texture
+	/// Sheet panel (or any other file change) are picked up on next use,
+	/// same as `invalidate_textures` does for raw image files.
+	pub fn invalidate_sheets<'a>(&mut self, assets: impl IntoIterator<Item = &'a AssetRef>) -> usize {
+		self.sheet_cache.invalidate_many(assets)
 	}
 
 	pub fn set_ui_manager(&mut self, handle: UiManagerHandle) {
@@ -775,10 +786,13 @@ impl Renderer {
 			.reserve(items.len().saturating_sub(self.materials.capacity()));
 
 		for (i, item) in items.iter().enumerate() {
+			let (asset_ref, pending_cell) =
+				resolve_texture_source(&item.texture_source, &mut self.sheet_cache, resources);
 			let texture = self
 				.texture_cache
-				.get_or_load(&item.texture, resources, &self.device, &self.queue);
-			let sprite_size = sprite_size_to_world_scale(&item.size, texture.dimensions());
+				.get_or_load(&asset_ref, resources, &self.device, &self.queue);
+			let (uv_rect, effective_dimensions) = resolve_uv_rect(pending_cell, texture.dimensions());
+			let sprite_size = sprite_size_to_world_scale(&item.size, effective_dimensions);
 			let transform = item.transform * Mat4::from_scale(Vec3::new(sprite_size[0], sprite_size[1], 1.0));
 
 			let Some(ubo) = self.ubo.as_mut() else {
@@ -801,6 +815,7 @@ impl Renderer {
 					item.texture_rotation_degrees.to_radians(),
 				],
 				emissive: [item.glow_strength, 0.0, 0.0, 0.0],
+				uv_rect,
 			};
 
 			self.materials.push(SpriteMaterial::new(
@@ -1108,5 +1123,332 @@ fn auto_sprite_size(width: u32, height: u32) -> [f32; 2] {
 		[width as f32 / height as f32, 1.0]
 	} else {
 		[1.0, height as f32 / width as f32]
+	}
+}
+
+/// A `SheetCell` resolved down to "which grid cell of the eventual source
+/// texture", deferred until that texture is actually loaded (and its pixel
+/// dimensions known) since row-major decoding needs `cols = texture_width /
+/// cell_width`.
+enum PendingGridCell {
+	None,
+	Cell {
+		cell_index: u32,
+		cell_width: u32,
+		cell_height: u32,
+		trim: Option<ze_assets::CellTrim>,
+	},
+}
+
+const FULL_UV_RECT: [f32; 4] = [0.0, 0.0, 1.0, 1.0];
+
+/// Resolves a `TextureSource` down to the `AssetRef` that should actually be
+/// loaded as a GPU texture, plus (for `SheetCell` on a `UniformGrid` sheet)
+/// enough info to compute the cell's UV rect once that texture's pixel
+/// dimensions are known (see `resolve_uv_rect`).
+fn resolve_texture_source(
+	source: &TextureSource,
+	sheet_cache: &mut SheetCache,
+	resources: &ResourceManager,
+) -> (AssetRef, PendingGridCell) {
+	match source {
+		TextureSource::File(asset_ref) => (asset_ref.clone(), PendingGridCell::None),
+		TextureSource::SheetCell { sheet_path, cell_id } => {
+			let sheet_ref = AssetRef::game(sheet_path.clone());
+			let Some(sheet) = sheet_cache.get_or_load(&sheet_ref, resources) else {
+				return (AssetRef::game(String::new()), PendingGridCell::None);
+			};
+
+			match &sheet.mode {
+				TextureSheetMode::UniformGrid(grid) => {
+					let trim = grid.cells.get(cell_id.0 as usize).and_then(|cell| cell.trim);
+					(
+						grid.texture.clone(),
+						PendingGridCell::Cell {
+							cell_index: cell_id.0,
+							cell_width: grid.cell_width,
+							cell_height: grid.cell_height,
+							trim,
+						},
+					)
+				}
+				TextureSheetMode::AutoPack(pack) => {
+					let file = pack
+						.files
+						.get(cell_id.0 as usize)
+						.cloned()
+						.unwrap_or_else(|| AssetRef::game(String::new()));
+					(file, PendingGridCell::None)
+				}
+			}
+		}
+	}
+}
+
+/// Normalizes a `PendingGridCell` into a `uv_rect` (`[0,0,1,1]` for `None`,
+/// i.e. sample the whole texture -- identical to pre-`TextureSheet`
+/// behavior) using the now-loaded texture's pixel dimensions, plus the
+/// "effective dimensions" `SpriteSize::Auto` should size against (the
+/// trimmed cell size rather than the whole sheet image).
+fn resolve_uv_rect(pending: PendingGridCell, texture_dimensions: (u32, u32)) -> ([f32; 4], (u32, u32)) {
+	let PendingGridCell::Cell {
+		cell_index,
+		cell_width,
+		cell_height,
+		trim,
+	} = pending
+	else {
+		return (FULL_UV_RECT, texture_dimensions);
+	};
+
+	let (texture_width, texture_height) = texture_dimensions;
+	let cols = (texture_width / cell_width.max(1)).max(1);
+	let col = cell_index % cols;
+	let row = cell_index / cols;
+	let cell_origin = (col * cell_width, row * cell_height);
+
+	let (offset, size) = trim.map_or(((0, 0), (cell_width, cell_height)), |trim| (trim.offset, trim.size));
+	let pixel_x = cell_origin.0 + offset.0;
+	let pixel_y = cell_origin.1 + offset.1;
+
+	let uv_rect = [
+		pixel_x as f32 / texture_width.max(1) as f32,
+		pixel_y as f32 / texture_height.max(1) as f32,
+		size.0 as f32 / texture_width.max(1) as f32,
+		size.1 as f32 / texture_height.max(1) as f32,
+	];
+
+	(uv_rect, size)
+}
+
+#[cfg(test)]
+mod texture_source_tests {
+	use ze_assets::{AssetRef, AutoPackSheet, CellId, CellTrim, GridCell, TextureSheet, UniformGridSheet};
+
+	use super::*;
+
+	#[test]
+	fn file_source_resolves_to_full_uv_rect_unchanged() {
+		let (uv_rect, dimensions) = resolve_uv_rect(PendingGridCell::None, (64, 32));
+		assert_eq!(uv_rect, FULL_UV_RECT);
+		assert_eq!(dimensions, (64, 32));
+	}
+
+	#[test]
+	fn grid_cell_resolves_to_normalized_trimmed_uv_rect() {
+		// A 2x1 grid of 32x32 cells in a 64x32 source texture; cell 1's trim
+		// starts 4px into its own cell and is 20x24.
+		let pending = PendingGridCell::Cell {
+			cell_index: 1,
+			cell_width: 32,
+			cell_height: 32,
+			trim: Some(CellTrim {
+				offset: (4, 2),
+				size: (20, 24),
+				original_size: (32, 32),
+			}),
+		};
+
+		let (uv_rect, dimensions) = resolve_uv_rect(pending, (64, 32));
+		assert_eq!(dimensions, (20, 24));
+		// cell 1 origin = (32, 0) + trim offset (4, 2) = (36, 2), normalized by 64x32.
+		assert!((uv_rect[0] - 36.0 / 64.0).abs() < 1e-6);
+		assert!((uv_rect[1] - 2.0 / 32.0).abs() < 1e-6);
+		assert!((uv_rect[2] - 20.0 / 64.0).abs() < 1e-6);
+		assert!((uv_rect[3] - 24.0 / 32.0).abs() < 1e-6);
+	}
+
+	#[test]
+	fn sheet_cell_on_uniform_grid_resolves_texture_and_pending_cell() {
+		let tempdir = std::env::temp_dir().join(format!("ze_renderer_test_{}", std::process::id()));
+		std::fs::create_dir_all(&tempdir).unwrap();
+		let sheet = TextureSheet::new_uniform_grid(UniformGridSheet {
+			texture: AssetRef::game("textures/sheet.png"),
+			cell_width: 16,
+			cell_height: 16,
+			background_color: [0.0, 0.0, 0.0],
+			cells: vec![
+				GridCell { trim: None },
+				GridCell {
+					trim: Some(CellTrim {
+						offset: (1, 1),
+						size: (14, 14),
+						original_size: (16, 16),
+					}),
+				},
+			],
+		});
+		sheet.save(&tempdir.join("test.texturesheet.json")).unwrap();
+
+		let resources = ze_assets::ResourceManager::new(&tempdir);
+		let mut sheet_cache = SheetCache::new();
+		let source = TextureSource::SheetCell {
+			sheet_path: "test.texturesheet.json".to_string(),
+			cell_id: CellId(1),
+		};
+
+		let (asset_ref, pending) = resolve_texture_source(&source, &mut sheet_cache, &resources);
+		assert_eq!(asset_ref, AssetRef::game("textures/sheet.png"));
+		let PendingGridCell::Cell {
+			cell_index,
+			cell_width,
+			cell_height,
+			trim,
+		} = pending
+		else {
+			panic!("expected a resolved grid cell");
+		};
+		assert_eq!(cell_index, 1);
+		assert_eq!(cell_width, 16);
+		assert_eq!(cell_height, 16);
+		assert_eq!(trim.unwrap().offset, (1, 1));
+
+		std::fs::remove_dir_all(&tempdir).ok();
+	}
+
+	#[test]
+	fn sheet_cell_on_auto_pack_resolves_to_the_files_own_asset_ref() {
+		let tempdir = std::env::temp_dir().join(format!("ze_renderer_test_autopack_{}", std::process::id()));
+		std::fs::create_dir_all(&tempdir).unwrap();
+		let sheet = TextureSheet::new_auto_pack(AutoPackSheet {
+			files: vec![AssetRef::game("a.png"), AssetRef::game("b.png")],
+		});
+		sheet.save(&tempdir.join("palette.texturesheet.json")).unwrap();
+
+		let resources = ze_assets::ResourceManager::new(&tempdir);
+		let mut sheet_cache = SheetCache::new();
+		let source = TextureSource::SheetCell {
+			sheet_path: "palette.texturesheet.json".to_string(),
+			cell_id: CellId(1),
+		};
+
+		let (asset_ref, pending) = resolve_texture_source(&source, &mut sheet_cache, &resources);
+		assert_eq!(asset_ref, AssetRef::game("b.png"));
+		assert!(matches!(pending, PendingGridCell::None));
+
+		std::fs::remove_dir_all(&tempdir).ok();
+	}
+}
+
+/// Step 2 checkpoint: confirms `TextureSource` is backward compatible with
+/// existing plain-file scenes, and that a `SheetCell` texture round-trips
+/// through the real `ComponentRegistry` schema validation (both the
+/// whole-file schema at scene load and the per-component schema at
+/// component load) without error.
+#[cfg(test)]
+mod scene_compat_tests {
+	use ze_ecs::{ComponentRegistry, Scene};
+
+	use super::*;
+
+	fn full_registry() -> ComponentRegistry {
+		let mut registry = ComponentRegistry::new();
+		Scene::register_defaults(&mut registry);
+		crate::register_renderer_components(&mut registry);
+		registry
+	}
+
+	#[test]
+	fn existing_plain_file_sprites_still_load_as_texture_source_file() {
+		// Mirrors the literal `Sprite.texture` shape found in
+		// `Sandbox/assets/scenes/main.zescene.json` (a plain `{"path":...,
+		// "source":"Game"}` object, no variant tag) -- this is the exact
+		// on-disk format `TextureSource`'s `#[serde(untagged)]` must keep
+		// accepting for backward compatibility.
+		let tempdir = std::env::temp_dir().join(format!("ze_renderer_scene_compat_file_{}", std::process::id()));
+		std::fs::create_dir_all(&tempdir).unwrap();
+
+		let scene_path = tempdir.join("plain_file.zescene.json");
+		let scene_json = serde_json::json!({
+			"version": "0.1.0",
+			"name": "plain_file",
+			"scene_type": "Scene",
+			"entities": [{
+				"id": { "index": 0, "gen": 0 },
+				"components": [{
+					"component_type": "ze.renderer.sprite",
+					"value": {
+						"texture": { "path": "textures/square.png", "source": "Game" },
+						"size": "Auto",
+						"color": { "mode": "None", "strength": 1.0, "saturation_threshold": 0.15, "tint": null },
+						"settings": { "visible": true, "flip_x": false, "flip_y": false, "layer": 0, "texture_rotation_degrees": 0.0 },
+						"glow_strength": 0.0
+					}
+				}]
+			}]
+		});
+		std::fs::write(&scene_path, serde_json::to_string_pretty(&scene_json).unwrap()).unwrap();
+
+		let scene = Scene::from_path_with_registry(&scene_path, full_registry())
+			.expect("a pre-existing plain-file texture must still pass schema validation and load");
+
+		let world = scene.world();
+		let mut checked = 0;
+		world.run(|entities: ze_ecs::EntitiesView| {
+			for entity in entities.iter() {
+				let Ok(sprite) = world.get::<&Sprite>(entity) else {
+					continue;
+				};
+				match &sprite.texture {
+					TextureSource::File(asset_ref) => assert_eq!(asset_ref.path, "textures/square.png"),
+					TextureSource::SheetCell { .. } => panic!("expected a File texture"),
+				}
+				checked += 1;
+			}
+		});
+		assert_eq!(checked, 1, "expected exactly one Sprite in the synthetic scene");
+
+		std::fs::remove_dir_all(&tempdir).ok();
+	}
+
+	#[test]
+	fn sheet_cell_texture_round_trips_through_schema_validated_scene_load() {
+		let tempdir = std::env::temp_dir().join(format!("ze_renderer_scene_compat_{}", std::process::id()));
+		std::fs::create_dir_all(&tempdir).unwrap();
+
+		let scene_path = tempdir.join("sheet_cell.zescene.json");
+		let scene_json = serde_json::json!({
+			"version": "0.1.0",
+			"name": "sheet_cell",
+			"scene_type": "Scene",
+			"entities": [{
+				"id": { "index": 0, "gen": 0 },
+				"components": [{
+					"component_type": "ze.renderer.sprite",
+					"value": {
+						"texture": { "sheet_path": "textures/test.texturesheet.json", "cell_id": 0 },
+						"size": "Auto",
+						"color": { "mode": "None", "strength": 1.0, "saturation_threshold": 0.15, "tint": null },
+						"settings": { "visible": true, "flip_x": false, "flip_y": false, "layer": 0, "texture_rotation_degrees": 0.0 },
+						"glow_strength": 0.0
+					}
+				}]
+			}]
+		});
+		std::fs::write(&scene_path, serde_json::to_string_pretty(&scene_json).unwrap()).unwrap();
+
+		let scene = Scene::from_path_with_registry(&scene_path, full_registry())
+			.expect("a SheetCell texture must pass both whole-file and per-component schema validation");
+
+		let world = scene.world();
+		let mut found = false;
+		world.run(|entities: ze_ecs::EntitiesView| {
+			for entity in entities.iter() {
+				let Ok(sprite) = world.get::<&Sprite>(entity) else {
+					continue;
+				};
+				match &sprite.texture {
+					TextureSource::SheetCell { sheet_path, cell_id } => {
+						assert_eq!(sheet_path, "textures/test.texturesheet.json");
+						assert_eq!(cell_id.0, 0);
+						found = true;
+					}
+					TextureSource::File(_) => panic!("expected a SheetCell texture"),
+				}
+			}
+		});
+		assert!(found, "expected the sprite with a SheetCell texture to load");
+
+		std::fs::remove_dir_all(&tempdir).ok();
 	}
 }

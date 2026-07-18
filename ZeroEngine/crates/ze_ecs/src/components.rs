@@ -227,3 +227,39 @@ impl Default for AudioSource {
 		}
 	}
 }
+
+/// Marks which tile-grid cell an entity occupies (row-major, but stored as
+/// `(col, row)` pairs rather than a single index so painting can extend the
+/// grid in any direction from an arbitrary origin). Placed by the tilemap
+/// painting tool; also read by the tile-size rescale system to recompute
+/// `Transform.position`/`scale` when `TileWorldSettings.tile_world_size`
+/// changes.
+#[derive(Component, Reflect, Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+pub struct TileGridPosition {
+	pub col: i32,
+	pub row: i32,
+}
+
+/// Marks the scene's singleton root entity that newly-placed tiles are
+/// parented under (flat, not grouped further) purely to keep the Hierarchy
+/// panel navigable once a level has hundreds of tiles -- see
+/// `tilemap::ensure_tiles_root`. Tiles placed before this feature existed are
+/// not retroactively reparented. Render order between tiles (and other
+/// sprites) is controlled separately via the existing `Sprite.settings.layer`
+/// field, set from the Paint Tiles toolbar -- this component is purely
+/// Hierarchy-panel organization, not a rendering concept.
+#[derive(Component, Reflect, Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+pub struct TilesRoot;
+
+/// Scene-wide setting for how large one tile-grid cell is in world units.
+/// Lives on a singleton entity (same convention as `PhysicsSettings`), found
+/// via a linear scan rather than a `Unique`/resource, matching how the rest
+/// of this engine's scene-wide settings work.
+#[derive(Component, Reflect, Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+pub struct TileWorldSettings {
+	pub tile_world_size: f32,
+}
+
+impl Default for TileWorldSettings {
+	fn default() -> Self { Self { tile_world_size: 1.0 } }
+}

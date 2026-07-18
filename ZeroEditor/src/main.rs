@@ -2,6 +2,7 @@ mod asset_hot_reload;
 mod editor_workspace;
 mod panels;
 pub mod style;
+mod tilemap;
 mod undo_redo;
 
 use std::{
@@ -957,6 +958,7 @@ impl ApplicationHandler for EditorApp {
 						EditorRequest::SwitchScene(scene_name) => self.switch_scene(&scene_name),
 						EditorRequest::EnterPlayMode => self.enter_play_mode(),
 						EditorRequest::StopPlayMode => self.stop_play_mode(),
+						EditorRequest::OpenTextureSheetAsset(_) => {}
 					}
 				}
 				if let Some(build_request) = build_request {
@@ -1634,6 +1636,7 @@ fn update_editor_scene_before_render(
 		asset_reload
 	};
 	renderer.invalidate_textures(asset_reload.texture_assets());
+	renderer.invalidate_sheets(asset_reload.sheet_assets());
 
 	if game_running
 		&& scene_manager.apply_scripting_scene_load_commands(resources, active_project)

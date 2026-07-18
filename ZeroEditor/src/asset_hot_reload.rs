@@ -31,10 +31,13 @@ pub enum ScriptStatus {
 #[derive(Debug, Default)]
 pub struct AssetReloadSet {
 	texture_assets: Vec<AssetRef>,
+	sheet_assets: Vec<AssetRef>,
 }
 
 impl AssetReloadSet {
 	pub fn texture_assets(&self) -> &[AssetRef] { &self.texture_assets }
+
+	pub fn sheet_assets(&self) -> &[AssetRef] { &self.sheet_assets }
 }
 
 pub struct AssetHotReload {
@@ -139,6 +142,7 @@ impl AssetHotReload {
 		}
 
 		let mut texture_assets = BTreeSet::new();
+		let mut sheet_assets = BTreeSet::new();
 		let mut script_source_changed = false;
 		let mut script_output_close_write = false;
 
@@ -154,10 +158,13 @@ impl AssetHotReload {
 				let is_close_write = matches!(event.kind, EventKind::Access(AccessKind::Close(AccessMode::Write)));
 				for path in &event.paths {
 					let path = absolute_path(path);
-					if let Some(asset_path) = self.game_asset_path(&path)
-						&& is_texture_asset(&asset_path)
-					{
-						texture_assets.insert(AssetRef::game(asset_path));
+					if let Some(asset_path) = self.game_asset_path(&path) {
+						if is_texture_asset(&asset_path) {
+							texture_assets.insert(AssetRef::game(asset_path.clone()));
+						}
+						if is_texture_sheet_asset(&asset_path) {
+							sheet_assets.insert(AssetRef::game(asset_path));
+						}
 					}
 					script_source_changed |= is_script_source(&path);
 					if is_close_write {
@@ -229,6 +236,7 @@ impl AssetHotReload {
 
 		AssetReloadSet {
 			texture_assets: texture_assets.into_iter().collect(),
+			sheet_assets: sheet_assets.into_iter().collect(),
 		}
 	}
 
@@ -393,12 +401,14 @@ const fn is_reload_event(kind: EventKind) -> bool {
 	)
 }
 
-fn is_texture_asset(path: &str) -> bool {
+pub fn is_texture_asset(path: &str) -> bool {
 	matches!(
 		Path::new(path).extension().and_then(|extension| extension.to_str()),
 		Some("jpeg" | "jpg" | "png" | "webp")
 	)
 }
+
+fn is_texture_sheet_asset(path: &str) -> bool { path.ends_with(&format!(".{}", ze_assets::TEXTURE_SHEET_EXTENSION)) }
 
 fn is_script_source(path: &Path) -> bool {
 	matches!(

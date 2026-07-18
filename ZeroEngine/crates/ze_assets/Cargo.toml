@@ -12,7 +12,13 @@ workspace = true
 
 [dependencies]
 anyhow = "1.0.102"
+image = { version = "0.25.10", default-features = false, features = [
+    "webp",
+    "jpeg",
+    "png",
+] }
 schemars = { version = "1", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 wesl = "0.4.0"
 zepack = { version = "0.1.0", path = "../zepack" }

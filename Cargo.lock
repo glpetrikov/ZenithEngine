@@ -7441,8 +7441,10 @@ name = "ze_assets"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "image",
  "schemars",
  "serde",
+ "serde_json",
  "wesl",
  "zepack",
 ]
@@ -7540,6 +7542,7 @@ dependencies = [
  "glam 0.32.1",
  "image",
  "rfd",
+ "serde_json",
  "wgpu",
  "winit",
  "ze_assets",

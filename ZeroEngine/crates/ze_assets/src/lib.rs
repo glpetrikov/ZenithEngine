@@ -9,6 +9,12 @@ use anyhow::{Result, anyhow, bail};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+pub mod texture_sheet;
+pub use texture_sheet::{
+	AutoPackSheet, CellId, CellTrim, GridCell, ShelfPackedRect, TEXTURE_SHEET_EXTENSION, TextureSheet,
+	TextureSheetMode, UniformGridSheet, compute_uniform_grid_trims, shelf_pack_preview,
+};
+
 const EMBEDDED_SPRITE_WGSL: &str = "\
 @group(0) @binding(0)
 var sprite_texture: texture_2d<f32>;
@@ -19,7 +25,8 @@ var sprite_sampler: sampler;
 struct Material {
     tint: vec4<f32>,
     params: vec4<f32>,
-    emissive: vec4<f32>
+    emissive: vec4<f32>,
+    uv_rect: vec4<f32>
 }
 
 @group(0) @binding(2)
@@ -75,7 +82,11 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let strength = material.params.y;
     let saturation_threshold = material.params.z;
     let texture_rotation = material.params.w;
-    let tex_coord = clamp(rotate_tex_coord(in.tex_coord, texture_rotation), vec2<f32>(0.001, 0.001), vec2<f32>(0.999, 0.999));
+    let rotated = rotate_tex_coord(in.tex_coord, texture_rotation);
+    let uv_offset = material.uv_rect.xy;
+    let uv_scale = material.uv_rect.zw;
+    let inset = uv_scale * 0.001;
+    let tex_coord = clamp(uv_offset + rotated * uv_scale, uv_offset + inset, uv_offset + uv_scale - inset);
     let sampled = textureSample(sprite_texture, sprite_sampler, tex_coord) * in.color;
 
     var color: vec4<f32>;

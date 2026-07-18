@@ -26,3 +26,4 @@ ze_input = { path = "../ze_input" }
 ze_ecs = { path = "../ze_ecs" }
 ze_ui = { path = "../ze_ui" }
 rfd = { version = "0.15", default-features = false, features = ["gtk3"] }
+serde_json = "1"

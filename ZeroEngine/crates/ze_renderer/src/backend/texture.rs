@@ -17,6 +17,13 @@ pub struct SpriteMaterialUniform {
 	/// A separate `vec4`-aligned field rather than growing `params` (already
 	/// full at 4 slots) or breaking its existing std140-style alignment.
 	pub emissive: [f32; 4],
+	/// `.xy` = UV offset, `.zw` = UV scale, both normalized 0..1 against the
+	/// resolved texture's full pixel dimensions. `[0.0, 0.0, 1.0, 1.0]` for a
+	/// `TextureSource::File` sprite (samples the whole texture, matching
+	/// pre-`TextureSheet` behavior exactly); a `SheetCell` sprite on a
+	/// `UniformGrid` sheet narrows this to the cell's trimmed sub-rect.
+	/// Another separate vec4 for the same alignment reason as `emissive`.
+	pub uv_rect: [f32; 4],
 }
 
 pub struct TextureResource {

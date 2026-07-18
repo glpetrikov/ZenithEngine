@@ -16,6 +16,7 @@ const SPRITE_WESL_TEMPLATE: &str = "@group(0) @binding(0) var sprite_texture: te
 struct Material {
     tint: vec4<f32>,
     params: vec4<f32>,
+    uv_rect: vec4<f32>,
 }
 
 @group(0) @binding(2) var<uniform> material: Material;
@@ -268,7 +269,13 @@ impl Project {
 
 	pub fn load(path: impl AsRef<Path>) -> ze_core::Result<Self> {
 		let path = path.as_ref();
-		let source = fs::read_to_string(path)?;
+		// Canonicalize so `base_dir` (and thus `asset_dir`/`scripts_dll`/`root_dir`) is
+		// always absolute and symlink-resolved, matching canonicalized asset
+		// selection paths elsewhere -- otherwise prefix-stripping an asset's
+		// canonical path against a relative `asset_dir` (e.g. when launched with a
+		// relative project path) silently fails everywhere it's used.
+		let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+		let source = fs::read_to_string(&path)?;
 		let mut project = toml::from_str::<Self>(&source)?;
 		let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
 

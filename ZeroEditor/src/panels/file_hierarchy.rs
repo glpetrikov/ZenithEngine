@@ -9,7 +9,10 @@ use egui::{CornerRadius, Ui};
 use serde::{Deserialize, Serialize};
 use ze_project::PROJECT_FILE_NAME;
 
-use super::{EditorPanelContext, EditorSelection, Panel};
+use super::{
+	EditorPanelContext, EditorSelection, Panel,
+	texture_sheet_create_dialog::{TextureSheetCreateDialog, TextureSheetCreateOutcome},
+};
 
 const TILE_SIZE: egui::Vec2 = egui::vec2(100.0, 120.0);
 const TILE_SPACING: f32 = 8.0;
@@ -86,6 +89,7 @@ pub struct FileExplorer {
 	back_history: Vec<PathBuf>,
 	forward_history: Vec<PathBuf>,
 	pending_create: Option<PendingCreate>,
+	pending_texture_sheet_create: Option<TextureSheetCreateDialog>,
 	status_flash: Option<(String, Instant)>,
 
 	favorites: Vec<PathBuf>,
@@ -113,6 +117,7 @@ impl FileExplorer {
 			back_history: Vec::new(),
 			forward_history: Vec::new(),
 			pending_create: None,
+			pending_texture_sheet_create: None,
 			status_flash: None,
 			favorites: Vec::new(),
 			favorites_dirty: false,
@@ -1394,7 +1399,7 @@ fn fs_main() -> @location(0) vec4<f32> {
 
 		// Context menu
 		response.context_menu(|ui| {
-			self.show_item_context_menu(ui, &path, is_directory);
+			self.show_item_context_menu(ui, &path, is_directory, context);
 		});
 	}
 
@@ -1402,7 +1407,25 @@ fn fs_main() -> @location(0) vec4<f32> {
 	// Status bar
 	// ---------------------------------------------------------------------------
 
-	fn show_item_context_menu(&mut self, ui: &mut Ui, path: &Path, is_directory: bool) {
+	fn show_item_context_menu(
+		&mut self,
+		ui: &mut Ui,
+		path: &Path,
+		is_directory: bool,
+		context: &EditorPanelContext<'_>,
+	) {
+		if !is_directory
+			&& crate::asset_hot_reload::is_texture_asset(&path.to_string_lossy())
+			&& let Some(project) = context.project
+		{
+			if ui.button("Create Texture Sheet").clicked() {
+				self.pending_texture_sheet_create =
+					Some(TextureSheetCreateDialog::new(path.to_path_buf(), &project.asset_dir));
+				ui.close();
+			}
+			ui.separator();
+		}
+
 		self.show_create_submenu(ui);
 		ui.separator();
 		if ui
@@ -1583,6 +1606,25 @@ fn fs_main() -> @location(0) vec4<f32> {
 		}
 	}
 
+	fn show_pending_texture_sheet_create(&mut self, ui: &Ui, context: &mut EditorPanelContext<'_>) {
+		let Some(dialog) = self.pending_texture_sheet_create.as_mut() else {
+			return;
+		};
+		let Some(project) = context.project else {
+			self.pending_texture_sheet_create = None;
+			return;
+		};
+
+		match dialog.show(ui.ctx(), &project.asset_dir) {
+			TextureSheetCreateOutcome::Pending => {}
+			TextureSheetCreateOutcome::Cancelled => self.pending_texture_sheet_create = None,
+			TextureSheetCreateOutcome::Created(new_path) => {
+				self.pending_texture_sheet_create = None;
+				*context.editor_request = Some(crate::editor_workspace::EditorRequest::OpenTextureSheetAsset(new_path));
+			}
+		}
+	}
+
 	fn show_rename_popup(&mut self, ui: &Ui) {
 		let Some(name) = self.renaming.as_mut() else {
 			return;
@@ -1724,6 +1766,7 @@ impl Panel for FileExplorer {
 
 		self.show_pending_create_popup(ui, context);
 		self.show_rename_popup(ui);
+		self.show_pending_texture_sheet_create(ui, context);
 		self.save_favorites();
 		self.save_tree_expanded();
 	}

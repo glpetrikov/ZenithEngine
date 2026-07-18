@@ -13,7 +13,7 @@ use crate::{
 	asset_hot_reload::ScriptStatus,
 	panels::{
 		ConsolePanel, EditorPanelContext, InspectorPanel, NoProjectPanel, Panel, SceneHierarchyPanel, ScenePanel,
-		ViewportOutput, file_hierarchy::FileExplorer,
+		TextureSheetPanel, TileBrush, ViewportOutput, file_hierarchy::FileExplorer,
 	},
 	style::{ACCENT, BG_BASE, TEXT_MUTED, TEXT_PRIMARY},
 	undo_redo::{SceneSnapshotCommand, UndoRedoBuffer},
@@ -77,6 +77,7 @@ pub enum EditorRequest {
 	SwitchScene(String),
 	EnterPlayMode,
 	StopPlayMode,
+	OpenTextureSheetAsset(PathBuf),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,16 +142,18 @@ enum WindowPanel {
 	AssetBrowser,
 	Files,
 	Console,
+	TextureSheet,
 }
 
 impl WindowPanel {
-	const ALL: [Self; 6] = [
+	const ALL: [Self; 7] = [
 		Self::Scene,
 		Self::Hierarchy,
 		Self::Inspector,
 		Self::AssetBrowser,
 		Self::Files,
 		Self::Console,
+		Self::TextureSheet,
 	];
 
 	const fn menu_label(self) -> &'static str {
@@ -161,6 +164,7 @@ impl WindowPanel {
 			Self::AssetBrowser => "Asset Browser",
 			Self::Files => "File Explorer",
 			Self::Console => "Console",
+			Self::TextureSheet => "Texture Sheet",
 		}
 	}
 
@@ -171,6 +175,7 @@ impl WindowPanel {
 			Self::Inspector => "Inspector",
 			Self::AssetBrowser | Self::Files => "File Explorer",
 			Self::Console => "Console",
+			Self::TextureSheet => "Texture Sheet",
 		}
 	}
 }
@@ -286,6 +291,9 @@ pub struct EditorWorkspace {
 	// Set to true when the managed C# assembly is hot-reloaded; read and
 	// cleared by the InspectorPanel to invalidate its script_classes_cache.
 	script_classes_dirty: bool,
+	// The sheet+cell selected in the Texture Sheet panel as the active tile
+	// brush; read by ScenePanel's Paint Tiles tool.
+	active_tile_brush: Option<TileBrush>,
 }
 
 impl EditorWorkspace {
@@ -313,6 +321,7 @@ impl EditorWorkspace {
 			titlebar_height: 0.0,
 			titlebar_interactive_rects: Vec::new(),
 			script_classes_dirty: false,
+			active_tile_brush: None,
 		};
 
 		workspace.configure_default_layout();
@@ -437,12 +446,20 @@ impl EditorWorkspace {
 				editor_request: &mut menu_request,
 				project: project.as_deref(),
 				script_classes_dirty: &mut self.script_classes_dirty,
+				active_tile_brush: &mut self.active_tile_brush,
 			},
 		};
 		DockArea::new(&mut self.dock_state)
 			.style(dock_style_from_egui(ui.style().as_ref()))
 			.show_inside(ui, &mut tab_viewer);
 		self.log_dock_layout_once();
+
+		if let Some(EditorRequest::OpenTextureSheetAsset(path)) = &menu_request {
+			let path = path.clone();
+			self.selection = Some(crate::panels::EditorSelection::Asset(path));
+			self.open_or_focus_panel(WindowPanel::TextureSheet, viewport_texture);
+			menu_request = None;
+		}
 
 		if let Some(error) = self.save_dirty_project_settings_for_request(menu_request.as_ref(), &mut project_saved) {
 			project_save_error = Some(error);
@@ -1190,6 +1207,7 @@ impl EditorWorkspace {
 			WindowPanel::Inspector => Box::new(InspectorPanel::new()),
 			WindowPanel::AssetBrowser | WindowPanel::Files => self.create_files_panel(),
 			WindowPanel::Console => Box::new(ConsolePanel::new()),
+			WindowPanel::TextureSheet => Box::new(TextureSheetPanel::new()),
 		}
 	}
 

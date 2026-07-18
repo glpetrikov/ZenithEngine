@@ -4,6 +4,9 @@ mod hierarchy;
 mod inspector;
 mod no_project;
 mod scene;
+mod texture_sheet;
+mod texture_sheet_common;
+mod texture_sheet_create_dialog;
 
 use std::path::PathBuf;
 
@@ -13,6 +16,7 @@ pub use hierarchy::SceneHierarchyPanel;
 pub use inspector::InspectorPanel;
 pub use no_project::NoProjectPanel;
 pub use scene::{ScenePanel, ViewportOutput};
+pub use texture_sheet::{TextureSheetPanel, TileBrush};
 use ze_ecs::{EntityId, Scene};
 use ze_project::Project;
 
@@ -37,6 +41,9 @@ pub struct EditorPanelContext<'a> {
 	pub editor_request: &'a mut Option<EditorRequest>,
 	pub project: Option<&'a Project>,
 	pub script_classes_dirty: &'a mut bool,
+	/// The sheet+cell currently selected as the active tile-painting brush,
+	/// set by `TextureSheetPanel` and read by `ScenePanel`'s Paint Tiles tool.
+	pub active_tile_brush: &'a mut Option<TileBrush>,
 }
 
 pub trait Panel {

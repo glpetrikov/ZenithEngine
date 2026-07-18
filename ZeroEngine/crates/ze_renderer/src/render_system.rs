@@ -1,4 +1,4 @@
-use ze_assets::{AssetRef, ResourceManager};
+use ze_assets::ResourceManager;
 use ze_core::{Mat4, Result, Vec2, Vec3};
 use ze_ecs::{
 	ActiveCameraView, Collider, ColliderShape, EditorOnly, EntitiesView, EntityId, Inactive, Name, PhysicsSettings,
@@ -9,7 +9,7 @@ use ze_input::{Input, ZKeyCode};
 
 use crate::{
 	Renderer,
-	components::{Camera, CameraProjection, Sprite, SpriteColorSettings, SpriteSize},
+	components::{Camera, CameraProjection, Sprite, SpriteColorSettings, SpriteSize, TextureSource},
 };
 
 #[derive(Debug, Clone)]
@@ -23,7 +23,7 @@ pub struct SpriteRenderItem {
 	pub entity: ze_ecs::ze_entity_id::ZeEntityId,
 	pub label: String,
 	pub transform: Mat4,
-	pub texture: AssetRef,
+	pub texture_source: TextureSource,
 	pub size: SpriteSize,
 	pub color: SpriteColorSettings,
 	pub layer: i32,
@@ -206,7 +206,7 @@ impl RenderSystem {
 					entity: ze_ecs::ze_entity_id::ZeEntityId::from(entity),
 					label: sprite_debug_label(scene, entity),
 					transform: Mat4::from_scale_rotation_translation(scale, transform.rotation, transform.position),
-					texture: sprite.texture.clone(),
+					texture_source: sprite.texture.clone(),
 					size: sprite.size.clone(),
 					color: sprite.color.clone(),
 					layer: sprite.settings.layer,
