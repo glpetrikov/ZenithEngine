@@ -24,7 +24,7 @@ use ze_renderer::{
 use ze_scripting_cs::{
 	Script as ScriptData, ScriptFieldMetadata, ScriptFieldValue, ScriptingSystem, Scripts as ZeScripts,
 };
-use ze_ui::{UIBar, UIButton, UIRect, UIText};
+use ze_ui::{UIAnchorMode, UIBar, UIButton, UIRect, UIText};
 
 use super::{EditorPanelContext, EditorSelection, Panel, texture_sheet_common::asset_picker};
 use crate::undo_redo::SceneSnapshotCommand;
@@ -189,6 +189,7 @@ impl InspectableComponent {
 						width: 100.0,
 						height: 30.0,
 					},
+					anchor_mode: UIAnchorMode::default(),
 					text: "Button".to_string(),
 					font_size: 14.0,
 					color: [0.5, 0.5, 0.5, 1.0],
@@ -207,6 +208,7 @@ impl InspectableComponent {
 						width: 200.0,
 						height: 20.0,
 					},
+					anchor_mode: UIAnchorMode::default(),
 					current: 50.0,
 					max: 100.0,
 					color: [0.0, 0.8, 0.2, 1.0],
@@ -223,6 +225,7 @@ impl InspectableComponent {
 						width: 200.0,
 						height: 20.0,
 					},
+					anchor_mode: UIAnchorMode::default(),
 					text: "Text".to_string(),
 					font_size: 14.0,
 					color: [1.0, 1.0, 1.0, 1.0],
@@ -2603,6 +2606,30 @@ const fn sprite_color_mode_label(mode: SpriteColorMode) -> &'static str {
 	}
 }
 
+const fn ui_anchor_mode_label(mode: UIAnchorMode) -> &'static str {
+	match mode {
+		UIAnchorMode::WorldSpace => "World Space",
+		UIAnchorMode::ScreenSpaceOverlay => "Screen Space Overlay",
+	}
+}
+
+fn show_ui_anchor_mode_combo(ui: &mut Ui, field_edit: &mut FieldEdit, anchor_mode: &mut UIAnchorMode) {
+	egui::ComboBox::from_label("Anchor Mode")
+		.selected_text(ui_anchor_mode_label(*anchor_mode))
+		.show_ui(ui, |ui| {
+			field_edit.include(response_field_edit(&ui.selectable_value(
+				anchor_mode,
+				UIAnchorMode::WorldSpace,
+				"World Space",
+			)));
+			field_edit.include(response_field_edit(&ui.selectable_value(
+				anchor_mode,
+				UIAnchorMode::ScreenSpaceOverlay,
+				"Screen Space Overlay",
+			)));
+		});
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ColliderShapeKind {
 	Box,
@@ -2689,6 +2716,8 @@ impl InspectorPanel {
 			});
 
 			field_edit.include(drag_f32(ui, "Font Size", &mut button.font_size));
+
+			show_ui_anchor_mode_combo(ui, &mut field_edit, &mut button.anchor_mode);
 
 			ui.horizontal(|ui| {
 				ui.label("X");
@@ -2777,6 +2806,8 @@ impl InspectorPanel {
 
 			field_edit.include(drag_f32(ui, "Current", &mut bar.current));
 			field_edit.include(drag_f32(ui, "Max", &mut bar.max));
+
+			show_ui_anchor_mode_combo(ui, &mut field_edit, &mut bar.anchor_mode);
 
 			ui.horizontal(|ui| {
 				ui.label("X");
@@ -2880,6 +2911,8 @@ impl InspectorPanel {
 				let response = ui.add(drag_value_f32(&mut text_component.font_size, 0.05).range(1.0..=f32::MAX));
 				field_edit.include(response_field_edit(&response));
 			});
+
+			show_ui_anchor_mode_combo(ui, &mut field_edit, &mut text_component.anchor_mode);
 
 			ui.horizontal(|ui| {
 				ui.label("X");

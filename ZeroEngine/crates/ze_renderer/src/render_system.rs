@@ -76,9 +76,10 @@ impl RenderSystem {
 		};
 
 		let viewport_size = renderer.viewport_size();
+		let viewport_size = Vec2::new(viewport_size.width as f32, viewport_size.height as f32);
 		scene.world().add_unique(ActiveCameraView {
 			view_projection: camera.view_projection,
-			viewport_size: Vec2::new(viewport_size.width as f32, viewport_size.height as f32),
+			viewport_size,
 		});
 
 		let _prev_count = self.items.len();
@@ -305,14 +306,23 @@ impl System for RenderSystem {
 /// `ActiveCameraView` used to only be written by `RenderSystem::render_scene`,
 /// which runs during `RedrawRequested`, strictly after `UISystem::update` had
 /// already run for that tick inside `Scene::update_systems`. `UISystem`
-/// projects entity positions with this matrix (see `resolve_screen_pos`), so
-/// it was always one whole frame behind: fine while the camera is still, but
-/// visibly-lagging UI anchors relative to the sprite during fast camera
-/// motion. Recomputing it here -- registered after `PhysicsSystem` and before
-/// `UISystem` -- makes it fresh for this tick's `UISystem` run. `render_scene`
-/// still recomputes its own copy for the actual draw; that's a few redundant
-/// matrix multiplies, not a correctness concern, since both computations read
-/// the same already-physics-stepped transform.
+/// projects `UIAnchorMode::WorldSpace` entity positions with this matrix (see
+/// `resolve_screen_pos`), so it was always one whole frame behind: fine while
+/// the camera is still, but visibly-lagging UI anchors relative to the sprite
+/// during fast camera motion. Recomputing it here -- registered after
+/// `PhysicsSystem` and before `UISystem` -- makes it fresh for this tick's
+/// `UISystem` run. `render_scene` still recomputes its own copy for the
+/// actual draw; that's a few redundant matrix multiplies, not a correctness
+/// concern, since both computations read the same already-physics-stepped
+/// transform.
+///
+/// This deliberately uses `find_primary_camera`, matching the camera
+/// `render_scene` actually renders through: World Space UI is meant to stay
+/// visually attached to whatever's on screen, including the editor's
+/// `EditorOnly` camera while it's the one flagged `primary` and being
+/// panned/zoomed for scene navigation in Edit mode. `UIAnchorMode::
+/// ScreenSpaceOverlay` elements don't consult `ActiveCameraView` at all, so
+/// they're unaffected either way.
 #[derive(Default)]
 pub struct CameraViewSystem;
 
@@ -536,5 +546,35 @@ mod tests {
 
 		assert_eq!(RenderSystem::primary_camera_entity(&scene), None);
 		assert!(!RenderSystem::primary_camera_exists(&scene));
+	}
+
+	#[test]
+	fn primary_camera_lookup_prefers_non_editor_camera_over_editor_only_primary() {
+		let mut scene = Scene::new("main");
+		crate::register_renderer_components(scene.registry_mut());
+
+		let editor_camera = scene.create_entity("EditorCamera");
+		scene.entity_mut(editor_camera).add_component(Transform::default());
+		scene.entity_mut(editor_camera).add_component(primary_camera());
+		scene.entity_mut(editor_camera).add_component(EditorOnly);
+
+		let game_camera = scene.create_entity("GameCamera");
+		scene.entity_mut(game_camera).add_component(Transform::default());
+		scene.entity_mut(game_camera).add_component(primary_camera());
+
+		assert_eq!(RenderSystem::primary_camera_entity(&scene), Some(game_camera));
+	}
+
+	#[test]
+	fn primary_camera_lookup_falls_back_to_editor_only_camera_when_no_game_camera() {
+		let mut scene = Scene::new("main");
+		crate::register_renderer_components(scene.registry_mut());
+
+		let editor_camera = scene.create_entity("EditorCamera");
+		scene.entity_mut(editor_camera).add_component(Transform::default());
+		scene.entity_mut(editor_camera).add_component(primary_camera());
+		scene.entity_mut(editor_camera).add_component(EditorOnly);
+
+		assert_eq!(RenderSystem::primary_camera_entity(&scene), Some(editor_camera));
 	}
 }

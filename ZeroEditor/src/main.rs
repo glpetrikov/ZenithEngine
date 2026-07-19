@@ -635,6 +635,9 @@ struct EditorApp {
 	egui_state: Option<egui_winit::State>,
 	resources: ResourceManager,
 	scene_manager: Option<EditorSceneManager>,
+	// Selection captured when entering Play mode; restored on Stop if the
+	// selected entity still exists after the scene-state restore.
+	pre_play_selection: Option<panels::EditorSelection>,
 	renderer: Option<Renderer>,
 	occluded: bool,
 	minimized: bool,
@@ -699,6 +702,7 @@ impl EditorApp {
 			asset_hot_reload,
 			resources,
 			scene_manager: None,
+			pre_play_selection: None,
 			occluded: false,
 			minimized: false,
 			last_frame: Instant::now(),
@@ -1568,6 +1572,7 @@ thumbs.db
 			return;
 		}
 		if let Some(editor_flow) = &mut self.editor_flow {
+			self.pre_play_selection = editor_flow.workspace.selection();
 			editor_flow.workspace.set_mode(editor_workspace::EditorMode::Play);
 		}
 	}
@@ -1580,8 +1585,16 @@ thumbs.db
 		if let Err(error) = scene_manager.stop_play_mode() {
 			ze_log::error!("failed to stop Play mode: {error:?}");
 		}
+
+		let restored_selection = self.pre_play_selection.take().filter(|selection| match selection {
+			panels::EditorSelection::Entity(entity) => scene_manager
+				.active_scene_mut()
+				.is_some_and(|scene| entity_alive(scene, *entity)),
+			panels::EditorSelection::Asset(_) => true,
+		});
+
 		if let Some(editor_flow) = &mut self.editor_flow {
-			editor_flow.workspace.clear_selection();
+			editor_flow.workspace.set_selection(restored_selection);
 			editor_flow.workspace.set_mode(editor_workspace::EditorMode::Edit);
 		}
 	}
@@ -1735,6 +1748,12 @@ fn ensure_editor_camera(scene: &mut Scene) {
 			.entity_mut(editor_camera)
 			.add_component(default_editor_camera_transform());
 	}
+}
+
+fn entity_alive(scene: &Scene, entity: EntityId) -> bool {
+	scene
+		.world()
+		.run(|entities: ze_ecs::EntitiesView| entities.is_alive(entity))
 }
 
 fn editor_camera_entity(scene: &Scene) -> Option<EntityId> {

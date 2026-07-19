@@ -374,6 +374,10 @@ impl EditorWorkspace {
 
 	pub fn clear_selection(&mut self) { self.selection = None; }
 
+	pub fn selection(&self) -> Option<crate::panels::EditorSelection> { self.selection.clone() }
+
+	pub fn set_selection(&mut self, selection: Option<crate::panels::EditorSelection>) { self.selection = selection; }
+
 	pub const fn mark_project_config_saved(&mut self) { self.settings_project_dirty = false; }
 
 	pub fn show(

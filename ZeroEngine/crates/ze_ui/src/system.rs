@@ -8,7 +8,7 @@ use ze_ecs::{
 };
 
 use crate::{
-	components::{UIBar, UIButton, UIRect, UIText},
+	components::{UIAnchorMode, UIBar, UIButton, UIRect, UIText},
 	ui_manager::UiManagerHandle,
 };
 
@@ -71,11 +71,27 @@ impl UiElement {
 	}
 }
 
-/// Resolves the screen-space pixel position for a UI rect. If the scene has
-/// an active camera and the entity has a world transform, `rect.x/y` is
-/// treated as a pixel offset from the entity's projected screen position.
-/// Otherwise `rect.x/y` is treated as an absolute screen coordinate.
-fn resolve_screen_pos(scene: &Scene, camera: Option<&ActiveCameraView>, entity: EntityId, rect: &UIRect) -> Vec2 {
+/// Resolves the screen-space pixel position for a UI rect.
+///
+/// In `UIAnchorMode::ScreenSpaceOverlay`, `rect.x/y` is always an absolute
+/// screen coordinate; camera projection never runs, so the element stays
+/// fixed on screen regardless of camera movement.
+///
+/// In `UIAnchorMode::WorldSpace`, if the scene has an active camera and the
+/// entity has a world transform, `rect.x/y` is treated as a pixel offset from
+/// the entity's projected screen position. Otherwise `rect.x/y` is treated as
+/// an absolute screen coordinate (same fallback as `ScreenSpaceOverlay`).
+fn resolve_screen_pos(
+	scene: &Scene,
+	camera: Option<&ActiveCameraView>,
+	entity: EntityId,
+	rect: &UIRect,
+	anchor_mode: UIAnchorMode,
+) -> Vec2 {
+	if anchor_mode == UIAnchorMode::ScreenSpaceOverlay {
+		return Vec2::new(rect.x, rect.y);
+	}
+
 	let anchor = camera.and_then(|camera| {
 		scene
 			.world_transform(entity)
@@ -144,7 +160,13 @@ impl System for UISystem {
 						.with_id()
 						.map(|(entity, b)| ButtonSnapshot {
 							entity,
-							screen_pos: resolve_screen_pos(scene, active_camera.as_ref(), entity, &b.rect),
+							screen_pos: resolve_screen_pos(
+								scene,
+								active_camera.as_ref(),
+								entity,
+								&b.rect,
+								b.anchor_mode,
+							),
 							size: ui_rect_size(&b.rect),
 							text: b.text.clone(),
 							font_size: b.font_size,
@@ -167,7 +189,13 @@ impl System for UISystem {
 						.with_id()
 						.map(|(entity, b)| BarSnapshot {
 							entity,
-							screen_pos: resolve_screen_pos(scene, active_camera.as_ref(), entity, &b.rect),
+							screen_pos: resolve_screen_pos(
+								scene,
+								active_camera.as_ref(),
+								entity,
+								&b.rect,
+								b.anchor_mode,
+							),
 							size: ui_rect_size(&b.rect),
 							current: b.current,
 							max: b.max,
@@ -191,7 +219,13 @@ impl System for UISystem {
 						.with_id()
 						.map(|(entity, t)| TextSnapshot {
 							entity,
-							screen_pos: resolve_screen_pos(scene, active_camera.as_ref(), entity, &t.rect),
+							screen_pos: resolve_screen_pos(
+								scene,
+								active_camera.as_ref(),
+								entity,
+								&t.rect,
+								t.anchor_mode,
+							),
 							size: ui_rect_size(&t.rect),
 							text: t.text.clone(),
 							// A non-positive font_size reaches cosmic-text as a negative
