@@ -311,6 +311,12 @@ impl EditorRenderFlow {
 		if self.save_status.state == SaveState::SaveFailed {
 			return;
 		}
+		if self.workspace.mode() == editor_workspace::EditorMode::Play {
+			// Play-mode mutations are transient (discarded on Stop), so the
+			// indicator should keep reflecting the on-disk state from before
+			// Play was entered rather than reacting to them.
+			return;
+		}
 
 		self.save_status.state = if has_dirty_scenes {
 			SaveState::UnsavedChanges

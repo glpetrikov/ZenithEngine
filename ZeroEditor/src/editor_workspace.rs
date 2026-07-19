@@ -1267,18 +1267,21 @@ const fn save_status_color(state: SaveState, project_loaded: bool) -> egui::Colo
 }
 
 fn save_status_tooltip(status: SaveStatus, project_loaded: bool) -> String {
-	let current = if project_loaded {
-		save_state_label(status.state)
-	} else {
-		"No project loaded"
-	};
+	if !project_loaded {
+		return "No project loaded".to_string();
+	}
+
 	let last_save = status
 		.last_successful_save
 		.map_or_else(|| "no successful save yet".to_string(), relative_save_time);
+	let explanation = match status.state {
+		SaveState::Saved => "All changes saved.",
+		SaveState::Saving => "Saving...",
+		SaveState::UnsavedChanges => "You have unsaved changes.",
+		SaveState::SaveFailed => "The last save attempt failed.",
+	};
 
-	format!(
-		"{current}\n{last_save}\nGreen: saved\nYellow: saving or unsaved changes\nRed: save failed\nGray: no project loaded"
-	)
+	format!("{}\n{explanation}\n{last_save}", save_state_label(status.state))
 }
 
 fn relative_save_time(saved_at: Instant) -> String {

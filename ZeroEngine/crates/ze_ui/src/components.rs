@@ -57,7 +57,12 @@ pub struct UIButton {
 	pub color: [f32; 4],
 	pub hover_color: [f32; 4],
 	pub pressed_color: [f32; 4],
+	/// Transient interaction state written every frame by the UI system as
+	/// the mouse moves; excluded from serialization so it never taints the
+	/// editor's save-dirty fingerprint or gets persisted to scene files.
+	#[serde(skip)]
 	pub pressed: bool,
+	#[serde(skip)]
 	pub hovered: bool,
 	/// Paint order among all UI elements (buttons, bars, texts). Higher
 	/// values paint later, on top of lower ones. Ties break by entity id.
