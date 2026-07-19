@@ -31,6 +31,7 @@ enum PendingCreateKind {
 	CSharpComponent,
 	Scene,
 	Shader,
+	AnimationClip,
 }
 
 impl PendingCreateKind {
@@ -41,6 +42,7 @@ impl PendingCreateKind {
 			Self::CSharpComponent => "C# Component",
 			Self::Scene => "New Scene",
 			Self::Shader => "New Shader",
+			Self::AnimationClip => "New Animation Clip",
 		}
 	}
 
@@ -51,6 +53,7 @@ impl PendingCreateKind {
 			Self::CSharpComponent => "Component name",
 			Self::Scene => "Scene name",
 			Self::Shader => "Shader name",
+			Self::AnimationClip => "Animation clip name",
 		}
 	}
 }
@@ -60,6 +63,10 @@ struct PendingCreate {
 	kind: PendingCreateKind,
 	name: String,
 	error: Option<String>,
+	/// Only set for `PendingCreateKind::AnimationClip`: the
+	/// `.texturesheet.json` that was right-clicked to trigger this prompt, and
+	/// that the new clip will reference.
+	source_sheet: Option<PathBuf>,
 }
 
 impl PendingCreate {
@@ -68,6 +75,14 @@ impl PendingCreate {
 			kind,
 			name: String::new(),
 			error: None,
+			source_sheet: None,
+		}
+	}
+
+	fn for_animation_clip(source_sheet: PathBuf) -> Self {
+		Self {
+			source_sheet: Some(source_sheet),
+			..Self::new(PendingCreateKind::AnimationClip)
 		}
 	}
 }
@@ -742,6 +757,45 @@ fn fs_main() -> @location(0) vec4<f32> {
 				Err(message)
 			}
 		}
+	}
+
+	/// Unlike the other `create_*` helpers, this writes under a fixed
+	/// `<assets_root>/animation_clips/` folder with numeric-suffix collision
+	/// handling, mirroring `TextureSheetCreateDialog::create` rather than
+	/// `new_file_path`'s "wherever the explorer is currently browsing"
+	/// behavior -- the source sheet (not the current directory) is what
+	/// meaningfully identifies where a clip belongs.
+	fn create_animation_clip(
+		&mut self,
+		name: &str,
+		source_sheet: Option<PathBuf>,
+		context: &mut EditorPanelContext<'_>,
+	) -> Result<(), String> {
+		let source_sheet = source_sheet.ok_or_else(|| "No source texture sheet selected.".to_string())?;
+		let project = context.project.ok_or_else(|| "No project loaded.".to_string())?;
+		let assets_root = &project.asset_dir;
+
+		let relative_sheet = super::texture_sheet_common::relativize_asset_path(assets_root, &source_sheet)
+			.ok_or_else(|| "Source sheet is not inside the project's asset directory.".to_string())?;
+
+		let clip = ze_assets::AnimationClip::new(ze_assets::AssetRef::game(relative_sheet));
+
+		let dir = assets_root.join("animation_clips");
+		let mut dest = dir.join(format!("{name}.{}", ze_assets::ANIMATION_CLIP_EXTENSION));
+		let mut suffix = 2;
+		while dest.exists() {
+			dest = dir.join(format!("{name}_{suffix}.{}", ze_assets::ANIMATION_CLIP_EXTENSION));
+			suffix += 1;
+		}
+
+		clip.save(&dest)
+			.map_err(|error| format!("Failed to save animation clip: {error}"))?;
+		let dest = dest.canonicalize().unwrap_or(dest);
+
+		self.set_status(format!("Created animation clip {}", dest.display()));
+		*context.editor_request = Some(crate::editor_workspace::EditorRequest::OpenAnimationClipAsset(dest));
+
+		Ok(())
 	}
 
 	fn create_zeignore_if_missing(&mut self) {
@@ -1426,6 +1480,19 @@ fn fs_main() -> @location(0) vec4<f32> {
 			ui.separator();
 		}
 
+		if !is_directory
+			&& path
+				.file_name()
+				.and_then(|name| name.to_str())
+				.is_some_and(|name| name.ends_with(&format!(".{}", ze_assets::TEXTURE_SHEET_EXTENSION)))
+		{
+			if ui.button("Create Animation Clip").clicked() {
+				self.pending_create = Some(PendingCreate::for_animation_clip(path.to_path_buf()));
+				ui.close();
+			}
+			ui.separator();
+		}
+
 		self.show_create_submenu(ui);
 		ui.separator();
 		if ui
@@ -1523,6 +1590,7 @@ fn fs_main() -> @location(0) vec4<f32> {
 		};
 		let kind = pending.kind;
 		let name = pending.name.clone();
+		let source_sheet = pending.source_sheet.clone();
 
 		if name.trim().is_empty() {
 			if let Some(p) = self.pending_create.as_mut() {
@@ -1540,6 +1608,7 @@ fn fs_main() -> @location(0) vec4<f32> {
 				*context.editor_request = Some(crate::editor_workspace::EditorRequest::CreateScene(name));
 				Ok(())
 			}
+			PendingCreateKind::AnimationClip => self.create_animation_clip(&name, source_sheet, context),
 		};
 
 		match result {

@@ -12,6 +12,7 @@ use winit::{
 	keyboard::PhysicalKey,
 	window::{Window, WindowId},
 };
+use ze_animation::AnimationSystem;
 use ze_assets::ResourceManager;
 use ze_audio::AudioSystem;
 use ze_core::{Result, Vec2, bail};
@@ -264,13 +265,16 @@ pub fn load_project_scene(
 	let scripting_runtime = scripting_system.runtime();
 	scene.add_system(scripting_system);
 	scene.add_system(PhysicsSystem::with_scripting(scripting_runtime));
+	scene.add_system(AnimationSystem::new(resources.clone()));
 	// update_systems() ticks systems in add_system() push order (no explicit
 	// ordering contract) -- CameraViewSystem must run after PhysicsSystem (so
 	// it sees this tick's post-physics camera transform) and before UISystem
 	// (so UISystem's resolve_screen_pos projects with a fresh, not
 	// last-frame's, view-projection matrix); UISystem itself goes before
 	// RenderSystem so a frame's UI state is fresh by the time
-	// rendering-adjacent systems run.
+	// rendering-adjacent systems run. AnimationSystem runs right after
+	// PhysicsSystem and before RenderSystem so a state-switch's/frame-advance's
+	// resulting Sprite.texture is fresh by the time this tick renders.
 	scene.add_system(CameraViewSystem::new());
 	if let Some(handle) = ui_manager {
 		scene.add_system(UISystem::new(handle));

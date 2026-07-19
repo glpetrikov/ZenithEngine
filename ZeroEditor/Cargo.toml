@@ -29,6 +29,7 @@ ze_app = { path = "../ZeroEngine/crates/ze_app" }
 ze_ecs = { path = "../ZeroEngine/crates/ze_ecs" }
 ze_physics = { path = "../ZeroEngine/crates/ze_physics" }
 ze_audio = { path = "../ZeroEngine/crates/ze_audio" }
+ze_animation = { path = "../ZeroEngine/crates/ze_animation" }
 ze_project = { path = "../ZeroEngine/crates/ze_project" }
 ze_build = { path = "../ZeroEngine/crates/ze_build" }
 ze_scripting_cs = { path = "../ZeroEngine/crates/ze_scripting_cs" }

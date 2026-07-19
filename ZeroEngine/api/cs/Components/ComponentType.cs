@@ -18,4 +18,5 @@ internal enum ComponentType : uint
     UIBar = 14,
     UIText = 15,
     Audio = 16,
+    Animator = 17,
 }

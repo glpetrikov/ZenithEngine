@@ -1,3 +1,4 @@
+mod animation_clip;
 mod console;
 pub mod file_hierarchy;
 mod hierarchy;
@@ -10,6 +11,7 @@ mod texture_sheet_create_dialog;
 
 use std::path::PathBuf;
 
+pub use animation_clip::AnimationClipPanel;
 pub use console::ConsolePanel;
 use egui::{TextureId, Ui};
 pub use hierarchy::SceneHierarchyPanel;

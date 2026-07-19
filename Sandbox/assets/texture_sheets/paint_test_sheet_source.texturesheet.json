@@ -1,0 +1,52 @@
+{
+  "version": "1",
+  "mode": {
+    "UniformGrid": {
+      "texture": {
+        "source": "Game",
+        "path": "textures/paint_test_sheet_source.png"
+      },
+      "cell_width": 32,
+      "cell_height": 32,
+      "background_color": [
+        0.9999995,
+        0.0,
+        1.0
+      ],
+      "cells": [
+        {
+          "trim": {
+            "offset": [
+              0,
+              0
+            ],
+            "size": [
+              32,
+              32
+            ],
+            "original_size": [
+              32,
+              32
+            ]
+          }
+        },
+        {
+          "trim": {
+            "offset": [
+              0,
+              0
+            ],
+            "size": [
+              32,
+              32
+            ],
+            "original_size": [
+              32,
+              32
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -18,6 +18,7 @@ ze_log = { path = "../ze_log" }
 ze_ecs = { path = "../ze_ecs" }
 ze_physics = { path = "../ze_physics" }
 ze_audio = { path = "../ze_audio" }
+ze_animation = { path = "../ze_animation" }
 ze_scripting_cs = { path = "../ze_scripting_cs" }
 winit = "0.30.13"
 ze_renderer = { version = "0.1.0", path = "../ze_renderer" }

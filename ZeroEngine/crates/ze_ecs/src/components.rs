@@ -228,6 +228,70 @@ impl Default for AudioSource {
 	}
 }
 
+/// One named animation state on an `Animator`, e.g. `("walk",
+/// "animation_clips/player_walk.animationclip.json")`.
+#[derive(Reflect, Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AnimatorState {
+	pub name: String,
+	pub clip_path: String,
+}
+
+/// Multi-state 2D sprite animation player; `ze_animation::AnimationSystem`
+/// does the actual frame advancement and writes the resulting cell into
+/// `Sprite.texture`.
+///
+/// Lives here (rather than in `ze_animation`, which actually plays it back)
+/// for the same reason `AudioSource` does: `ze_scripting_cs` needs to
+/// reference the component type directly for the `GetComponent<Animator>()`
+/// existence check, but can't depend on `ze_animation` (that dependency
+/// already runs the other way). `clip_path` is a bare game-relative asset
+/// path rather than `AssetRef` for the same reason `AudioSource.clip_path`
+/// is: `ze_ecs` has no dependency on `ze_assets`.
+#[derive(Component, Reflect, Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Animator {
+	pub states: Vec<AnimatorState>,
+	pub current_state: String,
+	#[serde(skip)]
+	pub current_frame_index: u32,
+	#[serde(skip)]
+	pub elapsed_secs: f32,
+	#[serde(skip, default = "default_animator_playing")]
+	pub playing: bool,
+}
+
+const fn default_animator_playing() -> bool { true }
+
+impl Default for Animator {
+	fn default() -> Self {
+		Self {
+			states: Vec::new(),
+			current_state: String::new(),
+			current_frame_index: 0,
+			elapsed_secs: 0.0,
+			playing: true,
+		}
+	}
+}
+
+impl Animator {
+	/// Switches to `state`, resetting playback to frame 0 -- unless `state`
+	/// is already the active state, in which case this is a no-op (so
+	/// calling e.g. `SetState("walk")` every frame while already walking
+	/// doesn't restart the animation each call). Every mutation of
+	/// `current_state` (Inspector UI, the C# `SetState` bridge) must go
+	/// through this method, never assign the field directly.
+	pub fn set_state(&mut self, state: impl Into<String>) {
+		let state = state.into();
+		if self.current_state == state {
+			return;
+		}
+		self.current_state = state;
+		self.current_frame_index = 0;
+		self.elapsed_secs = 0.0;
+	}
+}
+
 /// Marks which tile-grid cell an entity occupies (row-major, but stored as
 /// `(col, row)` pairs rather than a single index so painting can extend the
 /// grid in any direction from an arbitrary origin). Placed by the tilemap

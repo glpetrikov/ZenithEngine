@@ -3,6 +3,7 @@ members = [
     "ZeroEngine",
     "ZeroEditor",
     "ZeroEngine/cli/zepack",
+    "ZeroEngine/crates/ze_animation",
     "ZeroEngine/crates/ze_app",
     "ZeroEngine/crates/ze_assets",
     "ZeroEngine/crates/ze_audio",

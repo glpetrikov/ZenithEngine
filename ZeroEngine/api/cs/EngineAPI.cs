@@ -47,6 +47,7 @@ public unsafe struct EngineAPI
     public delegate* unmanaged[Cdecl]<byte*, int, void> log_error;
     public delegate* unmanaged[Cdecl]<byte*, int, void> log_debug;
     public delegate* unmanaged[Cdecl]<void> quit_game;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int, void> set_animator_state;
 
     private static EngineAPI* current;
     private static bool consoleRedirected;

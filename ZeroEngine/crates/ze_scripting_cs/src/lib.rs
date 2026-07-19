@@ -84,6 +84,7 @@ pub struct EngineAPI {
 	pub log_error: extern "C" fn(*const u8, i32),
 	pub log_debug: extern "C" fn(*const u8, i32),
 	pub quit_game: extern "C" fn(),
+	pub set_animator_state: extern "C" fn(u64, *const u8, i32),
 }
 
 pub static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
@@ -163,6 +164,7 @@ static ENGINE_API: EngineAPI = EngineAPI {
 	log_error: api::log_error,
 	log_debug: api::log_debug,
 	quit_game: api::quit_game,
+	set_animator_state: api::set_animator_state,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -1235,6 +1237,14 @@ pub enum AudioApiCommand {
 	SetVolume { entity: EntityId, volume: f32 },
 }
 
+/// Fire-and-forget animation-state-switch commands queued by C# scripts,
+/// drained by `ze_animation`'s `AnimationSystem` (same relationship
+/// `AudioApiCommand` has with `ze_audio`'s `AudioSystem`).
+#[derive(Debug, Clone)]
+pub enum AnimatorApiCommand {
+	SetState { entity: EntityId, state: String },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScriptingSceneLoadCommand {
 	Load { name: String },
@@ -1316,6 +1326,8 @@ pub fn refresh_scripting_api_velocity_cache(velocities: impl IntoIterator<Item =
 pub fn drain_scripting_api_commands() -> Vec<ScriptingApiCommand> { api::drain_commands() }
 
 pub fn drain_audio_api_commands() -> Vec<AudioApiCommand> { api::drain_audio_commands() }
+
+pub fn drain_animator_api_commands() -> Vec<AnimatorApiCommand> { api::drain_animator_commands() }
 
 pub fn refresh_scripting_api_audio_playing_cache(playing: impl IntoIterator<Item = (EntityId, bool)>) {
 	api::refresh_audio_playing_cache(playing);
@@ -2197,22 +2209,23 @@ mod api {
 
 	use ze_core::Vec2;
 	use ze_ecs::{
-		AudioSource, Children, Collider, EntitiesView, EntityId, Inactive, Name, Parent, PhysicsSettings, RigidBody,
-		Scene, Tag, Transform,
+		Animator, AudioSource, Children, Collider, EntitiesView, EntityId, Inactive, Name, Parent, PhysicsSettings,
+		RigidBody, Scene, Tag, Transform,
 	};
 	use ze_input::{Input, ZKeyCode, ZMouseCode};
 	use ze_renderer::{Camera, Sprite};
 	use ze_ui::{UIBar, UIButton, UIText};
 
 	use crate::{
-		AudioApiCommand, RAYCAST_PROVIDER, ScriptingApiCommand, ScriptingSceneCommand, ScriptingSceneLoadCommand,
-		ScriptingTimeState, Scripts, entity_id_to_script_arg, script_arg_to_entity_id,
+		AnimatorApiCommand, AudioApiCommand, RAYCAST_PROVIDER, ScriptingApiCommand, ScriptingSceneCommand,
+		ScriptingSceneLoadCommand, ScriptingTimeState, Scripts, entity_id_to_script_arg, script_arg_to_entity_id,
 	};
 
 	#[derive(Default)]
 	struct ApiState {
 		commands: Vec<ScriptingApiCommand>,
 		audio_commands: Vec<AudioApiCommand>,
+		animator_commands: Vec<AnimatorApiCommand>,
 		scene_load_commands: Vec<ScriptingSceneLoadCommand>,
 		scene_commands: Vec<ScriptingSceneCommand>,
 		components: HashSet<(EntityId, ComponentKind)>,
@@ -2247,6 +2260,7 @@ mod api {
 		UIBar = 14,
 		UIText = 15,
 		Audio = 16,
+		Animator = 17,
 	}
 
 	thread_local! {
@@ -2259,6 +2273,10 @@ mod api {
 
 	pub fn drain_audio_commands() -> Vec<AudioApiCommand> {
 		API_STATE.with(|state| state.borrow_mut().audio_commands.drain(..).collect())
+	}
+
+	pub fn drain_animator_commands() -> Vec<AnimatorApiCommand> {
+		API_STATE.with(|state| state.borrow_mut().animator_commands.drain(..).collect())
 	}
 
 	pub fn drain_scene_load_commands() -> Vec<ScriptingSceneLoadCommand> {
@@ -2362,6 +2380,9 @@ mod api {
 				}
 				if world.get::<&AudioSource>(entity).is_ok() {
 					components.insert((entity, ComponentKind::Audio));
+				}
+				if world.get::<&Animator>(entity).is_ok() {
+					components.insert((entity, ComponentKind::Animator));
 				}
 			}
 		});
@@ -2709,6 +2730,15 @@ mod api {
 
 	pub extern "C" fn quit_game() { super::SHUTDOWN_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst); }
 
+	pub extern "C" fn set_animator_state(entity: u64, text: *const u8, len: i32) {
+		let entity = script_arg_to_entity_id(entity);
+		let Some(state) = read_utf8(text, len) else {
+			ze_log::error!(target: "zeroengine.script", "script Animator.SetState bridge received an invalid state name buffer");
+			return;
+		};
+		push_animator_command(AnimatorApiCommand::SetState { entity, state });
+	}
+
 	pub extern "C" fn log_info(message: *const u8, len: i32) {
 		match read_utf8(message, len) {
 			Some(message) => {
@@ -2762,6 +2792,12 @@ mod api {
 	fn push_audio_command(command: AudioApiCommand) {
 		API_STATE.with(|state| {
 			state.borrow_mut().audio_commands.push(command);
+		});
+	}
+
+	fn push_animator_command(command: AnimatorApiCommand) {
+		API_STATE.with(|state| {
+			state.borrow_mut().animator_commands.push(command);
 		});
 	}
 
@@ -2897,6 +2933,7 @@ mod api {
 			14 => Some(ComponentKind::UIBar),
 			15 => Some(ComponentKind::UIText),
 			16 => Some(ComponentKind::Audio),
+			17 => Some(ComponentKind::Animator),
 			_ => None,
 		}
 	}

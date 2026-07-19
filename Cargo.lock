@@ -23,6 +23,7 @@ dependencies = [
  "tracing",
  "transform-gizmo-egui",
  "winit",
+ "ze_animation",
  "ze_app",
  "ze_assets",
  "ze_audio",
@@ -7416,12 +7417,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "ze_animation"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "ze_assets",
+ "ze_core",
+ "ze_ecs",
+ "ze_log",
+ "ze_renderer",
+ "ze_scripting_cs",
+]
+
+[[package]]
 name = "ze_app"
 version = "0.1.0"
 dependencies = [
  "rfd",
  "tokio",
  "winit",
+ "ze_animation",
  "ze_assets",
  "ze_audio",
  "ze_build",

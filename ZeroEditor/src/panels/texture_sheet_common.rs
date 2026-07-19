@@ -215,3 +215,68 @@ pub fn relativize_asset_path(assets_root: &Path, absolute: &Path) -> Option<Stri
 	}
 	(!parts.is_empty()).then(|| parts.join("/"))
 }
+
+/// Recursively scans `assets_root` for files whose name ends with `extension`
+/// (e.g. `"animationclip.json"`), returning project-relative path strings
+/// (the `AssetRef::path` convention), sorted for a stable combo-box order.
+/// No caching -- this backs an occasionally-shown picker, not a hot path.
+fn scan_assets_with_extension(assets_root: &Path, extension: &str) -> Vec<String> {
+	fn visit(dir: &Path, assets_root: &Path, extension: &str, out: &mut Vec<String>) {
+		let Ok(entries) = std::fs::read_dir(dir) else {
+			return;
+		};
+		for entry in entries.flatten() {
+			let path = entry.path();
+			if path.is_dir() {
+				visit(&path, assets_root, extension, out);
+			} else if path
+				.file_name()
+				.and_then(|name| name.to_str())
+				.is_some_and(|name| name.ends_with(extension))
+				&& let Some(relative) = relativize_asset_path(assets_root, &path)
+			{
+				out.push(relative);
+			}
+		}
+	}
+
+	let mut paths = Vec::new();
+	visit(assets_root, assets_root, extension, &mut paths);
+	paths.sort();
+	paths
+}
+
+/// A combo box listing every asset under `assets_root` matching `extension`,
+/// backing e.g. the Animation Clip panel's source-sheet field and the
+/// Animator Inspector's per-state clip picker -- there's no generic
+/// "pick an asset" widget elsewhere in this codebase (`Sprite.texture` is
+/// edited via a raw text field), so this is deliberately minimal: no
+/// thumbnails, just relative paths. Returns `true` if `selected` changed.
+pub fn asset_picker(
+	ui: &mut Ui,
+	id_source: impl std::hash::Hash,
+	assets_root: &Path,
+	extension: &str,
+	selected: &mut String,
+) -> bool {
+	let mut changed = false;
+	let options = scan_assets_with_extension(assets_root, extension);
+	let selected_text = if selected.is_empty() {
+		"(none)"
+	} else {
+		selected.as_str()
+	};
+
+	egui::ComboBox::from_id_salt(id_source)
+		.selected_text(selected_text)
+		.show_ui(ui, |ui| {
+			for option in &options {
+				if ui.selectable_label(selected == option, option).clicked() && selected != option {
+					*selected = option.clone();
+					changed = true;
+				}
+			}
+		});
+
+	changed
+}

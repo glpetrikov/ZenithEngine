@@ -8,12 +8,13 @@ use egui::{
 	ColorImage, PopupCloseBehavior, TextBuffer, TextEdit, TextureOptions, Ui,
 	containers::menu::{MenuConfig, SubMenuButton},
 };
-use ze_assets::AssetRef;
+use ze_assets::{ANIMATION_CLIP_EXTENSION, AssetRef};
 use ze_core::{Quat, Vec2, Vec3};
 use ze_ecs::{
 	EditorOnly, EntityId, Name, Parent, SaveFile, Tag, Transform, TransformInheritance,
 	components::{
-		AudioSource, Collider, ColliderShape, CollisionDetection, Inactive, PhysicsSettings, RigidBody, RigidBodyType,
+		Animator, AnimatorState, AudioSource, Collider, ColliderShape, CollisionDetection, Inactive, PhysicsSettings,
+		RigidBody, RigidBodyType,
 	},
 };
 use ze_project::{GameData, PROJECT_FILE_NAME, Project};
@@ -25,7 +26,7 @@ use ze_scripting_cs::{
 };
 use ze_ui::{UIBar, UIButton, UIRect, UIText};
 
-use super::{EditorPanelContext, EditorSelection, Panel};
+use super::{EditorPanelContext, EditorSelection, Panel, texture_sheet_common::asset_picker};
 use crate::undo_redo::SceneSnapshotCommand;
 
 pub struct InspectorPanel {
@@ -93,10 +94,11 @@ enum InspectableComponent {
 	UIBar,
 	UIText,
 	AudioSource,
+	Animator,
 }
 
 impl InspectableComponent {
-	const ADDABLE: [Self; 12] = [
+	const ADDABLE: [Self; 13] = [
 		Self::Tag,
 		Self::Transform,
 		Self::Inactive,
@@ -109,6 +111,7 @@ impl InspectableComponent {
 		Self::UIBar,
 		Self::UIText,
 		Self::AudioSource,
+		Self::Animator,
 	];
 
 	const fn label(self) -> &'static str {
@@ -126,6 +129,7 @@ impl InspectableComponent {
 			Self::UIBar => "UI Bar",
 			Self::UIText => "UI Text",
 			Self::AudioSource => "Audio Source",
+			Self::Animator => "Animator",
 		}
 	}
 
@@ -144,6 +148,7 @@ impl InspectableComponent {
 			Self::UIBar => scene.world().get::<&UIBar>(entity).is_ok(),
 			Self::UIText => scene.world().get::<&UIText>(entity).is_ok(),
 			Self::AudioSource => scene.world().get::<&AudioSource>(entity).is_ok(),
+			Self::Animator => scene.world().get::<&Animator>(entity).is_ok(),
 		}
 	}
 
@@ -227,6 +232,9 @@ impl InspectableComponent {
 			Self::AudioSource => {
 				scene.entity_mut(entity).add_component(AudioSource::default());
 			}
+			Self::Animator => {
+				scene.entity_mut(entity).add_component(Animator::default());
+			}
 		}
 	}
 
@@ -270,6 +278,9 @@ impl InspectableComponent {
 			}
 			Self::AudioSource => {
 				let _ = scene.entity_mut(entity).remove_component::<AudioSource>();
+			}
+			Self::Animator => {
+				let _ = scene.entity_mut(entity).remove_component::<Animator>();
 			}
 		}
 	}
@@ -454,6 +465,11 @@ impl InspectorPanel {
 
 		if let Some(audio_source) = cloned_component::<AudioSource>(context.scene, entity) {
 			self.show_audio_source(ui, context, entity, audio_source);
+			displayed += 1;
+		}
+
+		if let Some(animator) = cloned_component::<Animator>(context.scene, entity) {
+			self.show_animator(ui, context, entity, animator);
 			displayed += 1;
 		}
 
@@ -1851,6 +1867,84 @@ impl InspectorPanel {
 			});
 		});
 		self.show_component_context_menu(&response, entity, context, InspectableComponent::AudioSource);
+	}
+
+	/// Not fancy per the spec -- name + clip-asset rows with Add/Remove, plus a
+	/// current-state combo box that goes through `Animator::set_state` (same
+	/// idempotent-no-op guard the C# `SetState` bridge uses), so switching to
+	/// the already-active state from here never restarts playback either.
+	fn show_animator(
+		&mut self,
+		ui: &mut Ui,
+		context: &mut EditorPanelContext<'_>,
+		entity: EntityId,
+		mut animator: Animator,
+	) {
+		let assets_root = context.project.map(|project| project.asset_dir.clone());
+
+		let response = show_removable_component(ui, InspectableComponent::Animator.label(), |ui| {
+			let mut field_edit = FieldEdit::default();
+
+			let mut remove_index = None;
+			for (index, state) in animator.states.iter_mut().enumerate() {
+				ui.horizontal(|ui| {
+					let response = ui.text_edit_singleline(&mut state.name);
+					field_edit.include(response_field_edit(&response));
+
+					if let Some(assets_root) = &assets_root
+						&& asset_picker(
+							ui,
+							("animator_state_clip", entity, index),
+							assets_root,
+							ANIMATION_CLIP_EXTENSION,
+							&mut state.clip_path,
+						) {
+						field_edit.include(FieldEdit::changed(true));
+					}
+
+					if ui.small_button("×").clicked() {
+						remove_index = Some(index);
+					}
+				});
+			}
+			if let Some(index) = remove_index {
+				animator.states.remove(index);
+				field_edit.include(FieldEdit::changed(true));
+			}
+			if ui.button("Add State").clicked() {
+				animator.states.push(AnimatorState {
+					name: format!("state_{}", animator.states.len()),
+					clip_path: String::new(),
+				});
+				field_edit.include(FieldEdit::changed(true));
+			}
+
+			ui.separator();
+			let mut new_state = None;
+			egui::ComboBox::from_label("Current State")
+				.selected_text(animator.current_state.clone())
+				.show_ui(ui, |ui| {
+					for state in &animator.states {
+						if ui
+							.selectable_label(animator.current_state == state.name, &state.name)
+							.clicked()
+						{
+							new_state = Some(state.name.clone());
+						}
+					}
+				});
+			if let Some(new_state) = new_state {
+				animator.set_state(new_state);
+				field_edit.include(FieldEdit::changed(true));
+			}
+
+			self.apply_field_edit(context, field_edit, |scene| {
+				if let Ok(mut current) = scene.world_mut().get::<&mut Animator>(entity) {
+					**current = animator;
+				}
+			});
+		});
+		self.show_component_context_menu(&response, entity, context, InspectableComponent::Animator);
 	}
 }
 

@@ -10,6 +10,18 @@
       },
       "components": [
         {
+          "component_type": "ze.anim.animator",
+          "value": {
+            "current_state": "state_0",
+            "states": [
+              {
+                "clip_path": "animation_clips/Test.animationclip.json",
+                "name": "state_0"
+              }
+            ]
+          }
+        },
+        {
           "component_type": "ze.name",
           "value": {
             "name": "Square"

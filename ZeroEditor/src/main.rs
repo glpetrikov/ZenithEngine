@@ -34,6 +34,7 @@ use winit::{
 	keyboard::PhysicalKey,
 	window::{Window, WindowId},
 };
+use ze_animation::AnimationSystem;
 use ze_app::load_project_scene;
 use ze_assets::ResourceManager;
 use ze_audio::AudioSystem;
@@ -961,6 +962,7 @@ impl ApplicationHandler for EditorApp {
 						EditorRequest::EnterPlayMode => self.enter_play_mode(),
 						EditorRequest::StopPlayMode => self.stop_play_mode(),
 						EditorRequest::OpenTextureSheetAsset(_) => {}
+						EditorRequest::OpenAnimationClipAsset(_) => {}
 					}
 				}
 				if let Some(build_request) = build_request {
@@ -1633,6 +1635,9 @@ fn update_editor_scene_before_render(
 			}
 			if let Err(error) = scene.update_system::<AudioSystem>(dt) {
 				ze_log::error!("failed to update audio system: {error:?}");
+			}
+			if let Err(error) = scene.update_system::<AnimationSystem>(dt) {
+				ze_log::error!("failed to update animation system: {error:?}");
 			}
 		}
 

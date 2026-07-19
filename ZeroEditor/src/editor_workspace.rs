@@ -12,8 +12,8 @@ use ze_renderer::Camera;
 use crate::{
 	asset_hot_reload::ScriptStatus,
 	panels::{
-		ConsolePanel, EditorPanelContext, InspectorPanel, NoProjectPanel, Panel, SceneHierarchyPanel, ScenePanel,
-		TextureSheetPanel, TileBrush, ViewportOutput, file_hierarchy::FileExplorer,
+		AnimationClipPanel, ConsolePanel, EditorPanelContext, InspectorPanel, NoProjectPanel, Panel,
+		SceneHierarchyPanel, ScenePanel, TextureSheetPanel, TileBrush, ViewportOutput, file_hierarchy::FileExplorer,
 	},
 	style::{ACCENT, BG_BASE, TEXT_MUTED, TEXT_PRIMARY},
 	undo_redo::{SceneSnapshotCommand, UndoRedoBuffer},
@@ -78,6 +78,7 @@ pub enum EditorRequest {
 	EnterPlayMode,
 	StopPlayMode,
 	OpenTextureSheetAsset(PathBuf),
+	OpenAnimationClipAsset(PathBuf),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,10 +144,11 @@ enum WindowPanel {
 	Files,
 	Console,
 	TextureSheet,
+	AnimationClip,
 }
 
 impl WindowPanel {
-	const ALL: [Self; 7] = [
+	const ALL: [Self; 8] = [
 		Self::Scene,
 		Self::Hierarchy,
 		Self::Inspector,
@@ -154,6 +156,7 @@ impl WindowPanel {
 		Self::Files,
 		Self::Console,
 		Self::TextureSheet,
+		Self::AnimationClip,
 	];
 
 	const fn menu_label(self) -> &'static str {
@@ -165,6 +168,7 @@ impl WindowPanel {
 			Self::Files => "File Explorer",
 			Self::Console => "Console",
 			Self::TextureSheet => "Texture Sheet",
+			Self::AnimationClip => "Animation Clip",
 		}
 	}
 
@@ -176,6 +180,7 @@ impl WindowPanel {
 			Self::AssetBrowser | Self::Files => "File Explorer",
 			Self::Console => "Console",
 			Self::TextureSheet => "Texture Sheet",
+			Self::AnimationClip => "Animation Clip",
 		}
 	}
 }
@@ -458,6 +463,12 @@ impl EditorWorkspace {
 			let path = path.clone();
 			self.selection = Some(crate::panels::EditorSelection::Asset(path));
 			self.open_or_focus_panel(WindowPanel::TextureSheet, viewport_texture);
+			menu_request = None;
+		}
+		if let Some(EditorRequest::OpenAnimationClipAsset(path)) = &menu_request {
+			let path = path.clone();
+			self.selection = Some(crate::panels::EditorSelection::Asset(path));
+			self.open_or_focus_panel(WindowPanel::AnimationClip, viewport_texture);
 			menu_request = None;
 		}
 
@@ -1208,6 +1219,7 @@ impl EditorWorkspace {
 			WindowPanel::AssetBrowser | WindowPanel::Files => self.create_files_panel(),
 			WindowPanel::Console => Box::new(ConsolePanel::new()),
 			WindowPanel::TextureSheet => Box::new(TextureSheetPanel::new()),
+			WindowPanel::AnimationClip => Box::new(AnimationClipPanel::new()),
 		}
 	}
 

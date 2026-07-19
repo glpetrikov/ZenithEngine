@@ -9,6 +9,9 @@ use anyhow::{Result, anyhow, bail};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+pub mod animation_clip;
+pub use animation_clip::{ANIMATION_CLIP_EXTENSION, AnimationClip, step_animation_frame};
+
 pub mod texture_sheet;
 pub use texture_sheet::{
 	AutoPackSheet, CellId, CellTrim, GridCell, ShelfPackedRect, TEXTURE_SHEET_EXTENSION, TextureSheet,
