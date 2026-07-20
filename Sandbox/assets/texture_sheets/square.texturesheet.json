@@ -1,0 +1,19 @@
+{
+  "version": "1",
+  "mode": {
+    "UniformGrid": {
+      "texture": {
+        "source": "Game",
+        "path": "textures/square.png"
+      },
+      "cell_width": 122,
+      "cell_height": 122,
+      "background_color": [
+        0.9999995,
+        0.0,
+        1.0
+      ],
+      "cells": []
+    }
+  }
+}

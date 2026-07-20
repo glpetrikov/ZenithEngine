@@ -220,7 +220,7 @@ pub fn relativize_asset_path(assets_root: &Path, absolute: &Path) -> Option<Stri
 /// (e.g. `"animationclip.json"`), returning project-relative path strings
 /// (the `AssetRef::path` convention), sorted for a stable combo-box order.
 /// No caching -- this backs an occasionally-shown picker, not a hot path.
-fn scan_assets_with_extension(assets_root: &Path, extension: &str) -> Vec<String> {
+pub(super) fn scan_assets_with_extension(assets_root: &Path, extension: &str) -> Vec<String> {
 	fn visit(dir: &Path, assets_root: &Path, extension: &str, out: &mut Vec<String>) {
 		let Ok(entries) = std::fs::read_dir(dir) else {
 			return;

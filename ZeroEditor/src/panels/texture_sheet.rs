@@ -14,7 +14,7 @@ use super::{
 	EditorPanelContext, EditorSelection, Panel,
 	texture_sheet_common::{
 		DecodedImage, ViewportTransform, draw_checkerboard, load_or_reload_decoded_image, pick_uniform_grid_cell,
-		relativize_asset_path, sample_pixel,
+		relativize_asset_path, sample_pixel, scan_assets_with_extension,
 	},
 };
 use crate::{tilemap, undo_redo::SceneSnapshotCommand};
@@ -28,6 +28,20 @@ const AUTO_PACK_LAYOUT_WIDTH: u32 = 1024;
 /// by zoom, same convention as `draw_checkerboard`'s tile size) so cells read
 /// as visually distinct tiles rather than a seamless image.
 const CELL_GAP: f32 = 2.0;
+
+/// Strips the trailing `.texturesheet.json` suffix (and any directory
+/// components) off a project-relative asset path, for a readable sheet-picker
+/// label -- `file_stem` alone would only strip `.json`, leaving
+/// `.texturesheet`.
+fn display_name_for_relative_path(relative: &str) -> &str {
+	let file_name = Path::new(relative)
+		.file_name()
+		.and_then(|name| name.to_str())
+		.unwrap_or(relative);
+	file_name
+		.strip_suffix(&format!(".{}", ze_assets::TEXTURE_SHEET_EXTENSION))
+		.unwrap_or(file_name)
+}
 
 /// The sheet + cell currently selected as the active tile-painting brush
 /// (set from this panel, read by `ScenePanel`'s "Paint Tiles" tool). Only
@@ -96,19 +110,22 @@ impl Panel for TextureSheetPanel {
 		let assets_root = context.project.map(|project| project.asset_dir.clone());
 
 		egui::ScrollArea::vertical().show(ui, |ui| {
-			self.show_header(ui);
-
 			let Some(assets_root) = assets_root else {
+				self.show_header(ui);
 				ui.label("No project loaded.");
 				return;
 			};
+
+			self.show_sheet_picker(ui, context.selection, &assets_root);
+			self.show_header(ui);
 
 			ui.separator();
 			show_tilemap_settings(ui, context);
 			ui.separator();
 
 			let Some(sheet) = self.sheet.as_mut() else {
-				ui.label("Select or create a .texturesheet.json asset to edit it here.");
+				ui.label("Pick a texture sheet above, or create one from the File Explorer's");
+				ui.label("\"Create Texture Sheet\" option, to edit it here.");
 				return;
 			};
 
@@ -191,10 +208,19 @@ impl TextureSheetPanel {
 			return;
 		}
 
-		match TextureSheet::load(path) {
+		self.open_sheet(path.clone());
+	}
+
+	/// Loads `path` into the panel, replacing whatever sheet (if any) is
+	/// currently open. Shared by both the selection-driven flow (double-click
+	/// in the File Explorer, or the "Create Texture Sheet" dialog routing
+	/// through `EditorRequest::OpenTextureSheetAsset`) and the in-panel sheet
+	/// picker, so both paths reset the same editing state.
+	fn open_sheet(&mut self, path: PathBuf) {
+		match TextureSheet::load(&path) {
 			Ok(sheet) => {
 				self.sheet = Some(sheet);
-				self.current_path = Some(path.clone());
+				self.current_path = Some(path);
 				self.dirty = false;
 				self.selected_cell = None;
 				self.source_preview = None;
@@ -207,6 +233,43 @@ impl TextureSheetPanel {
 				self.status = Some(format!("Failed to load texture sheet: {error}"));
 			}
 		}
+	}
+
+	/// A combo box listing every `.texturesheet.json` asset in the project,
+	/// letting the user open one directly instead of hunting for it in the
+	/// File Explorer. Options are rescanned from disk every time this runs
+	/// (cheap -- it's an occasional directory walk, not a hot path), which is
+	/// also how the list notices a sheet that was deleted/moved externally.
+	fn show_sheet_picker(&mut self, ui: &mut Ui, selection: &mut Option<EditorSelection>, assets_root: &Path) {
+		let options = scan_assets_with_extension(assets_root, ze_assets::TEXTURE_SHEET_EXTENSION);
+		let current_relative = self
+			.current_path
+			.as_deref()
+			.and_then(|path| relativize_asset_path(assets_root, path));
+
+		ui.horizontal(|ui| {
+			ui.label("Texture Sheet:");
+			let selected_text = current_relative
+				.as_deref()
+				.map_or("(pick a sheet)", display_name_for_relative_path);
+
+			egui::ComboBox::from_id_salt("texture_sheet_picker")
+				.selected_text(selected_text)
+				.show_ui(ui, |ui| {
+					if options.is_empty() {
+						ui.label("No texture sheets in this project yet.");
+					}
+					for option in &options {
+						let display = display_name_for_relative_path(option);
+						let is_current = current_relative.as_deref() == Some(option.as_str());
+						if ui.selectable_label(is_current, display).clicked() && !is_current {
+							let path = assets_root.join(option);
+							*selection = Some(EditorSelection::Asset(path.clone()));
+							self.open_sheet(path);
+						}
+					}
+				});
+		});
 	}
 
 	fn show_header(&self, ui: &mut Ui) {
