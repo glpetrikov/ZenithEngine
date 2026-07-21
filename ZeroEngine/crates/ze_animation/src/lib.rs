@@ -42,6 +42,15 @@ impl AnimationClipCache {
 
 		self.clips.get(clip_ref)
 	}
+
+	fn invalidate(&mut self, asset: &AssetRef) -> bool {
+		self.failed.remove(asset);
+		self.clips.remove(asset).is_some()
+	}
+
+	fn invalidate_many<'a>(&mut self, assets: impl IntoIterator<Item = &'a AssetRef>) -> usize {
+		assets.into_iter().filter(|asset| self.invalidate(asset)).count()
+	}
 }
 
 fn load_clip(clip_ref: &AssetRef, resources: &ResourceManager) -> Result<AnimationClip> {
@@ -63,6 +72,16 @@ impl AnimationSystem {
 			resources,
 			cache: AnimationClipCache::new(),
 		}
+	}
+
+	/// Drops cached parsed clips for `assets` so the next tick re-reads them
+	/// from disk -- mirrors
+	/// `Renderer::invalidate_textures`/`invalidate_sheets`, wired to animation
+	/// clip file-watcher events the same way, so an edit to a clip's fields
+	/// (e.g. `loop_animation`, `frame_duration_ms`) takes
+	/// effect on already-playing entities without restarting Play.
+	pub fn invalidate_clips<'a>(&mut self, assets: impl IntoIterator<Item = &'a AssetRef>) -> usize {
+		self.cache.invalidate_many(assets)
 	}
 }
 

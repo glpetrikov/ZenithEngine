@@ -1645,6 +1645,9 @@ fn update_editor_scene_before_render(
 			return false;
 		};
 		let asset_reload = asset_hot_reload.poll(scene, game_running);
+		scene.with_system_mut::<AnimationSystem, _>(|system, _scene| {
+			system.invalidate_clips(asset_reload.animation_clip_assets());
+		});
 		if game_running {
 			if let Err(error) = scene.update_system::<ScriptingSystem>(dt) {
 				ze_log::error!("failed to update scripting system: {error:?}");

@@ -151,10 +151,17 @@ pub fn resolve_texture_source(
 
 /// Normalizes a `PendingGridCell` into a `uv_rect` (`[0,0,1,1]` for `None`,
 /// i.e. sample the whole texture) using the now-loaded texture's pixel
-/// dimensions, plus the "effective dimensions" a caller that sizes itself
-/// automatically (e.g. `SpriteSize::Auto`) should size against (the trimmed
-/// cell size rather than the whole sheet image).
-pub fn resolve_uv_rect(pending: PendingGridCell, texture_dimensions: (u32, u32)) -> ([f32; 4], (u32, u32)) {
+/// dimensions, plus two size hints for a caller that sizes itself
+/// automatically (e.g. `SpriteSize::Auto`): the "effective" size (the trimmed
+/// cell size, i.e. the actual visible footprint) and the "nominal" size (the
+/// untrimmed grid cell -- or, for `None`, the same as `texture_dimensions`).
+/// Auto-sizing must scale against *both*: using the nominal size alone would
+/// ignore trimming entirely, but using the effective size alone (as an
+/// earlier version of this function did) loses the untrimmed cell as a
+/// common reference point, so an animation's differently-trimmed frames each
+/// silently renormalize their own aspect ratio instead of shrinking/growing
+/// relative to one shared, stable size.
+pub fn resolve_uv_rect(pending: PendingGridCell, texture_dimensions: (u32, u32)) -> ([f32; 4], (u32, u32), (u32, u32)) {
 	let PendingGridCell::Cell {
 		cell_index,
 		cell_width,
@@ -164,7 +171,7 @@ pub fn resolve_uv_rect(pending: PendingGridCell, texture_dimensions: (u32, u32))
 		trim,
 	} = pending
 	else {
-		return (FULL_UV_RECT, texture_dimensions);
+		return (FULL_UV_RECT, texture_dimensions, texture_dimensions);
 	};
 
 	let (texture_width, texture_height) = texture_dimensions;
@@ -192,7 +199,7 @@ pub fn resolve_uv_rect(pending: PendingGridCell, texture_dimensions: (u32, u32))
 		size.1 as f32 / texture_height.max(1) as f32,
 	];
 
-	(uv_rect, size)
+	(uv_rect, size, (cell_width, cell_height))
 }
 
 #[cfg(test)]
@@ -202,9 +209,10 @@ mod tests {
 
 	#[test]
 	fn file_source_resolves_to_full_uv_rect_unchanged() {
-		let (uv_rect, dimensions) = resolve_uv_rect(PendingGridCell::None, (64, 32));
+		let (uv_rect, effective, nominal) = resolve_uv_rect(PendingGridCell::None, (64, 32));
 		assert_eq!(uv_rect, FULL_UV_RECT);
-		assert_eq!(dimensions, (64, 32));
+		assert_eq!(effective, (64, 32));
+		assert_eq!(nominal, (64, 32));
 	}
 
 	#[test]
@@ -225,8 +233,9 @@ mod tests {
 			}),
 		};
 
-		let (uv_rect, dimensions) = resolve_uv_rect(pending, (64, 32));
-		assert_eq!(dimensions, (20, 24));
+		let (uv_rect, effective, nominal) = resolve_uv_rect(pending, (64, 32));
+		assert_eq!(effective, (20, 24));
+		assert_eq!(nominal, (32, 32));
 		// cell 1 origin = (32, 0) + trim offset (4, 2) = (36, 2), normalized by 64x32.
 		assert!((uv_rect[0] - 36.0 / 64.0).abs() < 1e-6);
 		assert!((uv_rect[1] - 2.0 / 32.0).abs() < 1e-6);
@@ -248,8 +257,9 @@ mod tests {
 			trim: None,
 		};
 
-		let (uv_rect, dimensions) = resolve_uv_rect(pending, (72, 32));
-		assert_eq!(dimensions, (32, 32));
+		let (uv_rect, effective, nominal) = resolve_uv_rect(pending, (72, 32));
+		assert_eq!(effective, (32, 32));
+		assert_eq!(nominal, (32, 32));
 		// cell 1 origin = grid origin (8, 0) + cell (32, 0) = (40, 0), normalized by
 		// 72x32.
 		assert!((uv_rect[0] - 40.0 / 72.0).abs() < 1e-6);

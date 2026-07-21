@@ -784,8 +784,9 @@ impl Renderer {
 			let texture = self
 				.texture_cache
 				.get_or_load(&asset_ref, resources, &self.device, &self.queue);
-			let (uv_rect, effective_dimensions) = resolve_uv_rect(pending_cell, texture.dimensions());
-			let sprite_size = sprite_size_to_world_scale(&item.size, effective_dimensions);
+			let (uv_rect, effective_dimensions, nominal_dimensions) =
+				resolve_uv_rect(pending_cell, texture.dimensions());
+			let sprite_size = sprite_size_to_world_scale(&item.size, effective_dimensions, nominal_dimensions);
 			let transform = item.transform * Mat4::from_scale(Vec3::new(sprite_size[0], sprite_size[1], 1.0));
 
 			let tint = item.color.tint.unwrap_or([1.0, 1.0, 1.0, 1.0]);
@@ -1137,22 +1138,82 @@ fn group_consecutive<K: PartialEq>(keys: &[K]) -> Vec<std::ops::Range<usize>> {
 	groups
 }
 
-fn sprite_size_to_world_scale(size: &components::SpriteSize, dimensions: (u32, u32)) -> [f32; 2] {
+fn sprite_size_to_world_scale(
+	size: &components::SpriteSize,
+	effective_dimensions: (u32, u32),
+	nominal_dimensions: (u32, u32),
+) -> [f32; 2] {
 	match size {
-		components::SpriteSize::Auto => auto_sprite_size(dimensions.0, dimensions.1),
+		components::SpriteSize::Auto => auto_sprite_size(effective_dimensions, nominal_dimensions),
 		components::SpriteSize::Custom { width, height } => [*width, *height],
 	}
 }
 
-fn auto_sprite_size(width: u32, height: u32) -> [f32; 2] {
-	if width == 0 || height == 0 {
+/// Aspect-normalizes against the *nominal* (untrimmed) size -- so every cell
+/// of one uniform-grid sheet shares the same [aspect, 1.0]/[1.0, aspect]
+/// base -- then scales each axis down independently by how much smaller the
+/// *effective* (trimmed) footprint is on that axis. Scaling by nominal size
+/// alone would render every frame at the same size regardless of trim;
+/// aspect-normalizing the effective size directly (as an earlier version of
+/// this function did) discards absolute magnitude, since it always pins
+/// whichever axis is currently shorter to exactly `1.0` -- so a tightly
+/// trimmed frame could render *larger* than an untrimmed one on that axis
+/// merely because its own trim happened to be wide relative to its own
+/// height, not because it's actually bigger.
+fn auto_sprite_size(effective_dimensions: (u32, u32), nominal_dimensions: (u32, u32)) -> [f32; 2] {
+	let (nominal_width, nominal_height) = nominal_dimensions;
+	if nominal_width == 0 || nominal_height == 0 {
 		return [1.0, 1.0];
 	}
 
-	if width >= height {
-		[width as f32 / height as f32, 1.0]
+	let base = if nominal_width >= nominal_height {
+		[nominal_width as f32 / nominal_height as f32, 1.0]
 	} else {
-		[1.0, height as f32 / width as f32]
+		[1.0, nominal_height as f32 / nominal_width as f32]
+	};
+
+	[
+		base[0] * (effective_dimensions.0 as f32 / nominal_width as f32),
+		base[1] * (effective_dimensions.1 as f32 / nominal_height as f32),
+	]
+}
+
+#[cfg(test)]
+mod auto_sprite_size_tests {
+	use super::*;
+
+	#[test]
+	fn untrimmed_cell_normalizes_to_aspect_only_same_as_before() {
+		// A square, untrimmed cell (effective == nominal): behaves exactly
+		// like the old aspect-only formula.
+		assert_eq!(auto_sprite_size((32, 32), (32, 32)), [1.0, 1.0]);
+		assert_eq!(auto_sprite_size((64, 32), (64, 32)), [2.0, 1.0]);
+		assert_eq!(auto_sprite_size((32, 64), (32, 64)), [1.0, 2.0]);
+	}
+
+	#[test]
+	fn a_trim_narrower_than_the_nominal_cell_shrinks_that_axis_instead_of_growing_it() {
+		// Regression test for the animated-clip bug: a square 32x32 grid cell
+		// trimmed down to a 32x14 strip (much shorter than it is wide) must
+		// render *smaller* on the trimmed axis than a full, untrimmed sibling
+		// cell from the same sheet -- not larger. The old aspect-only formula
+		// pinned the shorter axis to 1.0 and grew the other to 32/14 (~2.3x),
+		// i.e. exactly backwards.
+		let full_cell = auto_sprite_size((32, 32), (32, 32));
+		let trimmed_cell = auto_sprite_size((32, 14), (32, 32));
+
+		assert_eq!(full_cell, [1.0, 1.0]);
+		assert_eq!(trimmed_cell, [1.0, 14.0 / 32.0]);
+		assert!(
+			trimmed_cell[1] < full_cell[1],
+			"trimmed frame must render shorter, not taller"
+		);
+	}
+
+	#[test]
+	fn zero_nominal_dimension_falls_back_to_a_unit_square() {
+		assert_eq!(auto_sprite_size((0, 0), (0, 0)), [1.0, 1.0]);
+		assert_eq!(auto_sprite_size((10, 10), (0, 5)), [1.0, 1.0]);
 	}
 }
 

@@ -32,12 +32,15 @@ pub enum ScriptStatus {
 pub struct AssetReloadSet {
 	texture_assets: Vec<AssetRef>,
 	sheet_assets: Vec<AssetRef>,
+	animation_clip_assets: Vec<AssetRef>,
 }
 
 impl AssetReloadSet {
 	pub fn texture_assets(&self) -> &[AssetRef] { &self.texture_assets }
 
 	pub fn sheet_assets(&self) -> &[AssetRef] { &self.sheet_assets }
+
+	pub fn animation_clip_assets(&self) -> &[AssetRef] { &self.animation_clip_assets }
 }
 
 pub struct AssetHotReload {
@@ -143,6 +146,7 @@ impl AssetHotReload {
 
 		let mut texture_assets = BTreeSet::new();
 		let mut sheet_assets = BTreeSet::new();
+		let mut animation_clip_assets = BTreeSet::new();
 		let mut script_source_changed = false;
 		let mut script_output_close_write = false;
 
@@ -163,7 +167,10 @@ impl AssetHotReload {
 							texture_assets.insert(AssetRef::game(asset_path.clone()));
 						}
 						if is_texture_sheet_asset(&asset_path) {
-							sheet_assets.insert(AssetRef::game(asset_path));
+							sheet_assets.insert(AssetRef::game(asset_path.clone()));
+						}
+						if is_animation_clip_asset(&asset_path) {
+							animation_clip_assets.insert(AssetRef::game(asset_path));
 						}
 					}
 					script_source_changed |= is_script_source(&path);
@@ -237,6 +244,7 @@ impl AssetHotReload {
 		AssetReloadSet {
 			texture_assets: texture_assets.into_iter().collect(),
 			sheet_assets: sheet_assets.into_iter().collect(),
+			animation_clip_assets: animation_clip_assets.into_iter().collect(),
 		}
 	}
 
@@ -409,6 +417,8 @@ pub fn is_texture_asset(path: &str) -> bool {
 }
 
 fn is_texture_sheet_asset(path: &str) -> bool { path.ends_with(&format!(".{}", ze_assets::TEXTURE_SHEET_EXTENSION)) }
+
+fn is_animation_clip_asset(path: &str) -> bool { path.ends_with(&format!(".{}", ze_assets::ANIMATION_CLIP_EXTENSION)) }
 
 fn is_script_source(path: &Path) -> bool {
 	matches!(

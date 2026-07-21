@@ -86,7 +86,8 @@ impl UiImageTextureCache {
 		}
 
 		let loaded = self.textures.get(&asset_ref)?;
-		let (uv_rect, _effective_dimensions) = resolve_uv_rect(pending, (loaded.width, loaded.height));
+		let (uv_rect, _effective_dimensions, _nominal_dimensions) =
+			resolve_uv_rect(pending, (loaded.width, loaded.height));
 		Some((loaded.texture_id, uv_rect))
 	}
 }
