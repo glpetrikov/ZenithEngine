@@ -126,7 +126,13 @@ impl ViewportTransform {
 			if scroll != 0.0 {
 				if let Some(pointer) = response.hover_pos() {
 					let anchor = self.screen_to_image(viewport_rect, pointer);
-					let zoom_factor = (-scroll * SHEET_ZOOM_WHEEL_SCALE).exp2();
+					// Positive `scroll` is a forward/up wheel tick. Unlike
+					// `scene.rs`'s 2D camera zoom (whose `zoom` is an
+					// orthographic half-size, so *smaller* means "zoomed
+					// in"), this `zoom` is a direct screen-px-per-image-px
+					// scale, so scrolling forward must *increase* it --
+					// no negation here, unlike that other zoom_factor.
+					let zoom_factor = (scroll * SHEET_ZOOM_WHEEL_SCALE).exp2();
 					self.zoom = (self.zoom * zoom_factor).clamp(MIN_SHEET_ZOOM, MAX_SHEET_ZOOM);
 					self.pan += pointer - self.image_to_screen(viewport_rect, anchor);
 				}
@@ -134,6 +140,51 @@ impl ViewportTransform {
 			}
 		}
 	}
+}
+
+/// A small overlay toolbar anchored to `viewport_rect`'s bottom-left corner --
+/// a "Fit" button (reuses the same `viewport_fitted = false` re-fit trigger
+/// the initial auto-fit uses, so it takes effect on the very next frame) and
+/// a live zoom-percentage readout, plus an optional "100%" native-pixel-scale
+/// button. Shared by the Texture Sheet and Animation Clip panels' viewports.
+pub fn show_viewport_zoom_toolbar(
+	ui: &mut Ui,
+	viewport_rect: egui::Rect,
+	viewport: &mut ViewportTransform,
+	viewport_fitted: &mut bool,
+	show_1_to_1_button: bool,
+) {
+	let width = if show_1_to_1_button { 170.0 } else { 120.0 };
+	let overlay_rect = egui::Rect::from_min_size(
+		egui::pos2(viewport_rect.min.x + 8.0, viewport_rect.max.y - 28.0),
+		egui::vec2(width, 20.0),
+	);
+	let mut overlay_ui = ui.new_child(
+		egui::UiBuilder::new()
+			.max_rect(overlay_rect)
+			.layout(egui::Layout::left_to_right(egui::Align::Center)),
+	);
+	egui::Frame::popup(overlay_ui.style()).show(&mut overlay_ui, |ui| {
+		if ui
+			.small_button("Fit")
+			.on_hover_text("Frame the whole image in the viewport")
+			.clicked()
+		{
+			*viewport_fitted = false;
+		}
+		if show_1_to_1_button
+			&& ui
+				.small_button("100%")
+				.on_hover_text("Reset to the texture's native pixel scale")
+				.clicked()
+		{
+			let center = viewport_rect.center();
+			let anchor = viewport.screen_to_image(viewport_rect, center);
+			viewport.zoom = 1.0;
+			viewport.pan = center - viewport_rect.min - anchor.to_vec2();
+		}
+		ui.label(format!("{:.0}%", viewport.zoom * 100.0));
+	});
 }
 
 /// Paints a fixed-screen-space-tile checkerboard across `rect`, signaling
@@ -160,9 +211,18 @@ pub fn draw_checkerboard(painter: &egui::Painter, rect: egui::Rect, tile_size: f
 	}
 }
 
-/// Bounds-checked RGB sample at `image_point`, as `background_color`'s
-/// `0.0..=1.0` per-channel convention (alpha is ignored).
-pub fn sample_pixel(rgba: &RgbaImage, image_point: egui::Pos2) -> Option<[f32; 3]> {
+/// Alpha at or below this counts as "too transparent to eyedrop from" --
+/// callers should reject the sample and tell the user, rather than silently
+/// seeding `background_color` from a pixel whose RGB is likely meaningless
+/// (many exporters zero out RGB entirely on erased/transparent pixels, so
+/// sampling straight through alpha can silently corrupt trim detection for
+/// any other cell that relies on `background_color`).
+pub const EYEDROPPER_TRANSPARENT_ALPHA_THRESHOLD: u8 = 16;
+
+/// Bounds-checked RGBA sample at `image_point`: RGB as `background_color`'s
+/// `0.0..=1.0` per-channel convention, plus the raw `0..=255` alpha byte so
+/// callers can apply `EYEDROPPER_TRANSPARENT_ALPHA_THRESHOLD` themselves.
+pub fn sample_pixel(rgba: &RgbaImage, image_point: egui::Pos2) -> Option<([f32; 3], u8)> {
 	if image_point.x < 0.0 || image_point.y < 0.0 {
 		return None;
 	}
@@ -172,28 +232,37 @@ pub fn sample_pixel(rgba: &RgbaImage, image_point: egui::Pos2) -> Option<[f32; 3
 		return None;
 	}
 	let pixel = rgba.get_pixel(x, y);
-	Some([
-		f32::from(pixel[0]) / 255.0,
-		f32::from(pixel[1]) / 255.0,
-		f32::from(pixel[2]) / 255.0,
-	])
+	Some((
+		[
+			f32::from(pixel[0]) / 255.0,
+			f32::from(pixel[1]) / 255.0,
+			f32::from(pixel[2]) / 255.0,
+		],
+		pixel[3],
+	))
 }
 
 /// Inverse of the row-major `col = index % cols; row = index / cols` layout
-/// used to lay out a `UniformGrid` sheet's cells. Returns `None` outside the
-/// `cols x rows` grid.
+/// used to lay out a `UniformGrid` sheet's cells. `origin_x`/`origin_y` is the
+/// grid's own pixel offset (`UniformGridSheet::origin_x`/`origin_y`) --
+/// subtracted from `image_point` before dividing into cells, so a point
+/// inside the grid's leading margin (before `origin_x`/`origin_y`) correctly
+/// misses every cell rather than aliasing onto column/row 0. Returns `None`
+/// outside the `cols x rows` grid.
 pub fn pick_uniform_grid_cell(
 	image_point: egui::Pos2,
 	cell_width: u32,
 	cell_height: u32,
+	origin_x: u32,
+	origin_y: u32,
 	cols: u32,
 	rows: u32,
 ) -> Option<u32> {
-	if image_point.x < 0.0 || image_point.y < 0.0 {
+	if image_point.x < origin_x as f32 || image_point.y < origin_y as f32 {
 		return None;
 	}
-	let col = (image_point.x / cell_width.max(1) as f32) as u32;
-	let row = (image_point.y / cell_height.max(1) as f32) as u32;
+	let col = ((image_point.x - origin_x as f32) / cell_width.max(1) as f32) as u32;
+	let row = ((image_point.y - origin_y as f32) / cell_height.max(1) as f32) as u32;
 	if col >= cols || row >= rows {
 		return None;
 	}

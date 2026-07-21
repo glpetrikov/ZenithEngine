@@ -11,7 +11,10 @@ use ze_assets::{
 	compute_uniform_grid_trims,
 };
 
-use super::texture_sheet_common::{DecodedImage, load_or_reload_decoded_image, relativize_asset_path, sample_pixel};
+use super::texture_sheet_common::{
+	DecodedImage, EYEDROPPER_TRANSPARENT_ALPHA_THRESHOLD, load_or_reload_decoded_image, relativize_asset_path,
+	sample_pixel,
+};
 
 const DEFAULT_CELL_SIZE: u32 = 32;
 const DEFAULT_BACKGROUND_COLOR: [f32; 3] = [1.0, 0.0, 1.0];
@@ -58,7 +61,8 @@ impl TextureSheetCreateDialog {
 			let params = (self.cell_width, self.cell_height, self.background_color);
 			if self.last_grid_params != Some(params) {
 				let rgba = &self.preview.as_ref().expect("has_preview confirmed Some").rgba;
-				self.cells = compute_uniform_grid_trims(rgba, self.cell_width, self.cell_height, self.background_color);
+				self.cells =
+					compute_uniform_grid_trims(rgba, self.cell_width, self.cell_height, 0, 0, self.background_color);
 				self.last_grid_params = Some(params);
 			}
 		}
@@ -140,7 +144,15 @@ impl TextureSheetCreateDialog {
 
 		let cell_width = self.cell_width.max(1);
 		let cell_height = self.cell_height.max(1);
-		let cols = (source_size[0] as u32 / cell_width).max(1);
+		let (cols, _rows) = ze_assets::uniform_grid_cols_rows(
+			source_size[0] as u32,
+			source_size[1] as u32,
+			cell_width,
+			cell_height,
+			0,
+			0,
+		);
+		let cols = cols.max(1);
 
 		for (index, cell) in self.cells.iter().enumerate() {
 			let Some(trim) = cell.trim else {
@@ -170,9 +182,16 @@ impl TextureSheetCreateDialog {
 			&& let Some(pointer) = interact.interact_pointer_pos()
 		{
 			let image_point = egui::pos2((pointer.x - origin.x) / scale, (pointer.y - origin.y) / scale);
-			if let Some(color) = sample_pixel(&preview.rgba, image_point) {
-				self.background_color = color;
-				self.eyedropper_active = false;
+			if let Some((color, alpha)) = sample_pixel(&preview.rgba, image_point) {
+				if alpha <= EYEDROPPER_TRANSPARENT_ALPHA_THRESHOLD {
+					self.error = Some(
+						"That pixel is transparent -- pick a solid-colored pixel for the background color.".to_string(),
+					);
+				} else {
+					self.background_color = color;
+					self.eyedropper_active = false;
+					self.error = None;
+				}
 			}
 		}
 	}
@@ -185,6 +204,8 @@ impl TextureSheetCreateDialog {
 			texture: AssetRef::game(relative),
 			cell_width: self.cell_width,
 			cell_height: self.cell_height,
+			origin_x: 0,
+			origin_y: 0,
 			background_color: self.background_color,
 			cells: self.cells.clone(),
 		});

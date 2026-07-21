@@ -6,14 +6,31 @@
         "source": "Game",
         "path": "textures/square.png"
       },
-      "cell_width": 122,
-      "cell_height": 122,
+      "cell_width": 120,
+      "cell_height": 120,
       "background_color": [
-        0.9999995,
-        0.0,
-        1.0
+        0.1764706,
+        0.1764706,
+        0.1764706
       ],
-      "cells": []
+      "cells": [
+        {
+          "trim": {
+            "offset": [
+              0,
+              0
+            ],
+            "size": [
+              120,
+              120
+            ],
+            "original_size": [
+              120,
+              120
+            ]
+          }
+        }
+      ]
     }
   }
 }

@@ -12,11 +12,19 @@ const TEXTURE_SHEET_VERSION: &str = "1";
 
 /// Alpha values at or below this are treated as fully transparent when
 /// deciding whether a cell has meaningful alpha variation (antialiased-edge
-/// tolerance).
-const ALPHA_VARIATION_TOLERANCE: u8 = 2;
+/// tolerance). Kept at `0` (only a fully-invisible pixel is "background") --
+/// a higher tolerance previously excluded faintly-visible antialiased edge
+/// pixels (e.g. alpha 1-2) from the trim bbox, cropping a visible sliver off
+/// round/filled shapes.
+const ALPHA_VARIATION_TOLERANCE: u8 = 0;
 /// Per-channel distance from `background_color` beyond which a pixel counts
-/// as "real content" for cells without a meaningful alpha channel.
-const BACKGROUND_CHANNEL_THRESHOLD: u8 = 8;
+/// as "real content" for cells without a meaningful alpha channel. Kept small
+/// (rather than the much larger tolerance this used to have) so a subtly
+/// antialiased edge pixel blended mostly-but-not-entirely toward the
+/// background color still counts as content instead of being cropped away;
+/// still nonzero to tolerate the `background_color` f32->u8 round-trip's
+/// rounding noise (see `trim_cell`).
+const BACKGROUND_CHANNEL_THRESHOLD: u8 = 2;
 
 /// Identifies one cell in a `TextureSheet`: a row-major index into the grid
 /// for `UniformGrid` sheets, or an index into `AutoPackSheet::files` for
@@ -41,9 +49,21 @@ pub struct UniformGridSheet {
 	pub texture: AssetRef,
 	pub cell_width: u32,
 	pub cell_height: u32,
+	/// Pixel offset of the grid's first cell's top-left corner from the
+	/// source image's own `(0, 0)` -- lets a sheet with a margin/padding
+	/// before its first row/column still line up cleanly with `cell_width x
+	/// cell_height` cells instead of every cell being misaligned relative to
+	/// the actual sprite content. `#[serde(default)]` so sheets saved before
+	/// this field existed still deserialize, defaulting to no offset (i.e.
+	/// unchanged behavior).
+	#[serde(default)]
+	pub origin_x: u32,
+	#[serde(default)]
+	pub origin_y: u32,
 	pub background_color: [f32; 3],
-	/// Row-major, `len() == cols * rows` where `cols = floor(texture_width /
-	/// cell_width)` and `rows = floor(texture_height / cell_height)`.
+	/// Row-major, `len() == cols * rows` -- see `uniform_grid_cols_rows` for
+	/// how `cols`/`rows` are derived from `cell_width`/`cell_height`,
+	/// `origin_x`/`origin_y`, and the source texture's pixel dimensions.
 	pub cells: Vec<GridCell>,
 }
 
@@ -57,14 +77,25 @@ pub struct GridCell {
 
 /// TexturePacker-style trim data: `offset`+`size` describe the trimmed rect
 /// in cell-local pixel coordinates (relative to the cell's own untrimmed
-/// top-left corner), and `original_size` is the untrimmed cell dimensions
-/// (`cell_width` x `cell_height`) so a sprite can still be positioned as if
-/// against the full, untrimmed cell.
+/// top-left corner), and `original_size` is the untrimmed cell dimensions --
+/// normally the sheet's nominal `cell_width x cell_height`, but smaller for a
+/// cell clamped to the source image's edge (see `clamp_cell_rect`) -- so a
+/// sprite can still be positioned as if against the full, untrimmed cell.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
 pub struct CellTrim {
 	pub offset: (u32, u32),
 	pub size: (u32, u32),
 	pub original_size: (u32, u32),
+	/// `true` if this trim was hand-adjusted in `ZeroEditor`'s Texture Sheet
+	/// panel rather than produced by `compute_uniform_grid_trims`'s
+	/// alpha/background-color detection. `#[serde(default)]` so sheets saved
+	/// before this field existed still deserialize (defaulting to `false`,
+	/// i.e. auto-detected). `recompute_uniform_grid_trims_preserving_manual`
+	/// checks this to avoid silently overwriting a manual adjustment when
+	/// re-trimming after an unrelated change (source texture reload,
+	/// background-color edit, "Re-trim All").
+	#[serde(default)]
+	pub manual: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -104,48 +135,145 @@ impl TextureSheet {
 }
 
 impl UniformGridSheet {
-	/// `(cols, rows)` given the full source texture's pixel dimensions.
+	/// `(cols, rows)` given the full source texture's pixel dimensions -- see
+	/// `uniform_grid_cols_rows` for the clamping rules.
 	pub fn grid_dimensions(&self, source_width: u32, source_height: u32) -> (u32, u32) {
-		(
-			source_width / self.cell_width.max(1),
-			source_height / self.cell_height.max(1),
+		uniform_grid_cols_rows(
+			source_width,
+			source_height,
+			self.cell_width,
+			self.cell_height,
+			self.origin_x,
+			self.origin_y,
 		)
 	}
 }
 
+/// Computes `(cols, rows)` for a `UniformGrid` sheet's cell layout: how many
+/// `cell_width x cell_height` cells fit into a `source_width x
+/// source_height` image starting at `(origin_x, origin_y)`.
+///
+/// Uses floor division along an axis where at least one full cell already
+/// fits (the common case -- this correctly ignores an intentional
+/// trailing/leading margin narrower than one cell without inventing a spurious
+/// partial cell for it), but clamps up to `1` instead of truncating to `0`
+/// when the origin-adjusted source is nonempty yet narrower/shorter than a
+/// single cell. Without that clamp, increasing `cell_width`/`cell_height`
+/// past what an axis can fully contain made the *entire* grid's cell list
+/// come back empty (`cols` or `rows` floors to `0`, so `cols * rows == 0`)
+/// instead of yielding one edge-clamped cell -- see `clamp_cell_rect` for how
+/// that cell's own pixel bounds are then clamped to whatever is actually
+/// available.
+pub fn uniform_grid_cols_rows(
+	source_width: u32,
+	source_height: u32,
+	cell_width: u32,
+	cell_height: u32,
+	origin_x: u32,
+	origin_y: u32,
+) -> (u32, u32) {
+	let cell_width = cell_width.max(1);
+	let cell_height = cell_height.max(1);
+	let available_width = source_width.saturating_sub(origin_x);
+	let available_height = source_height.saturating_sub(origin_y);
+
+	let cols = if available_width == 0 {
+		0
+	} else {
+		(available_width / cell_width).max(1)
+	};
+	let rows = if available_height == 0 {
+		0
+	} else {
+		(available_height / cell_height).max(1)
+	};
+	(cols, rows)
+}
+
+/// Clamps a nominal `cell_width x cell_height` cell at grid position `(col,
+/// row)` -- pixel origin `(origin_x + col * cell_width, origin_y + row *
+/// cell_height)` -- to whatever pixels are actually available in a
+/// `source_width x source_height` image. Returns `(cell_origin_x,
+/// cell_origin_y, actual_width, actual_height)`; the latter two never exceed
+/// `cell_width`/`cell_height` but may be smaller for an edge cell that
+/// `uniform_grid_cols_rows` rounded up to `1` rather than dropping.
+fn clamp_cell_rect(
+	source_width: u32,
+	source_height: u32,
+	cell_width: u32,
+	cell_height: u32,
+	origin_x: u32,
+	origin_y: u32,
+	col: u32,
+	row: u32,
+) -> (u32, u32, u32, u32) {
+	let cell_origin_x = origin_x + col * cell_width;
+	let cell_origin_y = origin_y + row * cell_height;
+	let actual_width = cell_width.min(source_width.saturating_sub(cell_origin_x));
+	let actual_height = cell_height.min(source_height.saturating_sub(cell_origin_y));
+	(cell_origin_x, cell_origin_y, actual_width, actual_height)
+}
+
 /// Slices `image` into a `cols x rows` grid of `cell_width x cell_height`
-/// cells (row-major) and computes a per-cell trim rect.
+/// cells (row-major, starting at `(origin_x, origin_y)`) and computes a
+/// per-cell trim rect.
 ///
 /// This is edit-time-only logic: computed once when a sheet is created or
-/// its cell size / background color changes in ZeroEditor, then stored in
-/// the sheet's JSON -- never recomputed at runtime load.
+/// its cell size / origin / background color changes in ZeroEditor, then
+/// stored in the sheet's JSON -- never recomputed at runtime load.
 pub fn compute_uniform_grid_trims(
 	image: &RgbaImage,
 	cell_width: u32,
 	cell_height: u32,
+	origin_x: u32,
+	origin_y: u32,
 	background_color: [f32; 3],
 ) -> Vec<GridCell> {
 	let cell_width = cell_width.max(1);
 	let cell_height = cell_height.max(1);
-	let cols = image.width() / cell_width;
-	let rows = image.height() / cell_height;
+	let (cols, rows) = uniform_grid_cols_rows(
+		image.width(),
+		image.height(),
+		cell_width,
+		cell_height,
+		origin_x,
+		origin_y,
+	);
 
 	let mut cells = Vec::with_capacity((cols * rows) as usize);
 	for row in 0..rows {
 		for col in 0..cols {
-			let origin_x = col * cell_width;
-			let origin_y = row * cell_height;
-			let trim = trim_cell(image, origin_x, origin_y, cell_width, cell_height, background_color);
+			let (cell_origin_x, cell_origin_y, actual_width, actual_height) = clamp_cell_rect(
+				image.width(),
+				image.height(),
+				cell_width,
+				cell_height,
+				origin_x,
+				origin_y,
+				col,
+				row,
+			);
+			let trim = trim_cell(
+				image,
+				cell_origin_x,
+				cell_origin_y,
+				actual_width,
+				actual_height,
+				background_color,
+			);
 			cells.push(GridCell { trim });
 		}
 	}
 	cells
 }
 
+/// `cell_width`/`cell_height` here are the cell's *actual* pixel dimensions
+/// (already clamped by the caller for an edge cell -- see
+/// `clamp_cell_rect`), not necessarily the sheet's nominal configured size.
 fn trim_cell(
 	image: &RgbaImage,
-	origin_x: u32,
-	origin_y: u32,
+	cell_origin_x: u32,
+	cell_origin_y: u32,
 	cell_width: u32,
 	cell_height: u32,
 	background_color: [f32; 3],
@@ -156,7 +284,7 @@ fn trim_cell(
 		(background_color[2].clamp(0.0, 1.0) * 255.0).round() as u8,
 	];
 
-	let has_alpha_variation = cell_has_alpha_variation(image, origin_x, origin_y, cell_width, cell_height);
+	let has_alpha_variation = cell_has_alpha_variation(image, cell_origin_x, cell_origin_y, cell_width, cell_height);
 
 	let mut min_x = cell_width;
 	let mut min_y = cell_height;
@@ -166,7 +294,7 @@ fn trim_cell(
 
 	for local_y in 0..cell_height {
 		for local_x in 0..cell_width {
-			let pixel = image.get_pixel(origin_x + local_x, origin_y + local_y);
+			let pixel = image.get_pixel(cell_origin_x + local_x, cell_origin_y + local_y);
 			let is_content = if has_alpha_variation {
 				pixel[3] > ALPHA_VARIATION_TOLERANCE
 			} else {
@@ -193,7 +321,66 @@ fn trim_cell(
 		offset: (min_x, min_y),
 		size: (max_x - min_x + 1, max_y - min_y + 1),
 		original_size: (cell_width, cell_height),
+		manual: false,
 	})
+}
+
+/// Same as `compute_uniform_grid_trims`, but preserves manual overrides.
+///
+/// Keeps `existing_cells`' trim in place for any cell whose trim has
+/// `manual: true` instead of overwriting it with a fresh auto-detected one --
+/// so a hand-adjusted crop box survives an unrelated re-trim (source texture
+/// reload, background-color/origin change, `ZeroEditor`'s "Re-trim All"
+/// button). A manual trim is only kept if its `original_size` still matches
+/// that cell's *actual* current dimensions (see `clamp_cell_rect` -- an edge
+/// cell's actual size can be smaller than the sheet's nominal `cell_width x
+/// cell_height`) -- if the grid's own layout changed enough to resize this
+/// specific cell, the override no longer applies to the same cell bounds and
+/// falls back to auto-detection like any other cell.
+pub fn recompute_uniform_grid_trims_preserving_manual(
+	image: &RgbaImage,
+	cell_width: u32,
+	cell_height: u32,
+	origin_x: u32,
+	origin_y: u32,
+	background_color: [f32; 3],
+	existing_cells: &[GridCell],
+) -> Vec<GridCell> {
+	let cell_width = cell_width.max(1);
+	let cell_height = cell_height.max(1);
+	let (cols, _rows) = uniform_grid_cols_rows(
+		image.width(),
+		image.height(),
+		cell_width,
+		cell_height,
+		origin_x,
+		origin_y,
+	);
+	let mut cells = compute_uniform_grid_trims(image, cell_width, cell_height, origin_x, origin_y, background_color);
+
+	for (index, cell) in cells.iter_mut().enumerate() {
+		if let Some(existing_trim) = existing_cells.get(index).and_then(|existing| existing.trim)
+			&& existing_trim.manual
+		{
+			let col = index as u32 % cols.max(1);
+			let row = index as u32 / cols.max(1);
+			let (_, _, actual_width, actual_height) = clamp_cell_rect(
+				image.width(),
+				image.height(),
+				cell_width,
+				cell_height,
+				origin_x,
+				origin_y,
+				col,
+				row,
+			);
+			if existing_trim.original_size == (actual_width, actual_height) {
+				cell.trim = Some(existing_trim);
+			}
+		}
+	}
+
+	cells
 }
 
 fn cell_has_alpha_variation(
@@ -295,7 +482,7 @@ mod tests {
 		let mut image = make_image(16, 8, Rgba([0, 0, 0, 0]));
 		set_rect(&mut image, 8, 0, 8, 8, Rgba([255, 0, 0, 255]));
 
-		let cells = compute_uniform_grid_trims(&image, 8, 8, [0.0, 0.0, 0.0]);
+		let cells = compute_uniform_grid_trims(&image, 8, 8, 0, 0, [0.0, 0.0, 0.0]);
 		assert_eq!(cells.len(), 2);
 		assert!(cells[0].trim.is_none());
 		assert!(cells[1].trim.is_some());
@@ -309,7 +496,7 @@ mod tests {
 		let mut image = make_image(16, 8, background);
 		set_rect(&mut image, 8, 0, 8, 8, Rgba([200, 200, 200, 255]));
 
-		let cells = compute_uniform_grid_trims(&image, 8, 8, [10.0 / 255.0, 20.0 / 255.0, 30.0 / 255.0]);
+		let cells = compute_uniform_grid_trims(&image, 8, 8, 0, 0, [10.0 / 255.0, 20.0 / 255.0, 30.0 / 255.0]);
 		assert_eq!(cells.len(), 2);
 		assert!(cells[0].trim.is_none());
 		assert!(cells[1].trim.is_some());
@@ -322,7 +509,7 @@ mod tests {
 		let mut image = make_image(16, 16, Rgba([0, 0, 0, 0]));
 		set_rect(&mut image, 4, 6, 5, 3, Rgba([255, 255, 255, 255]));
 
-		let cells = compute_uniform_grid_trims(&image, 16, 16, [1.0, 0.0, 1.0]);
+		let cells = compute_uniform_grid_trims(&image, 16, 16, 0, 0, [1.0, 0.0, 1.0]);
 		let trim = cells[0].trim.expect("expected a trim rect");
 		assert_eq!(trim.offset, (4, 6));
 		assert_eq!(trim.size, (5, 3));
@@ -337,11 +524,150 @@ mod tests {
 		let mut image = make_image(10, 10, background);
 		set_rect(&mut image, 2, 3, 4, 5, Rgba([255, 255, 255, 255]));
 
-		let cells = compute_uniform_grid_trims(&image, 10, 10, [0.0, 0.0, 0.0]);
+		let cells = compute_uniform_grid_trims(&image, 10, 10, 0, 0, [0.0, 0.0, 0.0]);
 		let trim = cells[0].trim.expect("expected a trim rect");
 		assert_eq!(trim.offset, (2, 3));
 		assert_eq!(trim.size, (4, 5));
 		assert_eq!(trim.original_size, (10, 10));
+	}
+
+	#[test]
+	fn alpha_path_includes_faintly_visible_antialiased_edge_pixels() {
+		// A ring of alpha=1 pixels around an opaque square simulates a
+		// antialiased edge tapering almost to nothing at its outermost row/col.
+		// These must still count as content -- excluding them (the old
+		// tolerance of 2) cropped a visible sliver off round/filled shapes.
+		let mut image = make_image(10, 10, Rgba([0, 0, 0, 0]));
+		set_rect(&mut image, 3, 3, 4, 4, Rgba([255, 255, 255, 1]));
+		set_rect(&mut image, 4, 4, 2, 2, Rgba([255, 255, 255, 255]));
+
+		let cells = compute_uniform_grid_trims(&image, 10, 10, 0, 0, [1.0, 0.0, 1.0]);
+		let trim = cells[0].trim.expect("expected a trim rect");
+		assert_eq!(trim.offset, (3, 3));
+		assert_eq!(trim.size, (4, 4));
+	}
+
+	#[test]
+	fn background_distance_path_includes_subtly_antialiased_edge_pixels() {
+		// A ring blended just 3 units off background color simulates an
+		// antialiased edge over a solid background_color. The old threshold
+		// of 8 misclassified this as background, cropping a visible sliver.
+		let background = Rgba([0, 0, 0, 255]);
+		let mut image = make_image(10, 10, background);
+		set_rect(&mut image, 3, 3, 4, 4, Rgba([3, 3, 3, 255]));
+		set_rect(&mut image, 4, 4, 2, 2, Rgba([255, 255, 255, 255]));
+
+		let cells = compute_uniform_grid_trims(&image, 10, 10, 0, 0, [0.0, 0.0, 0.0]);
+		let trim = cells[0].trim.expect("expected a trim rect");
+		assert_eq!(trim.offset, (3, 3));
+		assert_eq!(trim.size, (4, 4));
+	}
+
+	#[test]
+	fn grid_origin_offset_shifts_cell_grid_without_dropping_content() {
+		// 12x8 image; a 2px margin before the first cell, then a 2x1 grid of
+		// 5x6 cells. Without the origin offset, cell math would start reading
+		// from (0,0) and misalign every cell relative to the actual content.
+		let mut image = make_image(12, 8, Rgba([0, 0, 0, 0]));
+		set_rect(&mut image, 2, 2, 5, 6, Rgba([255, 0, 0, 255])); // cell 0's content
+		set_rect(&mut image, 7, 2, 5, 6, Rgba([0, 255, 0, 255])); // cell 1's content
+
+		let cells = compute_uniform_grid_trims(&image, 5, 6, 2, 2, [0.0, 0.0, 0.0]);
+		assert_eq!(cells.len(), 2);
+		let trim0 = cells[0].trim.expect("cell 0 should have content");
+		assert_eq!(trim0.offset, (0, 0));
+		assert_eq!(trim0.size, (5, 6));
+		let trim1 = cells[1].trim.expect("cell 1 should have content");
+		assert_eq!(trim1.offset, (0, 0));
+		assert_eq!(trim1.size, (5, 6));
+	}
+
+	#[test]
+	fn cell_bigger_than_image_yields_one_clamped_cell_instead_of_none() {
+		// A single 6x6 opaque image with a cell size (8x8) that doesn't fully
+		// fit -- floor division alone (6 / 8 == 0) would previously drop the
+		// grid's only cell entirely instead of clamping it to what's available.
+		let mut image = make_image(6, 6, Rgba([0, 0, 0, 0]));
+		set_rect(&mut image, 1, 1, 3, 3, Rgba([255, 255, 255, 255]));
+
+		let cells = compute_uniform_grid_trims(&image, 8, 8, 0, 0, [0.0, 0.0, 0.0]);
+		assert_eq!(cells.len(), 1, "the one cell that fits (clamped) must not be dropped");
+		let trim = cells[0].trim.expect("expected a trim rect");
+		assert_eq!(trim.offset, (1, 1));
+		assert_eq!(trim.size, (3, 3));
+		assert_eq!(
+			trim.original_size,
+			(6, 6),
+			"clamped cell's original_size should reflect its actual footprint"
+		);
+	}
+
+	#[test]
+	fn cell_size_exceeding_only_one_axis_still_clamps_that_axis_only() {
+		// 20x6 image, cell size 8x8: cols = 20/8 = 2 (floor, unaffected), but
+		// rows = 6/8 floors to 0 without the clamp -- both cells in the single
+		// row must still appear, clamped to the image's actual height.
+		let image = make_image(20, 6, Rgba([10, 10, 10, 255]));
+		let (cols, rows) = uniform_grid_cols_rows(image.width(), image.height(), 8, 8, 0, 0);
+		assert_eq!((cols, rows), (2, 1));
+
+		let cells = compute_uniform_grid_trims(&image, 8, 8, 0, 0, [10.0 / 255.0, 10.0 / 255.0, 10.0 / 255.0]);
+		assert_eq!(cells.len(), 2);
+	}
+
+	#[test]
+	fn preserving_recompute_keeps_manual_trim_but_refreshes_auto_ones() {
+		// 2x1 grid of 8x8 cells; cell 1 gets a hand-adjusted trim that
+		// deliberately does not match what auto-detection would produce.
+		let mut image = make_image(16, 8, Rgba([0, 0, 0, 0]));
+		set_rect(&mut image, 0, 0, 8, 8, Rgba([255, 0, 0, 255]));
+		set_rect(&mut image, 8, 0, 8, 8, Rgba([0, 255, 0, 255]));
+
+		let existing = vec![
+			GridCell { trim: None },
+			GridCell {
+				trim: Some(CellTrim {
+					offset: (1, 1),
+					size: (2, 2),
+					original_size: (8, 8),
+					manual: true,
+				}),
+			},
+		];
+
+		let cells = recompute_uniform_grid_trims_preserving_manual(&image, 8, 8, 0, 0, [0.0, 0.0, 0.0], &existing);
+
+		// Cell 0 had no manual override, so it's freshly auto-detected.
+		let cell0_trim = cells[0].trim.expect("cell 0 should auto-detect a trim");
+		assert_eq!(cell0_trim.offset, (0, 0));
+		assert!(!cell0_trim.manual);
+
+		// Cell 1's manual override survives untouched.
+		let cell1_trim = cells[1].trim.expect("cell 1 should keep its manual trim");
+		assert_eq!(cell1_trim.offset, (1, 1));
+		assert_eq!(cell1_trim.size, (2, 2));
+		assert!(cell1_trim.manual);
+	}
+
+	#[test]
+	fn preserving_recompute_drops_manual_trim_when_cell_size_changes() {
+		let mut image = make_image(8, 8, Rgba([0, 0, 0, 0]));
+		set_rect(&mut image, 0, 0, 8, 8, Rgba([255, 0, 0, 255]));
+
+		let existing = vec![GridCell {
+			trim: Some(CellTrim {
+				offset: (1, 1),
+				size: (2, 2),
+				original_size: (8, 8),
+				manual: true,
+			}),
+		}];
+
+		// Cell size changed from 8x8 to 4x4 -- the manual trim (sized for an
+		// 8x8 cell) no longer applies, so it should fall back to auto-detect.
+		let cells = recompute_uniform_grid_trims_preserving_manual(&image, 4, 4, 0, 0, [0.0, 0.0, 0.0], &existing);
+		let trim = cells[0].trim.expect("expected an auto-detected trim");
+		assert!(!trim.manual);
 	}
 
 	#[test]
@@ -369,6 +695,8 @@ mod tests {
 			texture: AssetRef::game("textures/sheet.png"),
 			cell_width: 16,
 			cell_height: 16,
+			origin_x: 0,
+			origin_y: 0,
 			background_color: [1.0, 0.0, 1.0],
 			cells: vec![
 				GridCell { trim: None },
@@ -377,6 +705,7 @@ mod tests {
 						offset: (1, 2),
 						size: (14, 12),
 						original_size: (16, 16),
+						manual: true,
 					}),
 				},
 			],
@@ -390,7 +719,37 @@ mod tests {
 				assert_eq!(grid.cell_width, 16);
 				assert_eq!(grid.cells.len(), 2);
 				assert!(grid.cells[0].trim.is_none());
-				assert_eq!(grid.cells[1].trim.unwrap().offset, (1, 2));
+				let trim = grid.cells[1].trim.expect("cell 1 should have a trim");
+				assert_eq!(trim.offset, (1, 2));
+				assert!(trim.manual);
+			}
+			TextureSheetMode::AutoPack(_) => panic!("expected UniformGrid mode"),
+		}
+	}
+
+	#[test]
+	fn deserializes_pre_manual_field_json_as_non_manual() {
+		// Sheets saved before `CellTrim::manual` existed have no such key --
+		// `#[serde(default)]` must still let them load, defaulting to `false`.
+		let json = r#"{
+			"version": "1",
+			"mode": {
+				"UniformGrid": {
+					"texture": { "source": "Game", "path": "textures/sheet.png" },
+					"cell_width": 16,
+					"cell_height": 16,
+					"background_color": [1.0, 0.0, 1.0],
+					"cells": [
+						{ "trim": { "offset": [1, 2], "size": [14, 12], "original_size": [16, 16] } }
+					]
+				}
+			}
+		}"#;
+
+		let sheet: TextureSheet = serde_json::from_str(json).expect("deserialize pre-manual-field JSON");
+		match sheet.mode {
+			TextureSheetMode::UniformGrid(grid) => {
+				assert!(!grid.cells[0].trim.expect("cell 0 should have a trim").manual);
 			}
 			TextureSheetMode::AutoPack(_) => panic!("expected UniformGrid mode"),
 		}

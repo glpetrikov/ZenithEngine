@@ -2,13 +2,14 @@ use std::{collections::HashMap, path::Path};
 
 use egui::{Color32, ColorImage, TextureHandle, TextureOptions, Ui};
 use ze_assets::{
-	AnimationClip, CellId, GridCell, TextureSheet, TextureSheetMode, UniformGridSheet, step_animation_frame,
+	AnimationClip, CellId, CellTrim, GridCell, TextureSheet, TextureSheetMode, UniformGridSheet, step_animation_frame,
 };
 
 use super::{
 	EditorPanelContext, EditorSelection, Panel,
 	texture_sheet_common::{
 		DecodedImage, ViewportTransform, draw_checkerboard, load_or_reload_decoded_image, pick_uniform_grid_cell,
+		show_viewport_zoom_toolbar,
 	},
 };
 
@@ -105,6 +106,10 @@ impl Panel for AnimationClipPanel {
 				return;
 			};
 
+			if handle_frame_keyboard_nav(ui, clip, &mut self.preview_frame_index, &mut self.preview_playing) {
+				self.dirty = true;
+			}
+
 			let viewport_changed = show_animation_clip_viewport(
 				ui,
 				clip,
@@ -121,7 +126,14 @@ impl Panel for AnimationClipPanel {
 			ui.separator();
 
 			if let Some(preview) = &self.source_preview {
-				let list_changed = show_frame_list(ui, clip, grid, preview, &mut self.frame_thumbnails);
+				let list_changed = show_frame_list(
+					ui,
+					clip,
+					grid,
+					preview,
+					&mut self.frame_thumbnails,
+					&mut self.preview_frame_index,
+				);
 				if list_changed {
 					self.dirty = true;
 					self.preview_frame_index = self.preview_frame_index.min(clip.frames.len().saturating_sub(1));
@@ -251,6 +263,43 @@ impl AnimationClipPanel {
 	}
 }
 
+/// Up/Down steps the currently selected/scrubbed frame (`preview_frame_index`
+/// doubles as both the playback-preview position and the frame-list
+/// selection -- see `show_frame_list`) -- Up/Down rather than Left/Right
+/// because the frame list is a vertically-stacked column of rows, not a
+/// horizontal strip; Left/Right are also accepted as a secondary binding.
+/// Delete removes the selected frame from the sequence. Guarded on no widget
+/// currently holding keyboard focus, so these don't fire while e.g. a
+/// `DragValue` or the source-sheet text field is mid-edit -- same guard
+/// `autosave_if_settled` uses. Returns whether `clip.frames` changed (a
+/// Delete), not whether the selection moved.
+fn handle_frame_keyboard_nav(
+	ui: &Ui,
+	clip: &mut AnimationClip,
+	preview_frame_index: &mut usize,
+	preview_playing: &mut bool,
+) -> bool {
+	if clip.frames.is_empty() || ui.memory(|memory| memory.focused().is_some()) {
+		return false;
+	}
+
+	if ui.input(|input| input.key_pressed(egui::Key::ArrowDown) || input.key_pressed(egui::Key::ArrowRight)) {
+		*preview_playing = false;
+		*preview_frame_index = (*preview_frame_index + 1).min(clip.frames.len() - 1);
+	}
+	if ui.input(|input| input.key_pressed(egui::Key::ArrowUp) || input.key_pressed(egui::Key::ArrowLeft)) {
+		*preview_playing = false;
+		*preview_frame_index = preview_frame_index.saturating_sub(1);
+	}
+	if ui.input(|input| input.key_pressed(egui::Key::Delete)) {
+		clip.frames.remove(*preview_frame_index);
+		*preview_frame_index = (*preview_frame_index).min(clip.frames.len().saturating_sub(1));
+		return true;
+	}
+
+	false
+}
+
 /// Allocates the pannable/zoomable viewport and draws the source sheet's grid
 /// (reusing `texture_sheet_common`'s primitives, same visual treatment as
 /// `TextureSheetPanel`). Unlike that panel's single-select behavior, clicking
@@ -317,8 +366,20 @@ fn show_animation_clip_viewport(
 
 	let cell_width = grid.cell_width.max(1);
 	let cell_height = grid.cell_height.max(1);
-	let cols = (preview.rgba.width() / cell_width).max(1);
-	let rows = (preview.rgba.height() / cell_height).max(1);
+	let origin_x = grid.origin_x;
+	let origin_y = grid.origin_y;
+	let (cols, rows) = grid.grid_dimensions(preview.rgba.width(), preview.rgba.height());
+
+	if grid.cells.is_empty() {
+		painter.text(
+			viewport_rect.center(),
+			egui::Align2::CENTER_CENTER,
+			"Source sheet has no cells for its current grid settings\n(check cell width/height and grid origin \
+			 against the source texture's size in the Texture Sheet panel).",
+			egui::FontId::default(),
+			Color32::from_gray(160),
+		);
+	}
 
 	// 1-based ordinal positions this cell index occupies in `clip.frames`
 	// (may be several, since a cell can repeat).
@@ -328,15 +389,21 @@ fn show_animation_clip_viewport(
 	}
 
 	for (index, cell) in grid.cells.iter().enumerate() {
-		let col = index as u32 % cols;
-		let row = index as u32 / cols;
+		let col = index as u32 % cols.max(1);
+		let row = index as u32 / cols.max(1);
 		let cell_min = viewport.image_to_screen(
 			viewport_rect,
-			egui::pos2((col * cell_width) as f32, (row * cell_height) as f32),
+			egui::pos2(
+				(origin_x + col * cell_width) as f32,
+				(origin_y + row * cell_height) as f32,
+			),
 		);
 		let cell_max = viewport.image_to_screen(
 			viewport_rect,
-			egui::pos2(((col + 1) * cell_width) as f32, ((row + 1) * cell_height) as f32),
+			egui::pos2(
+				(origin_x + (col + 1) * cell_width) as f32,
+				(origin_y + (row + 1) * cell_height) as f32,
+			),
 		);
 		painter.rect_stroke(
 			egui::Rect::from_min_max(cell_min, cell_max).shrink(CELL_GAP),
@@ -351,15 +418,15 @@ fn show_animation_clip_viewport(
 		let trim_min = viewport.image_to_screen(
 			viewport_rect,
 			egui::pos2(
-				(col * cell_width + trim.offset.0) as f32,
-				(row * cell_height + trim.offset.1) as f32,
+				(origin_x + col * cell_width + trim.offset.0) as f32,
+				(origin_y + row * cell_height + trim.offset.1) as f32,
 			),
 		);
 		let trim_max = viewport.image_to_screen(
 			viewport_rect,
 			egui::pos2(
-				(col * cell_width + trim.offset.0 + trim.size.0) as f32,
-				(row * cell_height + trim.offset.1 + trim.size.1) as f32,
+				(origin_x + col * cell_width + trim.offset.0 + trim.size.0) as f32,
+				(origin_y + row * cell_height + trim.offset.1 + trim.size.1) as f32,
 			),
 		);
 		let in_sequence = ordinals.contains_key(&(index as u32));
@@ -384,13 +451,16 @@ fn show_animation_clip_viewport(
 		&& let Some(pointer) = response.interact_pointer_pos()
 	{
 		let image_point = viewport.screen_to_image(viewport_rect, pointer);
-		if let Some(index) = pick_uniform_grid_cell(image_point, cell_width, cell_height, cols, rows)
+		if let Some(index) =
+			pick_uniform_grid_cell(image_point, cell_width, cell_height, origin_x, origin_y, cols, rows)
 			&& grid.cells.get(index as usize).is_some_and(|cell| cell.trim.is_some())
 		{
 			clip.frames.push(CellId(index));
 			changed = true;
 		}
 	}
+
+	show_viewport_zoom_toolbar(ui, viewport_rect, viewport, viewport_fitted, false);
 
 	changed
 }
@@ -413,8 +483,8 @@ fn get_or_create_thumbnail<'a>(
 		let cell_height = grid.cell_height.max(1);
 		let col = cell_id.0 % cols;
 		let row = cell_id.0 / cols;
-		let x = col * cell_width + trim.offset.0;
-		let y = row * cell_height + trim.offset.1;
+		let x = grid.origin_x + col * cell_width + trim.offset.0;
+		let y = grid.origin_y + row * cell_height + trim.offset.1;
 		let (w, h) = trim.size;
 		if x + w > preview.rgba.width() || y + h > preview.rgba.height() {
 			return None;
@@ -432,21 +502,73 @@ fn get_or_create_thumbnail<'a>(
 	cache.get(&cell_id)
 }
 
+/// Maps a `CellTrim`'s cell-local offset/size onto `target_rect`, scaled by
+/// the cell's `original_size` -- so a cell that's trimmed smaller than its
+/// neighbors lands at its true relative position and size within
+/// `target_rect` instead of independently stretching its tightly-cropped
+/// thumbnail to fill the whole rect. The latter would silently normalize
+/// away exactly the position/size differences onion skinning (and any
+/// frame-to-frame comparison) exists to show.
+fn trim_rect_within(target_rect: egui::Rect, trim: &CellTrim) -> egui::Rect {
+	let (original_width, original_height) = trim.original_size;
+	let scale_x = target_rect.width() / original_width.max(1) as f32;
+	let scale_y = target_rect.height() / original_height.max(1) as f32;
+	let min = target_rect.min + egui::vec2(trim.offset.0 as f32 * scale_x, trim.offset.1 as f32 * scale_y);
+	let size = egui::vec2(trim.size.0 as f32 * scale_x, trim.size.1 as f32 * scale_y);
+	egui::Rect::from_min_size(min, size)
+}
+
+/// Draws `cell_id`'s cropped sprite inside `target_rect` at its true
+/// relative position/size (via `trim_rect_within`), tinted by `tint` -- used
+/// for both the current frame and onion-skin ghosts in the playback preview,
+/// so all of them share one common coordinate space instead of each
+/// independently filling `target_rect`. Does nothing for an empty
+/// (background-only) cell.
+#[allow(clippy::too_many_arguments)]
+fn draw_cell_sprite(
+	ui: &Ui,
+	cell_id: CellId,
+	grid: &UniformGridSheet,
+	cols: u32,
+	preview: &DecodedImage,
+	frame_thumbnails: &mut HashMap<CellId, TextureHandle>,
+	target_rect: egui::Rect,
+	tint: Color32,
+) {
+	let Some(trim) = grid.cells.get(cell_id.0 as usize).and_then(|cell| cell.trim) else {
+		return;
+	};
+	let Some(texture) = get_or_create_thumbnail(ui, cell_id, grid, cols, preview, frame_thumbnails) else {
+		return;
+	};
+	ui.painter().image(
+		texture.id(),
+		trim_rect_within(target_rect, &trim),
+		egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+		tint,
+	);
+}
+
 /// The ordered frame-sequence list: one row per `clip.frames` entry with a
-/// cropped thumbnail, ordinal index, ▲/▼ reorder (swap-with-neighbor, simpler
-/// and less error-prone in egui than drag-reordering), and a Remove button.
-/// Same list-editing shape as `TextureSheetPanel`'s Auto-pack file list.
+/// drag handle (reorder by dragging), cropped thumbnail, ordinal index,
+/// ▲/▼ reorder (swap-with-neighbor -- kept alongside dragging for
+/// single-step precision), a Duplicate button (inserts a copy right after,
+/// for holding a frame longer without touching `frame_duration_ms`), and a
+/// Remove button. Clicking a row (or its ordinal label) sets
+/// `selected_frame`, which doubles as the playback preview's scrub position
+/// -- see `handle_frame_keyboard_nav` and `show_playback_preview`.
 fn show_frame_list(
 	ui: &mut Ui,
 	clip: &mut AnimationClip,
 	grid: &UniformGridSheet,
 	preview: &DecodedImage,
 	frame_thumbnails: &mut HashMap<CellId, TextureHandle>,
+	selected_frame: &mut usize,
 ) -> bool {
 	ui.label(egui::RichText::new("Frames").strong());
 
-	let cell_width = grid.cell_width.max(1);
-	let cols = (preview.rgba.width() / cell_width).max(1);
+	let (cols, _rows) = grid.grid_dimensions(preview.rgba.width(), preview.rgba.height());
+	let cols = cols.max(1);
 
 	if clip.frames.is_empty() {
 		ui.label("Click a cell in the viewport above to add it to the sequence.");
@@ -456,10 +578,22 @@ fn show_frame_list(
 	let mut changed = false;
 	let mut remove_index = None;
 	let mut swap_with_next = None;
+	let mut duplicate_index = None;
+	let mut drag_from = None;
+	let mut drag_to = None;
 
 	for (index, cell_id) in clip.frames.clone().iter().enumerate() {
-		ui.horizontal(|ui| {
-			ui.label(format!("{}.", index + 1));
+		let is_selected = *selected_frame == index;
+		let drag_handle_id = ui.id().with("animation_clip_frame_drag").with(index);
+
+		let row = ui.horizontal(|ui| {
+			ui.dnd_drag_source(drag_handle_id, index, |ui| {
+				ui.label("⠿").on_hover_text("Drag to reorder");
+			});
+
+			if ui.selectable_label(is_selected, format!("{}.", index + 1)).clicked() {
+				*selected_frame = index;
+			}
 
 			if let Some(texture) = get_or_create_thumbnail(ui, *cell_id, grid, cols, preview, frame_thumbnails) {
 				ui.add(egui::Image::new((texture.id(), egui::vec2(32.0, 32.0))));
@@ -475,14 +609,66 @@ fn show_frame_list(
 			if ui.small_button("▼").clicked() && index + 1 < clip.frames.len() {
 				swap_with_next = Some(index);
 			}
+			if ui.small_button("Duplicate").clicked() {
+				duplicate_index = Some(index);
+			}
 			if ui.small_button("Remove").clicked() {
 				remove_index = Some(index);
 			}
 		});
+
+		if is_selected {
+			ui.painter().rect_stroke(
+				row.response.rect,
+				2.0,
+				(1.5, ui.visuals().selection.stroke.color),
+				egui::StrokeKind::Inside,
+			);
+		}
+
+		if row.response.dnd_hover_payload::<usize>().is_some() {
+			let rect = row.response.rect;
+			let insert_before = ui
+				.input(|input| input.pointer.hover_pos())
+				.is_some_and(|pointer| pointer.y < rect.center().y);
+			let line_y = if insert_before { rect.top() } else { rect.bottom() };
+			ui.painter().hline(
+				rect.x_range(),
+				line_y,
+				egui::Stroke::new(2.0, ui.visuals().strong_text_color()),
+			);
+
+			if let Some(dragged_index) = row.response.dnd_release_payload::<usize>() {
+				drag_from = Some(*dragged_index);
+				drag_to = Some(if insert_before { index } else { index + 1 });
+			}
+		}
 	}
 
+	if let (Some(from), Some(to)) = (drag_from, drag_to)
+		&& to != from
+		&& to != from + 1
+	{
+		let moved = clip.frames.remove(from);
+		let to = if to > from { to - 1 } else { to };
+		clip.frames.insert(to, moved);
+		*selected_frame = to;
+		changed = true;
+	}
 	if let Some(index) = swap_with_next {
 		clip.frames.swap(index, index + 1);
+		*selected_frame = if *selected_frame == index {
+			index + 1
+		} else if *selected_frame == index + 1 {
+			index
+		} else {
+			*selected_frame
+		};
+		changed = true;
+	}
+	if let Some(index) = duplicate_index {
+		clip.frames.insert(index + 1, clip.frames[index]);
+		*selected_frame = index + 1;
 		changed = true;
 	}
 	if let Some(index) = remove_index {
@@ -531,20 +717,57 @@ fn show_playback_preview(
 	*preview_frame_index = (*preview_frame_index).min(clip.frames.len() - 1);
 
 	ui.horizontal(|ui| {
-		let cell_width = grid.cell_width.max(1);
-		let cols = (preview.rgba.width() / cell_width).max(1);
+		let (cols, _rows) = grid.grid_dimensions(preview.rgba.width(), preview.rgba.height());
+		let cols = cols.max(1);
 		let cell_id = clip.frames[*preview_frame_index];
 
 		let (rect, _response) = ui.allocate_exact_size(egui::vec2(PREVIEW_SIZE, PREVIEW_SIZE), egui::Sense::hover());
 		ui.painter().rect_filled(rect, 0.0, Color32::from_gray(30));
-		if let Some(texture) = get_or_create_thumbnail(ui, cell_id, grid, cols, preview, frame_thumbnails) {
-			ui.painter().image(
-				texture.id(),
-				rect.shrink(4.0),
-				egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-				Color32::WHITE,
-			);
+		let full_rect = rect.shrink(4.0);
+
+		// Onion skinning: faint ghosts of the neighboring frames, shown only
+		// while paused/scrubbing -- during playback they'd just read as
+		// constant motion blur rather than a spacing aid. Previous/next are
+		// tinted red/blue (the conventional onion-skinning color split) so
+		// direction of motion stays legible at a glance.
+		if !*preview_playing && clip.frames.len() > 1 {
+			const ONION_ALPHA: u8 = 130;
+			if *preview_frame_index > 0 {
+				draw_cell_sprite(
+					ui,
+					clip.frames[*preview_frame_index - 1],
+					grid,
+					cols,
+					preview,
+					frame_thumbnails,
+					full_rect,
+					Color32::from_rgba_unmultiplied(255, 80, 80, ONION_ALPHA),
+				);
+			}
+			if *preview_frame_index + 1 < clip.frames.len() {
+				draw_cell_sprite(
+					ui,
+					clip.frames[*preview_frame_index + 1],
+					grid,
+					cols,
+					preview,
+					frame_thumbnails,
+					full_rect,
+					Color32::from_rgba_unmultiplied(80, 140, 255, ONION_ALPHA),
+				);
+			}
 		}
+
+		draw_cell_sprite(
+			ui,
+			cell_id,
+			grid,
+			cols,
+			preview,
+			frame_thumbnails,
+			full_rect,
+			Color32::WHITE,
+		);
 
 		ui.vertical(|ui| {
 			let label = if *preview_playing { "Pause" } else { "Play" };

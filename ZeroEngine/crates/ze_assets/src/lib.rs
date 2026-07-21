@@ -15,7 +15,8 @@ pub use animation_clip::{ANIMATION_CLIP_EXTENSION, AnimationClip, step_animation
 pub mod texture_sheet;
 pub use texture_sheet::{
 	AutoPackSheet, CellId, CellTrim, GridCell, ShelfPackedRect, TEXTURE_SHEET_EXTENSION, TextureSheet,
-	TextureSheetMode, UniformGridSheet, compute_uniform_grid_trims, shelf_pack_preview,
+	TextureSheetMode, UniformGridSheet, compute_uniform_grid_trims, recompute_uniform_grid_trims_preserving_manual,
+	shelf_pack_preview, uniform_grid_cols_rows,
 };
 
 const EMBEDDED_SPRITE_WGSL: &str = "\

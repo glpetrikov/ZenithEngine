@@ -8,6 +8,8 @@
       },
       "cell_width": 32,
       "cell_height": 32,
+      "origin_x": 0,
+      "origin_y": 0,
       "background_color": [
         0.6130896,
         0.3610436,
@@ -22,12 +24,13 @@
             ],
             "size": [
               32,
-              32
+              18
             ],
             "original_size": [
               32,
               32
-            ]
+            ],
+            "manual": true
           }
         },
         {
@@ -43,7 +46,8 @@
             "original_size": [
               32,
               32
-            ]
+            ],
+            "manual": false
           }
         }
       ]

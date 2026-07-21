@@ -5,19 +5,20 @@ use std::{
 
 use egui::{Color32, ColorImage, TextureHandle, TextureOptions, Ui};
 use ze_assets::{
-	AssetRef, AutoPackSheet, CellId, CellTrim, TextureSheet, TextureSheetMode, UniformGridSheet,
-	compute_uniform_grid_trims, shelf_pack_preview,
+	AnimationClip, AssetRef, AutoPackSheet, CellId, CellTrim, TextureSheet, TextureSheetMode, UniformGridSheet,
+	compute_uniform_grid_trims, recompute_uniform_grid_trims_preserving_manual, shelf_pack_preview,
 };
 use ze_ecs::TileWorldSettings;
 
 use super::{
 	EditorPanelContext, EditorSelection, Panel,
 	texture_sheet_common::{
-		DecodedImage, ViewportTransform, draw_checkerboard, load_or_reload_decoded_image, pick_uniform_grid_cell,
-		relativize_asset_path, sample_pixel, scan_assets_with_extension,
+		DecodedImage, EYEDROPPER_TRANSPARENT_ALPHA_THRESHOLD, ViewportTransform, draw_checkerboard,
+		load_or_reload_decoded_image, pick_uniform_grid_cell, relativize_asset_path, sample_pixel,
+		scan_assets_with_extension, show_viewport_zoom_toolbar,
 	},
 };
-use crate::{tilemap, undo_redo::SceneSnapshotCommand};
+use crate::{editor_workspace::EditorRequest, tilemap, undo_redo::SceneSnapshotCommand};
 
 /// A fixed logical layout width for the Auto-pack shelf-pack preview -- the
 /// viewport now pans/zooms independently of the panel's on-screen width, so
@@ -68,6 +69,11 @@ pub struct TextureSheetPanel {
 	viewport: ViewportTransform,
 	viewport_fitted: bool,
 	eyedropper_active: bool,
+	/// The cell a right-click context menu was opened on -- persisted (rather
+	/// than recomputed from the current hover position) because the menu's
+	/// contents are redrawn every frame it stays open, including frames after
+	/// the pointer has moved off that cell.
+	context_menu_cell: Option<CellId>,
 }
 
 impl TextureSheetPanel {
@@ -86,6 +92,7 @@ impl TextureSheetPanel {
 			},
 			viewport_fitted: false,
 			eyedropper_active: false,
+			context_menu_cell: None,
 		}
 	}
 }
@@ -137,6 +144,7 @@ impl Panel for TextureSheetPanel {
 				.as_deref()
 				.and_then(|path| relativize_asset_path(&assets_root, path));
 
+			let mut open_animation_clip = None;
 			let viewport_changed = show_texture_sheet_viewport(
 				ui,
 				sheet,
@@ -149,9 +157,16 @@ impl Panel for TextureSheetPanel {
 				&mut self.viewport_fitted,
 				&mut self.selected_cell,
 				&mut self.eyedropper_active,
+				&mut self.context_menu_cell,
+				&mut self.status,
+				&mut open_animation_clip,
 			);
 			if viewport_changed {
 				self.dirty = true;
+			}
+			if let Some(dest) = open_animation_clip {
+				*context.selection = Some(EditorSelection::Asset(dest.clone()));
+				*context.editor_request = Some(EditorRequest::OpenAnimationClipAsset(dest));
 			}
 
 			ui.separator();
@@ -159,7 +174,7 @@ impl Panel for TextureSheetPanel {
 			match &mut sheet.mode {
 				TextureSheetMode::UniformGrid(grid) => {
 					let (texture_changed, grid_changed) =
-						show_uniform_grid_settings(ui, grid, &mut self.eyedropper_active);
+						show_uniform_grid_settings(ui, grid, &mut self.eyedropper_active, self.source_preview.as_ref());
 					if texture_changed || grid_changed {
 						self.dirty = true;
 						self.source_preview = None;
@@ -169,7 +184,9 @@ impl Panel for TextureSheetPanel {
 					}
 
 					ui.separator();
-					show_uniform_grid_cell_inspector(ui, grid, self.selected_cell);
+					if show_uniform_grid_cell_inspector(ui, grid, self.selected_cell, self.source_preview.as_ref()) {
+						self.dirty = true;
+					}
 				}
 				TextureSheetMode::AutoPack(pack) => {
 					ui.label("Auto-pack sheets are a browsing convenience only -- selecting a cell here is");
@@ -227,6 +244,7 @@ impl TextureSheetPanel {
 				self.file_previews.clear();
 				self.viewport_fitted = false;
 				self.eyedropper_active = false;
+				self.context_menu_cell = None;
 				self.status = None;
 			}
 			Err(error) => {
@@ -372,6 +390,9 @@ fn show_texture_sheet_viewport(
 	viewport_fitted: &mut bool,
 	selected_cell: &mut Option<CellId>,
 	eyedropper_active: &mut bool,
+	context_menu_cell: &mut Option<CellId>,
+	status: &mut Option<String>,
+	open_animation_clip: &mut Option<PathBuf>,
 ) -> bool {
 	let viewport_height = (ui.available_height() * 0.55).clamp(240.0, 600.0);
 	let (response, painter) = ui.allocate_painter(
@@ -399,6 +420,9 @@ fn show_texture_sheet_viewport(
 				viewport_fitted,
 				selected_cell,
 				eyedropper_active,
+				context_menu_cell,
+				status,
+				open_animation_clip,
 			);
 		}
 		TextureSheetMode::AutoPack(pack) => {
@@ -428,6 +452,7 @@ fn show_texture_sheet_viewport(
 	);
 
 	show_active_brush_indicator(ui, viewport_rect, sheet_path, active_tile_brush.as_ref());
+	show_viewport_zoom_toolbar(ui, viewport_rect, viewport, viewport_fitted, true);
 
 	changed
 }
@@ -466,7 +491,7 @@ fn show_active_brush_indicator(
 	});
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn show_uniform_grid_viewport_content(
 	ui: &Ui,
 	painter: &egui::Painter,
@@ -481,6 +506,9 @@ fn show_uniform_grid_viewport_content(
 	viewport_fitted: &mut bool,
 	selected_cell: &mut Option<CellId>,
 	eyedropper_active: &mut bool,
+	context_menu_cell: &mut Option<CellId>,
+	status: &mut Option<String>,
+	open_animation_clip: &mut Option<PathBuf>,
 ) -> bool {
 	if grid.texture.path.is_empty() {
 		painter.text(
@@ -507,10 +535,19 @@ fn show_uniform_grid_viewport_content(
 
 	if reloaded {
 		// Trim recomputation is edit-time-only and happens here (once per
-		// source-texture/cell-size/background-color change), never at
-		// runtime load -- see `compute_uniform_grid_trims`.
-		grid.cells =
-			compute_uniform_grid_trims(&preview.rgba, grid.cell_width, grid.cell_height, grid.background_color);
+		// source-texture/cell-size/origin/background-color change), never at
+		// runtime load -- see `compute_uniform_grid_trims`. Uses the
+		// manual-preserving variant so a hand-adjusted trim (see
+		// `show_uniform_grid_cell_inspector`) survives a texture-file reload.
+		grid.cells = recompute_uniform_grid_trims_preserving_manual(
+			&preview.rgba,
+			grid.cell_width,
+			grid.cell_height,
+			grid.origin_x,
+			grid.origin_y,
+			grid.background_color,
+			&grid.cells,
+		);
 	}
 
 	let image_size = egui::vec2(preview.rgba.width() as f32, preview.rgba.height() as f32);
@@ -531,25 +568,58 @@ fn show_uniform_grid_viewport_content(
 
 	let cell_width = grid.cell_width.max(1);
 	let cell_height = grid.cell_height.max(1);
-	let cols = (preview.rgba.width() / cell_width).max(1);
-	let rows = (preview.rgba.height() / cell_height).max(1);
+	let origin_x = grid.origin_x;
+	let origin_y = grid.origin_y;
+	let (cols, rows) = grid.grid_dimensions(preview.rgba.width(), preview.rgba.height());
+
+	// Precomputed once per frame (rather than re-deriving inside the click
+	// handler below) so both the hover-highlight drawing and the right-click
+	// context-menu-target logic can share the same "which cell is the
+	// pointer over right now" answer.
+	let hovered_cell_index = response
+		.hover_pos()
+		.map(|pointer| viewport.screen_to_image(viewport_rect, pointer))
+		.and_then(|image_point| {
+			pick_uniform_grid_cell(image_point, cell_width, cell_height, origin_x, origin_y, cols, rows)
+		});
 
 	for (index, cell) in grid.cells.iter().enumerate() {
-		let col = index as u32 % cols;
-		let row = index as u32 / cols;
+		let col = index as u32 % cols.max(1);
+		let row = index as u32 / cols.max(1);
+		let is_selected = *selected_cell == Some(CellId(index as u32));
+		let is_hovered = !is_selected && hovered_cell_index == Some(index as u32);
+
 		let cell_min = viewport.image_to_screen(
 			viewport_rect,
-			egui::pos2((col * cell_width) as f32, (row * cell_height) as f32),
+			egui::pos2(
+				(origin_x + col * cell_width) as f32,
+				(origin_y + row * cell_height) as f32,
+			),
 		);
 		let cell_max = viewport.image_to_screen(
 			viewport_rect,
-			egui::pos2(((col + 1) * cell_width) as f32, ((row + 1) * cell_height) as f32),
+			egui::pos2(
+				(origin_x + (col + 1) * cell_width) as f32,
+				(origin_y + (row + 1) * cell_height) as f32,
+			),
 		);
+		let cell_border_color = if is_hovered {
+			Color32::from_gray(200)
+		} else {
+			Color32::from_gray(90)
+		};
 		painter.rect_stroke(
 			egui::Rect::from_min_max(cell_min, cell_max).shrink(CELL_GAP),
 			0.0,
-			(1.0, Color32::from_gray(90)),
+			(1.0, cell_border_color),
 			egui::StrokeKind::Inside,
+		);
+		painter.text(
+			cell_min + egui::vec2(3.0, 1.0),
+			egui::Align2::LEFT_TOP,
+			index.to_string(),
+			egui::FontId::monospace(36.0),
+			Color32::from_gray(190),
 		);
 
 		let Some(trim) = cell.trim else {
@@ -558,19 +628,24 @@ fn show_uniform_grid_viewport_content(
 		let trim_min = viewport.image_to_screen(
 			viewport_rect,
 			egui::pos2(
-				(col * cell_width + trim.offset.0) as f32,
-				(row * cell_height + trim.offset.1) as f32,
+				(origin_x + col * cell_width + trim.offset.0) as f32,
+				(origin_y + row * cell_height + trim.offset.1) as f32,
 			),
 		);
 		let trim_max = viewport.image_to_screen(
 			viewport_rect,
 			egui::pos2(
-				(col * cell_width + trim.offset.0 + trim.size.0) as f32,
-				(row * cell_height + trim.offset.1 + trim.size.1) as f32,
+				(origin_x + col * cell_width + trim.offset.0 + trim.size.0) as f32,
+				(origin_y + row * cell_height + trim.offset.1 + trim.size.1) as f32,
 			),
 		);
-		let is_selected = *selected_cell == Some(CellId(index as u32));
-		let stroke_color = if is_selected { Color32::YELLOW } else { Color32::GREEN };
+		let stroke_color = if is_selected {
+			Color32::YELLOW
+		} else if is_hovered {
+			Color32::from_rgb(120, 200, 255)
+		} else {
+			Color32::GREEN
+		};
 		painter.rect_stroke(
 			egui::Rect::from_min_max(trim_min, trim_max).shrink(CELL_GAP),
 			0.0,
@@ -585,13 +660,41 @@ fn show_uniform_grid_viewport_content(
 	{
 		let image_point = viewport.screen_to_image(viewport_rect, pointer);
 		if *eyedropper_active {
-			if let Some(color) = sample_pixel(&preview.rgba, image_point) {
-				grid.background_color = color;
-				grid.cells = compute_uniform_grid_trims(&preview.rgba, grid.cell_width, grid.cell_height, color);
-				*eyedropper_active = false;
-				changed = true;
+			// `sample_pixel` returns `None` for a click outside the image's
+			// own bounds (e.g. on the checkerboard margin around a source
+			// image smaller than the viewport) -- previously silent, which
+			// looked identical to a stuck/non-functional eyedropper. Every
+			// eyedropper click now gets a status message one way or another.
+			match sample_pixel(&preview.rgba, image_point) {
+				Some((color, alpha)) if alpha > EYEDROPPER_TRANSPARENT_ALPHA_THRESHOLD => {
+					grid.background_color = color;
+					grid.cells = recompute_uniform_grid_trims_preserving_manual(
+						&preview.rgba,
+						grid.cell_width,
+						grid.cell_height,
+						grid.origin_x,
+						grid.origin_y,
+						color,
+						&grid.cells,
+					);
+					*eyedropper_active = false;
+					*status = None;
+					changed = true;
+				}
+				Some(_) => {
+					*status = Some(
+						"That pixel is transparent -- background color needs a visible pixel. Pick a \
+						 solid-colored pixel instead."
+							.to_string(),
+					);
+				}
+				None => {
+					*status = Some("Click inside the source image to sample a background color.".to_string());
+				}
 			}
-		} else if let Some(index) = pick_uniform_grid_cell(image_point, cell_width, cell_height, cols, rows) {
+		} else if let Some(index) =
+			pick_uniform_grid_cell(image_point, cell_width, cell_height, origin_x, origin_y, cols, rows)
+		{
 			*selected_cell = Some(CellId(index));
 			// Selecting a paintable cell immediately becomes the active
 			// brush -- no separate confirm step, so switching brushes mid
@@ -607,7 +710,63 @@ fn show_uniform_grid_viewport_content(
 		}
 	}
 
+	if response.secondary_clicked() {
+		*context_menu_cell = hovered_cell_index
+			.filter(|&index| grid.cells.get(index as usize).is_some_and(|cell| cell.trim.is_some()))
+			.map(CellId);
+	}
+	response.context_menu(|ui| {
+		let Some(cell_id) = *context_menu_cell else {
+			ui.label("No cell here.");
+			return;
+		};
+		ui.label(format!("Cell #{}", cell_id.0));
+		ui.separator();
+		if let Some(sheet_path) = sheet_path
+			&& ui.button("Create Animation Clip starting here").clicked()
+		{
+			match create_animation_clip_from_cell(assets_root, sheet_path, cell_id) {
+				Ok(dest) => {
+					*open_animation_clip = Some(dest);
+					*status = None;
+				}
+				Err(error) => *status = Some(error),
+			}
+			ui.close();
+		}
+	});
+
 	changed
+}
+
+/// Creates a new `.animationclip.json` under `<assets_root>/animation_clips/`
+/// sourced from `sheet_relative_path` and seeded with a single starting
+/// frame -- the "Create Animation Clip starting here" context-menu
+/// shortcut's fast path. Unlike `file_hierarchy.rs`'s "Create Animation Clip"
+/// flow, this skips the name-prompt dialog entirely (auto-named after the
+/// sheet, with the same numeric-suffix collision handling), since a
+/// right-click shortcut should be lower-friction than the full flow it
+/// stands in for.
+fn create_animation_clip_from_cell(
+	assets_root: &Path,
+	sheet_relative_path: &str,
+	starting_cell: CellId,
+) -> Result<PathBuf, String> {
+	let mut clip = AnimationClip::new(AssetRef::game(sheet_relative_path.to_string()));
+	clip.frames.push(starting_cell);
+
+	let dir = assets_root.join("animation_clips");
+	let stem = display_name_for_relative_path(sheet_relative_path);
+	let mut dest = dir.join(format!("{stem}.{}", ze_assets::ANIMATION_CLIP_EXTENSION));
+	let mut suffix = 2;
+	while dest.exists() {
+		dest = dir.join(format!("{stem}_{suffix}.{}", ze_assets::ANIMATION_CLIP_EXTENSION));
+		suffix += 1;
+	}
+
+	clip.save(&dest)
+		.map_err(|error| format!("Failed to save animation clip: {error}"))?;
+	Ok(dest.canonicalize().unwrap_or(dest))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -736,6 +895,8 @@ fn show_mode_overlay(
 						texture: AssetRef::game(String::new()),
 						cell_width: 32,
 						cell_height: 32,
+						origin_x: 0,
+						origin_y: 0,
 						background_color: [1.0, 0.0, 1.0],
 						cells: Vec::new(),
 					});
@@ -760,7 +921,12 @@ fn show_mode_overlay(
 /// Returns `(texture_changed, grid_changed)` -- kept distinct so the caller
 /// only re-fits the viewport (resetting pan/zoom) when the source texture
 /// itself changes, not on routine cell-size/background-color edits.
-fn show_uniform_grid_settings(ui: &mut Ui, grid: &mut UniformGridSheet, eyedropper_active: &mut bool) -> (bool, bool) {
+fn show_uniform_grid_settings(
+	ui: &mut Ui,
+	grid: &mut UniformGridSheet,
+	eyedropper_active: &mut bool,
+	source_preview: Option<&DecodedImage>,
+) -> (bool, bool) {
 	let mut texture_changed = false;
 	let mut grid_changed = false;
 
@@ -789,6 +955,22 @@ fn show_uniform_grid_settings(ui: &mut Ui, grid: &mut UniformGridSheet, eyedropp
 	});
 
 	ui.horizontal(|ui| {
+		ui.label("Grid origin X")
+			.on_hover_text("Pixel offset of the grid's first cell from the source image's own (0, 0) -- use this if the sheet has a margin/padding before its first row/column.");
+		let mut origin_x = grid.origin_x;
+		if ui.add(egui::DragValue::new(&mut origin_x).range(0..=8192)).changed() {
+			grid.origin_x = origin_x;
+			grid_changed = true;
+		}
+		ui.label("Y");
+		let mut origin_y = grid.origin_y;
+		if ui.add(egui::DragValue::new(&mut origin_y).range(0..=8192)).changed() {
+			grid.origin_y = origin_y;
+			grid_changed = true;
+		}
+	});
+
+	ui.horizontal(|ui| {
 		ui.label("Background color");
 		if ui.color_edit_button_rgb(&mut grid.background_color).changed() {
 			grid_changed = true;
@@ -796,34 +978,155 @@ fn show_uniform_grid_settings(ui: &mut Ui, grid: &mut UniformGridSheet, eyedropp
 		ui.toggle_value(eyedropper_active, "Eyedropper");
 	});
 
+	let non_empty = grid.cells.iter().filter(|cell| cell.trim.is_some()).count();
+	ui.horizontal(|ui| {
+		ui.label(format!("{non_empty} / {} non-empty cells", grid.cells.len()));
+		if let Some(preview) = source_preview
+			&& ui
+				.button("Re-trim All")
+				.on_hover_text(
+					"Force-recompute trim for every cell (useful after changing background color if a cell's \
+					 trim didn't refresh automatically). Manually-adjusted trims are left untouched.",
+				)
+				.clicked()
+		{
+			grid.cells = recompute_uniform_grid_trims_preserving_manual(
+				&preview.rgba,
+				grid.cell_width,
+				grid.cell_height,
+				grid.origin_x,
+				grid.origin_y,
+				grid.background_color,
+				&grid.cells,
+			);
+			grid_changed = true;
+		}
+	});
+
 	(texture_changed, grid_changed)
 }
 
-fn show_uniform_grid_cell_inspector(ui: &mut Ui, grid: &UniformGridSheet, selected_cell: Option<CellId>) {
+/// Shows the selected cell's trim data, editable via `DragValue`s so the
+/// user can manually resize/reposition the crop box when auto-detection
+/// doesn't match what they want (crop tighter/looser, or shift to include/
+/// exclude specific pixels). Any edit here marks the trim `manual`, which
+/// `recompute_uniform_grid_trims_preserving_manual` then treats as an
+/// override to keep rather than silently overwrite on the next
+/// background-color change, texture reload, or "Re-trim All". Returns
+/// whether anything changed (the caller marks the sheet dirty on `true`).
+fn show_uniform_grid_cell_inspector(
+	ui: &mut Ui,
+	grid: &mut UniformGridSheet,
+	selected_cell: Option<CellId>,
+	source_preview: Option<&DecodedImage>,
+) -> bool {
 	let Some(cell_id) = selected_cell else {
 		ui.label("No cell selected.");
-		return;
+		return false;
 	};
-	let Some(cell) = grid.cells.get(cell_id.0 as usize) else {
+	let cell_width = grid.cell_width.max(1);
+	let cell_height = grid.cell_height.max(1);
+	let origin_x = grid.origin_x;
+	let origin_y = grid.origin_y;
+	let background_color = grid.background_color;
+	let Some(existing_trim) = grid.cells.get(cell_id.0 as usize).map(|cell| cell.trim) else {
 		ui.label("Selected cell is out of range for the current grid.");
-		return;
+		return false;
 	};
 
 	ui.label(format!("Cell #{}", cell_id.0));
-	match cell.trim {
-		Some(CellTrim {
-			offset,
-			size,
-			original_size,
-		}) => {
-			ui.label(format!("Trim offset: {offset:?}"));
-			ui.label(format!("Trim size: {size:?}"));
-			ui.label(format!("Untrimmed cell size: {original_size:?}"));
+
+	let mut changed = false;
+	if let Some(mut trim) = existing_trim {
+		if trim.manual {
+			ui.colored_label(Color32::YELLOW, "Manual override");
+		} else {
+			ui.label("Auto-detected");
 		}
-		None => {
-			ui.label("Empty cell (background/transparent) -- not placeable.");
+
+		let mut edited = false;
+		ui.horizontal(|ui| {
+			ui.label("Trim offset X");
+			edited |= ui
+				.add(egui::DragValue::new(&mut trim.offset.0).range(0..=cell_width - 1))
+				.changed();
+			ui.label("Y");
+			edited |= ui
+				.add(egui::DragValue::new(&mut trim.offset.1).range(0..=cell_height - 1))
+				.changed();
+		});
+		ui.horizontal(|ui| {
+			ui.label("Trim size W");
+			edited |= ui
+				.add(egui::DragValue::new(&mut trim.size.0).range(1..=cell_width.saturating_sub(trim.offset.0).max(1)))
+				.changed();
+			ui.label("H");
+			edited |= ui
+				.add(egui::DragValue::new(&mut trim.size.1).range(1..=cell_height.saturating_sub(trim.offset.1).max(1)))
+				.changed();
+		});
+
+		ui.label(format!("Untrimmed cell size: {:?}", trim.original_size));
+
+		let reset_to_auto = trim.manual
+			&& source_preview.is_some()
+			&& ui
+				.button("Reset to Auto")
+				.on_hover_text("Discard the manual override and recompute this cell's trim from the source pixels")
+				.clicked();
+
+		if edited {
+			// Re-clamp after the edit: `DragValue::range` is evaluated
+			// against the *previous* frame's values, so shrinking `offset`
+			// right after `size` was already at its old max could otherwise
+			// leave offset+size past the cell bounds.
+			trim.offset.0 = trim.offset.0.min(cell_width - 1);
+			trim.offset.1 = trim.offset.1.min(cell_height - 1);
+			trim.size.0 = trim.size.0.clamp(1, cell_width.saturating_sub(trim.offset.0).max(1));
+			trim.size.1 = trim.size.1.clamp(1, cell_height.saturating_sub(trim.offset.1).max(1));
+			trim.manual = true;
+			if let Some(cell) = grid.cells.get_mut(cell_id.0 as usize) {
+				cell.trim = Some(trim);
+			}
+			changed = true;
+		} else if reset_to_auto && let Some(preview) = source_preview {
+			let recomputed = compute_uniform_grid_trims(
+				&preview.rgba,
+				cell_width,
+				cell_height,
+				origin_x,
+				origin_y,
+				background_color,
+			);
+			if let Some(cell) = grid.cells.get_mut(cell_id.0 as usize) {
+				cell.trim = recomputed
+					.get(cell_id.0 as usize)
+					.and_then(|recomputed_cell| recomputed_cell.trim);
+			}
+			changed = true;
+		}
+	} else {
+		ui.label("Empty cell (background/transparent) -- not placeable.");
+		if source_preview.is_some()
+			&& ui
+				.button("Add Manual Trim")
+				.on_hover_text(
+					"Force this cell to be placeable with a manually-sized crop box, overriding auto-detection",
+				)
+				.clicked()
+			&& let Some(cell) = grid.cells.get_mut(cell_id.0 as usize)
+		{
+			cell.trim = Some(CellTrim {
+				offset: (0, 0),
+				size: (cell_width, cell_height),
+				original_size: (cell_width, cell_height),
+				manual: true,
+			});
+			changed = true;
 		}
 	}
+
+	changed
 }
 
 fn show_auto_pack_settings(ui: &mut Ui, pack: &mut AutoPackSheet, assets_root: &Path) -> bool {

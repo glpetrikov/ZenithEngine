@@ -1167,6 +1167,8 @@ enum PendingGridCell {
 		cell_index: u32,
 		cell_width: u32,
 		cell_height: u32,
+		origin_x: u32,
+		origin_y: u32,
 		trim: Option<ze_assets::CellTrim>,
 	},
 }
@@ -1199,6 +1201,8 @@ fn resolve_texture_source(
 							cell_index: cell_id.0,
 							cell_width: grid.cell_width,
 							cell_height: grid.cell_height,
+							origin_x: grid.origin_x,
+							origin_y: grid.origin_y,
 							trim,
 						},
 					)
@@ -1226,6 +1230,8 @@ fn resolve_uv_rect(pending: PendingGridCell, texture_dimensions: (u32, u32)) -> 
 		cell_index,
 		cell_width,
 		cell_height,
+		origin_x,
+		origin_y,
 		trim,
 	} = pending
 	else {
@@ -1233,10 +1239,18 @@ fn resolve_uv_rect(pending: PendingGridCell, texture_dimensions: (u32, u32)) -> 
 	};
 
 	let (texture_width, texture_height) = texture_dimensions;
-	let cols = (texture_width / cell_width.max(1)).max(1);
+	let (cols, _rows) = ze_assets::uniform_grid_cols_rows(
+		texture_width,
+		texture_height,
+		cell_width,
+		cell_height,
+		origin_x,
+		origin_y,
+	);
+	let cols = cols.max(1);
 	let col = cell_index % cols;
 	let row = cell_index / cols;
-	let cell_origin = (col * cell_width, row * cell_height);
+	let cell_origin = (origin_x + col * cell_width, origin_y + row * cell_height);
 
 	let (offset, size) = trim.map_or(((0, 0), (cell_width, cell_height)), |trim| (trim.offset, trim.size));
 	let pixel_x = cell_origin.0 + offset.0;
@@ -1305,10 +1319,13 @@ mod texture_source_tests {
 			cell_index: 1,
 			cell_width: 32,
 			cell_height: 32,
+			origin_x: 0,
+			origin_y: 0,
 			trim: Some(CellTrim {
 				offset: (4, 2),
 				size: (20, 24),
 				original_size: (32, 32),
+				manual: false,
 			}),
 		};
 
@@ -1322,6 +1339,28 @@ mod texture_source_tests {
 	}
 
 	#[test]
+	fn grid_cell_resolves_uv_rect_with_grid_origin_offset() {
+		// Same 2x1 grid of 32x32 cells, but the grid itself starts 8px into
+		// the source texture (e.g. a sheet with a margin before its first
+		// cell) -- cell 1's pixel origin must shift by that same offset.
+		let pending = PendingGridCell::Cell {
+			cell_index: 1,
+			cell_width: 32,
+			cell_height: 32,
+			origin_x: 8,
+			origin_y: 0,
+			trim: None,
+		};
+
+		let (uv_rect, dimensions) = resolve_uv_rect(pending, (72, 32));
+		assert_eq!(dimensions, (32, 32));
+		// cell 1 origin = grid origin (8, 0) + cell (32, 0) = (40, 0), normalized by
+		// 72x32.
+		assert!((uv_rect[0] - 40.0 / 72.0).abs() < 1e-6);
+		assert!((uv_rect[1] - 0.0).abs() < 1e-6);
+	}
+
+	#[test]
 	fn sheet_cell_on_uniform_grid_resolves_texture_and_pending_cell() {
 		let tempdir = std::env::temp_dir().join(format!("ze_renderer_test_{}", std::process::id()));
 		std::fs::create_dir_all(&tempdir).unwrap();
@@ -1329,6 +1368,8 @@ mod texture_source_tests {
 			texture: AssetRef::game("textures/sheet.png"),
 			cell_width: 16,
 			cell_height: 16,
+			origin_x: 0,
+			origin_y: 0,
 			background_color: [0.0, 0.0, 0.0],
 			cells: vec![
 				GridCell { trim: None },
@@ -1337,6 +1378,7 @@ mod texture_source_tests {
 						offset: (1, 1),
 						size: (14, 14),
 						original_size: (16, 16),
+						manual: false,
 					}),
 				},
 			],
@@ -1357,6 +1399,7 @@ mod texture_source_tests {
 			cell_width,
 			cell_height,
 			trim,
+			..
 		} = pending
 		else {
 			panic!("expected a resolved grid cell");
