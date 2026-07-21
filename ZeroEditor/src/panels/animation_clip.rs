@@ -9,7 +9,7 @@ use super::{
 	EditorPanelContext, EditorSelection, Panel,
 	texture_sheet_common::{
 		DecodedImage, ViewportTransform, draw_checkerboard, load_or_reload_decoded_image, pick_uniform_grid_cell,
-		show_viewport_zoom_toolbar,
+		relativize_asset_path, scan_assets_with_extension, show_viewport_zoom_toolbar,
 	},
 };
 
@@ -17,6 +17,20 @@ use super::{
 /// `texture_sheet.rs`'s `CELL_GAP` convention.
 const CELL_GAP: f32 = 2.0;
 const PREVIEW_SIZE: f32 = 96.0;
+
+/// Strips the trailing `.animationclip.json` suffix (and any directory
+/// components) off a project-relative asset path, for a readable
+/// clip-picker label -- mirrors `texture_sheet.rs`'s
+/// `display_name_for_relative_path`.
+fn display_name_for_animation_clip(relative: &str) -> &str {
+	let file_name = Path::new(relative)
+		.file_name()
+		.and_then(|name| name.to_str())
+		.unwrap_or(relative);
+	file_name
+		.strip_suffix(&format!(".{}", ze_assets::ANIMATION_CLIP_EXTENSION))
+		.unwrap_or(file_name)
+}
 
 pub struct AnimationClipPanel {
 	current_path: Option<std::path::PathBuf>,
@@ -75,12 +89,14 @@ impl Panel for AnimationClipPanel {
 		let assets_root = context.project.map(|project| project.asset_dir.clone());
 
 		egui::ScrollArea::vertical().show(ui, |ui| {
-			self.show_header(ui);
-
 			let Some(assets_root) = assets_root else {
+				self.show_header(ui);
 				ui.label("No project loaded.");
 				return;
 			};
+
+			self.show_clip_picker(ui, context.selection, &assets_root);
+			self.show_header(ui);
 
 			ui.separator();
 
@@ -179,15 +195,25 @@ impl AnimationClipPanel {
 		if self.current_path.as_deref() == Some(path.as_path()) {
 			return;
 		}
+		let Some(project) = context.project else {
+			return;
+		};
 
-		match AnimationClip::load(path) {
+		self.open_clip(path.clone(), &project.asset_dir);
+	}
+
+	/// Loads `path` into the panel, replacing whatever clip (if any) is
+	/// currently open, along with its associated source texture sheet. Shared
+	/// by the selection-driven flow (double-click in the File Explorer, or a
+	/// "Create Animation Clip" flow routing through
+	/// `EditorRequest::OpenAnimationClipAsset`) and the in-panel clip picker,
+	/// so both paths reset the same editing state.
+	fn open_clip(&mut self, path: std::path::PathBuf, assets_root: &Path) {
+		match AnimationClip::load(&path) {
 			Ok(clip) => {
-				let sheet_result = context
-					.project
-					.map(|project| project.asset_dir.join(&clip.texture_sheet.path))
-					.map(|sheet_path| TextureSheet::load(&sheet_path));
+				let sheet_result = TextureSheet::load(&assets_root.join(&clip.texture_sheet.path));
 
-				self.current_path = Some(path.clone());
+				self.current_path = Some(path);
 				self.dirty = false;
 				self.source_preview = None;
 				self.viewport_fitted = false;
@@ -197,17 +223,13 @@ impl AnimationClipPanel {
 				self.status = None;
 
 				match sheet_result {
-					Some(Ok(sheet)) => {
+					Ok(sheet) => {
 						self.sheet = Some(sheet);
 						self.sheet_load_error = None;
 					}
-					Some(Err(error)) => {
+					Err(error) => {
 						self.sheet = None;
 						self.sheet_load_error = Some(format!("Failed to load source texture sheet: {error}"));
-					}
-					None => {
-						self.sheet = None;
-						self.sheet_load_error = Some("No project loaded.".to_string());
 					}
 				}
 
@@ -217,6 +239,48 @@ impl AnimationClipPanel {
 				self.status = Some(format!("Failed to load animation clip: {error}"));
 			}
 		}
+	}
+
+	/// A combo box listing every `.animationclip.json` asset in the project,
+	/// letting the user open one directly instead of hunting for it in the
+	/// File Explorer -- mirrors `TextureSheetPanel::show_sheet_picker`
+	/// exactly, with no filtering by texture sheet: an earlier version scoped
+	/// this to clips sharing the currently-open clip's sheet, but that made
+	/// switching to a clip for a *different* sheet look like every other
+	/// existing clip had silently vanished from the list. Options are
+	/// rescanned from disk every time this runs -- see that method's doc
+	/// comment for why that's fine.
+	fn show_clip_picker(&mut self, ui: &mut Ui, selection: &mut Option<EditorSelection>, assets_root: &Path) {
+		let options = scan_assets_with_extension(assets_root, ze_assets::ANIMATION_CLIP_EXTENSION);
+		let current_relative = self
+			.current_path
+			.as_deref()
+			.and_then(|path| relativize_asset_path(assets_root, path));
+
+		ui.horizontal(|ui| {
+			ui.label("Animation Clip:");
+
+			let selected_text = current_relative
+				.as_deref()
+				.map_or("(pick a clip)", display_name_for_animation_clip);
+
+			egui::ComboBox::from_id_salt("animation_clip_picker")
+				.selected_text(selected_text)
+				.show_ui(ui, |ui| {
+					if options.is_empty() {
+						ui.label("No animation clips in this project yet.");
+					}
+					for option in &options {
+						let display = display_name_for_animation_clip(option);
+						let is_current = current_relative.as_deref() == Some(option.as_str());
+						if ui.selectable_label(is_current, display).clicked() && !is_current {
+							let path = assets_root.join(option);
+							*selection = Some(EditorSelection::Asset(path.clone()));
+							self.open_clip(path, assets_root);
+						}
+					}
+				});
+		});
 	}
 
 	fn show_header(&self, ui: &mut Ui) {
