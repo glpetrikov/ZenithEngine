@@ -19,12 +19,13 @@ use netcorehost::{
 };
 use schemars::schema_for;
 use serde::{de, ser::SerializeMap};
+use ze_assets::{AssetRef, CellId};
 use ze_core::{Context, Result, Vec2, Vec3, anyhow};
 use ze_ecs::{
 	Component, Deserialize, EntitiesView, EntityId, JsonSchema, Scene, Serialize, System, registry::ComponentRegistry,
 };
-use ze_renderer::Sprite;
-use ze_ui::{UIBar, UIButton, UIText};
+use ze_renderer::{Sprite, TextureSource};
+use ze_ui::{UIBar, UIButton, UIImage, UIText};
 
 const ASSEMBLY_PATH: &str = "Sandbox/assets/bin/Sandbox.dll";
 const RUNTIME_CONFIG_PATH: &str = "Sandbox/assets/bin/Sandbox.runtimeconfig.json";
@@ -76,6 +77,9 @@ pub struct EngineAPI {
 	pub set_text_text: extern "C" fn(u64, *const u8, i32),
 	pub set_text_font_size: extern "C" fn(u64, f32),
 	pub is_button_clicked: extern "C" fn(u64) -> bool,
+	pub set_image_color: extern "C" fn(u64, f32, f32, f32, f32),
+	pub set_image_texture_path: extern "C" fn(u64, *const u8, i32),
+	pub set_image_sheet_cell: extern "C" fn(u64, *const u8, i32, u32),
 	pub scene_load: extern "C" fn(*const u8, i32),
 	pub scene_load_main: extern "C" fn(),
 	pub scene_reload: extern "C" fn(),
@@ -156,6 +160,9 @@ static ENGINE_API: EngineAPI = EngineAPI {
 	set_text_text: api::set_text_text,
 	set_text_font_size: api::set_text_font_size,
 	is_button_clicked: api::is_button_clicked,
+	set_image_color: api::set_image_color,
+	set_image_texture_path: api::set_image_texture_path,
+	set_image_sheet_cell: api::set_image_sheet_cell,
 	scene_load: api::scene_load,
 	scene_load_main: api::scene_load_main,
 	scene_reload: api::scene_reload,
@@ -1317,6 +1324,22 @@ enum ScriptingSceneCommand {
 		entity: EntityId,
 		font_size: f32,
 	},
+	SetImageColor {
+		entity: EntityId,
+		r: f32,
+		g: f32,
+		b: f32,
+		a: f32,
+	},
+	SetImageTexturePath {
+		entity: EntityId,
+		path: String,
+	},
+	SetImageSheetCell {
+		entity: EntityId,
+		sheet_path: String,
+		cell_id: u32,
+	},
 }
 
 pub fn refresh_scripting_api_velocity_cache(velocities: impl IntoIterator<Item = (EntityId, f32, f32)>) {
@@ -1771,6 +1794,7 @@ impl Drop for ScriptingSystem {
 	fn drop(&mut self) { self.runtime.destroy_all(); }
 }
 
+#[allow(clippy::too_many_lines)]
 fn apply_scripting_scene_commands(scene: &mut Scene) {
 	for command in drain_scripting_scene_commands() {
 		match command {
@@ -1913,6 +1937,50 @@ fn apply_scripting_scene_commands(scene: &mut Scene) {
 					}
 				}
 			}
+			ScriptingSceneCommand::SetImageColor { entity, r, g, b, a } => {
+				match scene.world_mut().get::<&mut UIImage>(entity) {
+					Ok(mut image) => {
+						image.color = [r, g, b, a];
+					}
+					Err(error) => {
+						ze_log::warn!(
+							"failed to apply image color command for entity {}: {error:?}",
+							entity.index()
+						);
+					}
+				}
+			}
+			ScriptingSceneCommand::SetImageTexturePath { entity, path } => {
+				match scene.world_mut().get::<&mut UIImage>(entity) {
+					Ok(mut image) => {
+						image.texture = TextureSource::File(AssetRef::game(path));
+					}
+					Err(error) => {
+						ze_log::warn!(
+							"failed to apply image texture path command for entity {}: {error:?}",
+							entity.index()
+						);
+					}
+				}
+			}
+			ScriptingSceneCommand::SetImageSheetCell {
+				entity,
+				sheet_path,
+				cell_id,
+			} => match scene.world_mut().get::<&mut UIImage>(entity) {
+				Ok(mut image) => {
+					image.texture = TextureSource::SheetCell {
+						sheet_path,
+						cell_id: CellId(cell_id),
+					};
+				}
+				Err(error) => {
+					ze_log::warn!(
+						"failed to apply image sheet cell command for entity {}: {error:?}",
+						entity.index()
+					);
+				}
+			},
 		}
 	}
 }
@@ -2214,7 +2282,7 @@ mod api {
 	};
 	use ze_input::{Input, ZKeyCode, ZMouseCode};
 	use ze_renderer::{Camera, Sprite};
-	use ze_ui::{UIBar, UIButton, UIText};
+	use ze_ui::{UIBar, UIButton, UIImage, UIText};
 
 	use crate::{
 		AnimatorApiCommand, AudioApiCommand, RAYCAST_PROVIDER, ScriptingApiCommand, ScriptingSceneCommand,
@@ -2261,6 +2329,7 @@ mod api {
 		UIText = 15,
 		Audio = 16,
 		Animator = 17,
+		UIImage = 18,
 	}
 
 	thread_local! {
@@ -2377,6 +2446,9 @@ mod api {
 				}
 				if world.get::<&UIText>(entity).is_ok() {
 					components.insert((entity, ComponentKind::UIText));
+				}
+				if world.get::<&UIImage>(entity).is_ok() {
+					components.insert((entity, ComponentKind::UIImage));
 				}
 				if world.get::<&AudioSource>(entity).is_ok() {
 					components.insert((entity, ComponentKind::Audio));
@@ -2708,6 +2780,48 @@ mod api {
 		API_STATE.with(|state| state.borrow().button_clicked.get(&entity).copied().unwrap_or(false))
 	}
 
+	pub extern "C" fn set_image_color(entity: u64, r: f32, g: f32, b: f32, a: f32) {
+		let entity = script_arg_to_entity_id(entity);
+		API_STATE.with(|state| {
+			state
+				.borrow_mut()
+				.scene_commands
+				.push(ScriptingSceneCommand::SetImageColor { entity, r, g, b, a });
+		});
+	}
+
+	pub extern "C" fn set_image_texture_path(entity: u64, path: *const u8, len: i32) {
+		let entity = script_arg_to_entity_id(entity);
+		let Some(path) = read_utf8(path, len) else {
+			ze_log::error!(target: "zeroengine.script", "script Image.SetTexturePath bridge received an invalid path buffer");
+			return;
+		};
+		API_STATE.with(|state| {
+			state
+				.borrow_mut()
+				.scene_commands
+				.push(ScriptingSceneCommand::SetImageTexturePath { entity, path });
+		});
+	}
+
+	pub extern "C" fn set_image_sheet_cell(entity: u64, sheet_path: *const u8, sheet_path_len: i32, cell_id: u32) {
+		let entity = script_arg_to_entity_id(entity);
+		let Some(sheet_path) = read_utf8(sheet_path, sheet_path_len) else {
+			ze_log::error!(target: "zeroengine.script", "script Image.SetSheetCell bridge received an invalid sheet path buffer");
+			return;
+		};
+		API_STATE.with(|state| {
+			state
+				.borrow_mut()
+				.scene_commands
+				.push(ScriptingSceneCommand::SetImageSheetCell {
+					entity,
+					sheet_path,
+					cell_id,
+				});
+		});
+	}
+
 	pub extern "C" fn scene_load(name: *const u8, len: i32) {
 		match read_utf8(name, len) {
 			Some(name) => {
@@ -2934,6 +3048,7 @@ mod api {
 			15 => Some(ComponentKind::UIText),
 			16 => Some(ComponentKind::Audio),
 			17 => Some(ComponentKind::Animator),
+			18 => Some(ComponentKind::UIImage),
 			_ => None,
 		}
 	}

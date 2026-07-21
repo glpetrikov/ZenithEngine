@@ -39,6 +39,9 @@ public unsafe struct EngineAPI
     public delegate* unmanaged[Cdecl]<ulong, byte*, int, void> set_text_text;
     public delegate* unmanaged[Cdecl]<ulong, float, void> set_text_font_size;
     public delegate* unmanaged[Cdecl]<ulong, bool> is_button_clicked;
+    public delegate* unmanaged[Cdecl]<ulong, float, float, float, float, void> set_image_color;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int, void> set_image_texture_path;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int, uint, void> set_image_sheet_cell;
     public delegate* unmanaged[Cdecl]<byte*, int, void> scene_load;
     public delegate* unmanaged[Cdecl]<void> scene_load_main;
     public delegate* unmanaged[Cdecl]<void> scene_reload;

@@ -1,3 +1,4 @@
+use ze_assets::{AssetRef, TextureSource};
 use ze_ecs::{Deserialize, JsonSchema, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -154,5 +155,42 @@ impl Default for UIText {
 }
 
 impl ze_ecs::Component for UIText {
+	type Tracking = ze_ecs::track::Untracked;
+}
+
+/// A static image rendered in the UI layer, purely for display -- no
+/// click/hover interaction. `texture` reuses the exact same
+/// `Sprite`-style texture-reference format (`ze_assets::TextureSource`) so a
+/// `UIImage` can point at either a whole file or a specific `TextureSheet`
+/// cell, with no separate texture-loading path of its own.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(default, crate = "ze_ecs::serde")]
+#[schemars(crate = "ze_ecs::schemars")]
+pub struct UIImage {
+	pub rect: UIRect,
+	pub anchor_mode: UIAnchorMode,
+	pub texture: TextureSource,
+	/// Multiplied with the sampled texture color (tint). `[1,1,1,1]` (default)
+	/// leaves the source image unmodified.
+	pub color: [f32; 4],
+	/// Paint order among all UI elements (buttons, bars, texts, images).
+	/// Higher values paint later, on top of lower ones. Ties break by entity
+	/// id.
+	pub z_index: i32,
+}
+
+impl Default for UIImage {
+	fn default() -> Self {
+		Self {
+			rect: UIRect::default(),
+			anchor_mode: UIAnchorMode::default(),
+			texture: TextureSource::File(AssetRef::game(String::new())),
+			color: [1.0, 1.0, 1.0, 1.0],
+			z_index: 0,
+		}
+	}
+}
+
+impl ze_ecs::Component for UIImage {
 	type Tracking = ze_ecs::track::Untracked;
 }

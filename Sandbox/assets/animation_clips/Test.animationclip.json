@@ -6,15 +6,8 @@
   },
   "frames": [
     0,
-    0,
-    1,
-    0,
-    1,
-    0,
-    1,
-    0,
-    0
+    1
   ],
-  "frame_duration_ms": 13.0,
-  "loop_animation": false
+  "frame_duration_ms": 1000.0,
+  "loop_animation": true
 }

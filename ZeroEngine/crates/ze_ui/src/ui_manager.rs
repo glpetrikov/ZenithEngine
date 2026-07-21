@@ -7,6 +7,13 @@ pub struct UiManager {
 	pub winit: yakui_winit::YakuiWinit,
 	pub wgpu: yakui_wgpu::YakuiWgpu,
 	pub buffers: yakui_wgpu::Buffers,
+	// `yakui_wgpu::YakuiWgpu` holds its own device/queue internally for
+	// painting, but doesn't expose them back out. `UIImage` needs a
+	// `wgpu::Device`/`Queue` to decode an asset into a `wgpu::Texture` before
+	// handing the resulting view to `wgpu.add_texture`, so keep our own
+	// clones here (cheap -- both types are thin Arc-backed handles).
+	pub device: wgpu::Device,
+	pub queue: wgpu::Queue,
 	// The windowing system can deliver the first RedrawRequested before
 	// UISystem has ever ticked (e.g. an implicit initial redraw on window
 	// creation, which fires before the app's first about_to_wait-driven
@@ -37,6 +44,8 @@ impl UiManager {
 			winit,
 			wgpu,
 			buffers,
+			device: device.clone(),
+			queue: queue.clone(),
 			has_laid_out: false,
 		}
 	}

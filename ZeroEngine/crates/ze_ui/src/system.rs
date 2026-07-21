@@ -1,6 +1,7 @@
 use std::{cell::Cell, collections::HashMap};
 
-use yakui::{Constraints, Vec2, Vec4};
+use yakui::{Constraints, Rect, Vec2, Vec4};
+use ze_assets::ResourceManager;
 use ze_core::Result;
 use ze_ecs::{
 	ActiveCameraView, EntityId, Scene, System,
@@ -8,8 +9,10 @@ use ze_ecs::{
 };
 
 use crate::{
-	components::{UIAnchorMode, UIBar, UIButton, UIRect, UIText},
-	ui_manager::UiManagerHandle,
+	components::{UIAnchorMode, UIBar, UIButton, UIImage, UIRect, UIText},
+	image_texture_cache::UiImageTextureCache,
+	image_widget::TexturedQuad,
+	ui_manager::{UiManager, UiManagerHandle},
 };
 
 /// Font size used for the optional label rendered on top of a `UIBar`.
@@ -53,12 +56,25 @@ struct TextSnapshot {
 	z_index: i32,
 }
 
+struct ImageSnapshot {
+	entity: EntityId,
+	screen_pos: Vec2,
+	size: Vec2,
+	// Resolved once per frame in Pass 1 (needs `&mut UiImageTextureCache` and
+	// the yakui/wgpu handles) -- `None` for an unassigned or failed-to-load
+	// texture, in which case Pass 2 draws nothing for this entity.
+	texture: Option<(yakui::TextureId, [f32; 4])>,
+	color: [f32; 4],
+	z_index: i32,
+}
+
 /// One paintable UI element, tagged with the data needed to order it against
 /// every other element regardless of its component type.
 enum UiElement {
 	Button(ButtonSnapshot),
 	Bar(BarSnapshot),
 	Text(TextSnapshot),
+	Image(ImageSnapshot),
 }
 
 impl UiElement {
@@ -67,6 +83,7 @@ impl UiElement {
 			Self::Button(snap) => (snap.z_index, snap.entity),
 			Self::Bar(snap) => (snap.z_index, snap.entity),
 			Self::Text(snap) => (snap.z_index, snap.entity),
+			Self::Image(snap) => (snap.z_index, snap.entity),
 		}
 	}
 }
@@ -121,13 +138,17 @@ pub struct UISystem {
 	// it changes, append a zero-width space to force the text-changed check
 	// to trip and re-shape with the new metrics.
 	text_font_size_cache: HashMap<EntityId, f32>,
+	resources: ResourceManager,
+	image_texture_cache: UiImageTextureCache,
 }
 
 impl UISystem {
-	pub fn new(handle: UiManagerHandle) -> Self {
+	pub fn new(handle: UiManagerHandle, resources: ResourceManager) -> Self {
 		Self {
 			ui_manager: Some(handle),
 			text_font_size_cache: HashMap::new(),
+			resources,
+			image_texture_cache: UiImageTextureCache::new(),
 		}
 	}
 }
@@ -142,6 +163,11 @@ impl System for UISystem {
 		};
 
 		let mut manager = handle.borrow_mut();
+		// A single `&mut UiManager` reborrow (rather than repeatedly deref'ing
+		// the `RefMut` below) so the borrow checker can see `manager.device`,
+		// `manager.queue`, and `manager.wgpu` as disjoint field borrows when
+		// resolving `UIImage` textures.
+		let manager: &mut UiManager = &mut manager;
 
 		let active_camera: Option<ActiveCameraView> = scene
 			.world()
@@ -243,11 +269,43 @@ impl System for UISystem {
 			)
 		};
 
-		let mut elements: Vec<UiElement> =
-			Vec::with_capacity(button_snapshots.len() + bar_snapshots.len() + text_snapshots.len());
+		// Resolving a texture may register a new GPU texture with yakui
+		// (`&mut manager.wgpu`), so this is a plain loop rather than an
+		// iterator chain like the snapshots above, which only ever read from
+		// `scene`.
+		let mut image_snapshots: Vec<ImageSnapshot> = Vec::new();
+		{
+			let world = scene.world();
+			if let Ok(images) = world.borrow::<View<UIImage>>() {
+				for (entity, image) in images.iter().with_id() {
+					let screen_pos =
+						resolve_screen_pos(scene, active_camera.as_ref(), entity, &image.rect, image.anchor_mode);
+					let texture = self.image_texture_cache.resolve(
+						&image.texture,
+						&self.resources,
+						&manager.device,
+						&manager.queue,
+						&mut manager.wgpu,
+					);
+					image_snapshots.push(ImageSnapshot {
+						entity,
+						screen_pos,
+						size: ui_rect_size(&image.rect),
+						texture,
+						color: image.color,
+						z_index: image.z_index,
+					});
+				}
+			}
+		}
+
+		let mut elements: Vec<UiElement> = Vec::with_capacity(
+			button_snapshots.len() + bar_snapshots.len() + text_snapshots.len() + image_snapshots.len(),
+		);
 		elements.extend(button_snapshots.into_iter().map(UiElement::Button));
 		elements.extend(bar_snapshots.into_iter().map(UiElement::Bar));
 		elements.extend(text_snapshots.into_iter().map(UiElement::Text));
+		elements.extend(image_snapshots.into_iter().map(UiElement::Image));
 		elements.sort_by_key(UiElement::sort_key);
 
 		// Pass 2: build yakui widget tree in z_index (then entity id) order
@@ -324,6 +382,22 @@ impl System for UISystem {
 							text_widget.show();
 						});
 					});
+				}
+				UiElement::Image(snap) => {
+					// No texture assigned yet, or it failed to load (already
+					// logged once by `UiImageTextureCache::resolve`) -- draw
+					// nothing rather than a placeholder box.
+					if let Some((texture_id, uv_rect)) = snap.texture {
+						let tint = yakui::Color::from_linear(Vec4::from_array(snap.color));
+						let uv_rect =
+							Rect::from_pos_size(Vec2::new(uv_rect[0], uv_rect[1]), Vec2::new(uv_rect[2], uv_rect[3]));
+
+						yakui::offset(snap.screen_pos, || {
+							yakui::constrained(Constraints::tight(snap.size), || {
+								TexturedQuad::new(Some(texture_id), snap.size, tint, uv_rect).show();
+							});
+						});
+					}
 				}
 			}
 		}

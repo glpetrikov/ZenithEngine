@@ -277,7 +277,7 @@ pub fn load_project_scene(
 	// resulting Sprite.texture is fresh by the time this tick renders.
 	scene.add_system(CameraViewSystem::new());
 	if let Some(handle) = ui_manager {
-		scene.add_system(UISystem::new(handle));
+		scene.add_system(UISystem::new(handle, resources.clone()));
 	}
 	scene.add_system(RenderSystem::new());
 	// Non-fatal on failure (e.g. no audio device in CI/headless) -- audio is a
@@ -575,10 +575,11 @@ impl ApplicationHandler<CustomEvents> for App {
 				// with `ui_manager: None` and never added a `UISystem` -- scenes loaded
 				// after this point via scripting scene-load commands already pass
 				// `self.ui_manager`, so only the startup scene needs patching up here.
+				let resources = self.resources.clone();
 				if let Some(scene) = self.active_scene_mut()
 					&& scene.with_system_mut::<UISystem, _>(|_, _| ()).is_none()
 				{
-					scene.add_system(UISystem::new(ui_manager));
+					scene.add_system(UISystem::new(ui_manager, resources));
 				}
 			}
 			Err(error) => {

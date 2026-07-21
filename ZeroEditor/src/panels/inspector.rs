@@ -24,7 +24,7 @@ use ze_renderer::{
 use ze_scripting_cs::{
 	Script as ScriptData, ScriptFieldMetadata, ScriptFieldValue, ScriptingSystem, Scripts as ZeScripts,
 };
-use ze_ui::{UIAnchorMode, UIBar, UIButton, UIRect, UIText};
+use ze_ui::{UIAnchorMode, UIBar, UIButton, UIImage, UIRect, UIText};
 
 use super::{EditorPanelContext, EditorSelection, Panel, texture_sheet_common::asset_picker};
 use crate::undo_redo::SceneSnapshotCommand;
@@ -93,12 +93,13 @@ enum InspectableComponent {
 	UIButton,
 	UIBar,
 	UIText,
+	UIImage,
 	AudioSource,
 	Animator,
 }
 
 impl InspectableComponent {
-	const ADDABLE: [Self; 13] = [
+	const ADDABLE: [Self; 14] = [
 		Self::Tag,
 		Self::Transform,
 		Self::Inactive,
@@ -110,6 +111,7 @@ impl InspectableComponent {
 		Self::UIButton,
 		Self::UIBar,
 		Self::UIText,
+		Self::UIImage,
 		Self::AudioSource,
 		Self::Animator,
 	];
@@ -128,6 +130,7 @@ impl InspectableComponent {
 			Self::UIButton => "UI Button",
 			Self::UIBar => "UI Bar",
 			Self::UIText => "UI Text",
+			Self::UIImage => "UI Image",
 			Self::AudioSource => "Audio Source",
 			Self::Animator => "Animator",
 		}
@@ -147,6 +150,7 @@ impl InspectableComponent {
 			Self::UIButton => scene.world().get::<&UIButton>(entity).is_ok(),
 			Self::UIBar => scene.world().get::<&UIBar>(entity).is_ok(),
 			Self::UIText => scene.world().get::<&UIText>(entity).is_ok(),
+			Self::UIImage => scene.world().get::<&UIImage>(entity).is_ok(),
 			Self::AudioSource => scene.world().get::<&AudioSource>(entity).is_ok(),
 			Self::Animator => scene.world().get::<&Animator>(entity).is_ok(),
 		}
@@ -232,6 +236,20 @@ impl InspectableComponent {
 					z_index: 0,
 				});
 			}
+			Self::UIImage => {
+				scene.entity_mut(entity).add_component(UIImage {
+					rect: UIRect {
+						x: 0.0,
+						y: 0.0,
+						width: 100.0,
+						height: 100.0,
+					},
+					anchor_mode: UIAnchorMode::default(),
+					texture: TextureSource::File(AssetRef::game(String::new())),
+					color: [1.0, 1.0, 1.0, 1.0],
+					z_index: 0,
+				});
+			}
 			Self::AudioSource => {
 				scene.entity_mut(entity).add_component(AudioSource::default());
 			}
@@ -278,6 +296,9 @@ impl InspectableComponent {
 			}
 			Self::UIText => {
 				let _ = scene.entity_mut(entity).remove_component::<UIText>();
+			}
+			Self::UIImage => {
+				let _ = scene.entity_mut(entity).remove_component::<UIImage>();
 			}
 			Self::AudioSource => {
 				let _ = scene.entity_mut(entity).remove_component::<AudioSource>();
@@ -463,6 +484,10 @@ impl InspectorPanel {
 		}
 		if let Some(text) = cloned_component::<UIText>(context.scene, entity) {
 			self.show_ui_text(ui, context, entity, text);
+			displayed += 1;
+		}
+		if let Some(image) = cloned_component::<UIImage>(context.scene, entity) {
+			self.show_ui_image(ui, context, entity, image);
 			displayed += 1;
 		}
 
@@ -2979,6 +3004,77 @@ impl InspectorPanel {
 			});
 		});
 		self.show_component_context_menu(&response, entity, context, InspectableComponent::UIText);
+	}
+
+	fn show_ui_image(
+		&mut self,
+		ui: &mut Ui,
+		context: &mut EditorPanelContext<'_>,
+		entity: EntityId,
+		mut image: UIImage,
+	) {
+		let response = show_removable_component(ui, InspectableComponent::UIImage.label(), |ui| {
+			let mut field_edit = FieldEdit::default();
+
+			// Mirrors `show_sprite`'s texture field exactly (same
+			// `TextureSource` type): a plain path field for `File`, and a
+			// read-only label for `SheetCell` -- picking a specific sheet
+			// cell has no dedicated picker UI anywhere in the inspector yet,
+			// Sprite included.
+			match image.texture.clone() {
+				TextureSource::File(asset_ref) => {
+					let mut texture_path = asset_ref.path.clone();
+					ui.horizontal(|ui| {
+						ui.label("Texture");
+						let response = ui.text_edit_singleline(&mut texture_path);
+						field_edit.include(response_field_edit(&response));
+					});
+					if field_edit.changed {
+						image.texture = TextureSource::File(AssetRef::game(texture_path));
+					}
+				}
+				TextureSource::SheetCell { sheet_path, cell_id } => {
+					ui.horizontal(|ui| {
+						ui.label("Texture");
+						ui.label(format!("Sheet cell: {sheet_path} #{}", cell_id.0));
+					});
+				}
+			}
+
+			show_ui_anchor_mode_combo(ui, &mut field_edit, &mut image.anchor_mode);
+
+			ui.horizontal(|ui| {
+				ui.label("X");
+				field_edit.include(response_field_edit(&ui.add(egui::DragValue::new(&mut image.rect.x))));
+				ui.label("Y");
+				field_edit.include(response_field_edit(&ui.add(egui::DragValue::new(&mut image.rect.y))));
+			});
+			ui.horizontal(|ui| {
+				ui.label("Width");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut image.rect.width).range(0.0..=f32::MAX)),
+				));
+				ui.label("Height");
+				field_edit.include(response_field_edit(
+					&ui.add(egui::DragValue::new(&mut image.rect.height).range(0.0..=f32::MAX)),
+				));
+			});
+
+			field_edit.include(drag_i32(ui, "Z Index", &mut image.z_index));
+
+			ui.horizontal(|ui| {
+				ui.label("Tint");
+				let response = ui.color_edit_button_rgba_unmultiplied(&mut image.color);
+				field_edit.include(response_field_edit(&response));
+			});
+
+			self.apply_field_edit(context, field_edit, |scene| {
+				if let Ok(mut current) = scene.world_mut().get::<&mut UIImage>(entity) {
+					**current = image;
+				}
+			});
+		});
+		self.show_component_context_menu(&response, entity, context, InspectableComponent::UIImage);
 	}
 }
 

@@ -7461,6 +7461,7 @@ dependencies = [
  "serde",
  "serde_json",
  "wesl",
+ "ze_log",
  "zepack",
 ]
 
@@ -7578,6 +7579,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shipyard",
+ "ze_assets",
  "ze_core",
  "ze_ecs",
  "ze_input",
@@ -7590,11 +7592,13 @@ dependencies = [
 name = "ze_ui"
 version = "0.1.0"
 dependencies = [
+ "image",
  "wgpu",
  "winit",
  "yakui",
  "yakui-wgpu",
  "yakui-winit",
+ "ze_assets",
  "ze_core",
  "ze_ecs",
  "ze_log",

@@ -754,7 +754,7 @@ impl ApplicationHandler for EditorApp {
 					ze_log::error!("failed to load project scenes; opening empty editor scene: {error:?}");
 					let mut manager = EditorSceneManager::from_scene(create_default_editor_scene(), true);
 					if let Some(scene) = manager.active_scene_mut() {
-						scene.add_system(UISystem::new(ui_manager.clone()));
+						scene.add_system(UISystem::new(ui_manager.clone(), self.resources.clone()));
 					}
 					manager.ui_manager = Some(ui_manager);
 					manager
@@ -763,7 +763,7 @@ impl ApplicationHandler for EditorApp {
 		} else {
 			let mut manager = EditorSceneManager::from_scene(create_default_editor_scene(), true);
 			if let Some(scene) = manager.active_scene_mut() {
-				scene.add_system(UISystem::new(ui_manager.clone()));
+				scene.add_system(UISystem::new(ui_manager.clone(), self.resources.clone()));
 			}
 			manager.ui_manager = Some(ui_manager);
 			manager
@@ -1457,7 +1457,7 @@ thumbs.db
 				let mut manager = EditorSceneManager::from_scene(create_default_editor_scene(), true);
 				if let Some(handle) = &ui_handle {
 					if let Some(scene) = manager.active_scene_mut() {
-						scene.add_system(UISystem::new(handle.clone()));
+						scene.add_system(UISystem::new(handle.clone(), self.resources.clone()));
 					}
 					manager.ui_manager = Some(handle.clone());
 				}

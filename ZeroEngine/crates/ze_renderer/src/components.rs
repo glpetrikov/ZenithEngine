@@ -1,25 +1,8 @@
-use ze_assets::{AssetRef, CellId};
+/// `TextureSource` lives in `ze_assets` (see there for docs) so that both
+/// `Sprite` here and `ze_ui::UIImage` share the exact same texture-reference
+/// format and resolution logic, rather than each renderer inventing its own.
+pub use ze_assets::TextureSource;
 use ze_ecs::{Deserialize, JsonSchema, Serialize};
-
-/// Where a `Sprite`'s pixels come from: either a plain file (unchanged,
-/// existing behavior) or a specific cell of a `TextureSheet` asset.
-///
-/// `#[serde(untagged)]` with disjoint field sets (`path`/`source` for
-/// `File` vs `sheet_path`/`cell_id` for `SheetCell`) is what makes this
-/// backward compatible: an existing scene's plain `{"path":...,"source":
-/// "Game"}` texture value still deserializes as `File` with zero migration
-/// code, since serde tries each variant's shape in turn.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(crate = "ze_ecs::serde", untagged)]
-#[schemars(crate = "ze_ecs::schemars")]
-pub enum TextureSource {
-	File(AssetRef),
-	SheetCell { sheet_path: String, cell_id: CellId },
-}
-
-impl From<AssetRef> for TextureSource {
-	fn from(asset: AssetRef) -> Self { Self::File(asset) }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(crate = "ze_ecs::serde")]

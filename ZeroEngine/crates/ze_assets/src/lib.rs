@@ -19,6 +19,11 @@ pub use texture_sheet::{
 	shelf_pack_preview, uniform_grid_cols_rows,
 };
 
+pub mod texture_source;
+pub use texture_source::{
+	FULL_UV_RECT, PendingGridCell, SheetCache, TextureSource, resolve_texture_source, resolve_uv_rect,
+};
+
 const EMBEDDED_SPRITE_WGSL: &str = "\
 @group(0) @binding(0)
 var sprite_texture: texture_2d<f32>;

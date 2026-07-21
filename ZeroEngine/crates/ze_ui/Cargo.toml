@@ -10,9 +10,15 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+ze_assets = { path = "../ze_assets" }
 ze_core = { path = "../ze_core" }
 ze_ecs = { path = "../ze_ecs" }
 ze_log = { path = "../ze_log" }
+image = { version = "0.25.10", default-features = false, features = [
+    "webp",
+    "jpeg",
+    "png",
+] }
 yakui = { git = "https://github.com/SecondHalfGames/yakui" }
 yakui-wgpu = { git = "https://github.com/SecondHalfGames/yakui" }
 yakui-winit = { git = "https://github.com/SecondHalfGames/yakui" }
