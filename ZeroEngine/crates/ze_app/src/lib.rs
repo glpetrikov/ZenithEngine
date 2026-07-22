@@ -16,7 +16,7 @@ use ze_animation::AnimationSystem;
 use ze_assets::ResourceManager;
 use ze_audio::AudioSystem;
 use ze_core::{Result, Vec2, bail};
-use ze_ecs::{EditorOnly, EntitiesView, PhysicsSettings, Scene, System, ViewportInfo, registry};
+use ze_ecs::{EditorOnly, EntitiesView, PhysicsSettings, Scene, System, UiReferenceResolution, ViewportInfo, registry};
 use ze_input::{Input, ZKeyCode, ZMouseCode};
 use ze_physics::PhysicsSystem;
 use ze_project::Project;
@@ -148,6 +148,17 @@ impl App {
 			Vec2::new(size.width as f32, size.height as f32)
 		});
 
+		// Reference/design resolution the ScreenSpaceOverlay UI was authored
+		// against, so `UISystem` can scale the canvas by viewport_width /
+		// reference_width. Sourced from project settings; falls back to the
+		// 1920x1080 default when no project is loaded.
+		let reference_resolution =
+			self.active_project
+				.as_ref()
+				.map_or_else(UiReferenceResolution::default, |project| UiReferenceResolution {
+					size: Vec2::new(project.ui.reference_width, project.ui.reference_height),
+				});
+
 		let Some(scene) = self.active_scene_mut() else {
 			return Ok(());
 		};
@@ -155,6 +166,7 @@ impl App {
 		if let Some(size) = viewport {
 			scene.world().add_unique(ViewportInfo { size });
 		}
+		scene.world().add_unique(reference_resolution);
 
 		scene.with_system_mut::<PhysicsSystem, _>(|physics, scene| {
 			physics.remove_inactive_entities(scene);

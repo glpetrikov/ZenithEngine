@@ -40,7 +40,8 @@ use ze_assets::ResourceManager;
 use ze_audio::AudioSystem;
 use ze_core::{Context as _, Quat, Vec3, anyhow, bail};
 use ze_ecs::{
-	EditorOnly, EntityId, Name, PhysicsSettings, SaveFile, Scene, Tag, Transform, ViewportInfo, shipyard::IntoIter,
+	EditorOnly, EntityId, Name, PhysicsSettings, SaveFile, Scene, Tag, Transform, UiReferenceResolution, ViewportInfo,
+	shipyard::IntoIter,
 };
 use ze_physics::PhysicsSystem;
 use ze_project::Project;
@@ -1672,6 +1673,16 @@ fn update_editor_scene_before_render(
 		scene.world().add_unique(ViewportInfo {
 			size: ze_core::Vec2::new(viewport_size.width as f32, viewport_size.height as f32),
 		});
+		// Match-by-width canvas scaling of ScreenSpaceOverlay UI needs the
+		// project's reference/design resolution; fall back to the 1920x1080
+		// default when no project is loaded.
+		scene
+			.world()
+			.add_unique(
+				active_project.map_or_else(UiReferenceResolution::default, |project| UiReferenceResolution {
+					size: ze_core::Vec2::new(project.ui.reference_width, project.ui.reference_height),
+				}),
+			);
 		if let Err(error) = scene.update_system::<CameraViewSystem>(dt) {
 			ze_log::error!("failed to update camera view system: {error:?}");
 		}
@@ -2138,6 +2149,7 @@ mod tests {
 				.join("SaveAllScenes.dll"),
 			physics: ProjectPhysicsSettings::default(),
 			game: ze_project::GameSettings::default(),
+			ui: ze_project::UiSettings::default(),
 			root_dir: root_dir.clone(),
 		};
 

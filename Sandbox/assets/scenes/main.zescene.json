@@ -123,16 +123,17 @@
               1.0
             ],
             "rect": {
+              "anchor_point": "TopLeft",
               "height": 100.0,
-              "width": 100.0,
-              "x": 62.0,
-              "y": 238.0
+              "width": 123.0,
+              "x": -15.0,
+              "y": 203.0
             },
             "texture": {
               "path": "textures/circle.png",
               "source": "Game"
             },
-            "z_index": 0
+            "z_index": 1
           }
         }
       ]
@@ -437,6 +438,7 @@
             "current": 50.0,
             "max": 100.0,
             "rect": {
+              "anchor_point": "TopLeft",
               "height": 20.0,
               "width": 200.0,
               "x": -532.0,
@@ -470,6 +472,7 @@
               1.0
             ],
             "rect": {
+              "anchor_point": "TopLeft",
               "height": 35.0,
               "width": 170.0,
               "x": 132.0,
@@ -491,6 +494,7 @@
             ],
             "font_size": 18.0,
             "rect": {
+              "anchor_point": "TopLeft",
               "height": 20.0,
               "width": 400.0,
               "x": -471.0,

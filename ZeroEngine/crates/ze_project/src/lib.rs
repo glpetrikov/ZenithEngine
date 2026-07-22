@@ -125,6 +125,8 @@ pub struct Project {
 	pub physics: PhysicsSettings,
 	#[serde(default)]
 	pub game: GameSettings,
+	#[serde(default)]
+	pub ui: UiSettings,
 	#[serde(skip)]
 	pub root_dir: PathBuf,
 }
@@ -172,6 +174,28 @@ impl Default for GameSettings {
 	}
 }
 
+/// Project-wide UI settings. `reference_width`/`reference_height` define the
+/// design resolution that `ScreenSpaceOverlay` UI is authored against; the UI
+/// canvas is scaled by `viewport_width / reference_width` at runtime so it
+/// keeps its proportions at any window size (see
+/// `ze_ecs::UiReferenceResolution`). Defaults to 1920x1080.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct UiSettings {
+	#[serde(default = "default_ui_reference_width")]
+	pub reference_width: f32,
+	#[serde(default = "default_ui_reference_height")]
+	pub reference_height: f32,
+}
+
+impl Default for UiSettings {
+	fn default() -> Self {
+		Self {
+			reference_width: default_ui_reference_width(),
+			reference_height: default_ui_reference_height(),
+		}
+	}
+}
+
 impl Project {
 	pub fn new(name: String, main_scene: String, asset_dir: PathBuf, scripts_dll: PathBuf) -> Project {
 		let game_name = name.clone();
@@ -187,6 +211,7 @@ impl Project {
 				name: game_name,
 				..GameSettings::default()
 			},
+			ui: UiSettings::default(),
 			root_dir: PathBuf::new(),
 		}
 	}
@@ -506,6 +531,10 @@ fn default_physics_timestep() -> f32 { 1.0 / 70.0 }
 
 const fn default_solver_iterations() -> u32 { 8 }
 
+const fn default_ui_reference_width() -> f32 { 1920.0 }
+
+const fn default_ui_reference_height() -> f32 { 1080.0 }
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct GameData {
 	#[serde(default)]
@@ -649,6 +678,40 @@ mod tests {
 		);
 
 		assert_eq!(project.csproj_path()?, PathBuf::from("assets/Sandbox.csproj"));
+		Ok(())
+	}
+
+	#[test]
+	fn ui_settings_default_to_1920x1080_when_absent() -> ze_core::Result<()> {
+		// A project TOML that predates the `[ui]` section must still load, with
+		// the reference resolution defaulting to 1920x1080 so existing projects
+		// get a sensible canvas scale without any migration.
+		let project = toml::from_str::<Project>(
+			r#"
+name = "Sandbox"
+main_scene = "main"
+"#,
+		)?;
+
+		assert_eq!(project.ui.reference_width, 1920.0);
+		assert_eq!(project.ui.reference_height, 1080.0);
+		Ok(())
+	}
+
+	#[test]
+	fn ui_settings_round_trip_through_toml() -> ze_core::Result<()> {
+		let mut project = Project::new(
+			"Sandbox".to_string(),
+			"main".to_string(),
+			PathBuf::from("assets"),
+			PathBuf::from("assets/bin/Sandbox.dll"),
+		);
+		project.ui.reference_width = 1280.0;
+		project.ui.reference_height = 720.0;
+
+		let reloaded = toml::from_str::<Project>(&toml::to_string(&project)?)?;
+		assert_eq!(reloaded.ui.reference_width, 1280.0);
+		assert_eq!(reloaded.ui.reference_height, 720.0);
 		Ok(())
 	}
 

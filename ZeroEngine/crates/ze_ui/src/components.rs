@@ -9,12 +9,25 @@ pub struct UIRect {
 	/// is the owning entity's world position projected to screen space
 	/// through the camera actually rendering the scene (when the entity has
 	/// a `Transform` and the scene has an active camera); otherwise it's the
-	/// screen origin (top-left). In `UIAnchorMode::ScreenSpaceOverlay`, `x`/`y`
-	/// are always absolute screen pixel coordinates, with no camera involved.
+	/// `anchor_point` fraction of the current viewport size (same as
+	/// `UIAnchorMode::ScreenSpaceOverlay`). In
+	/// `UIAnchorMode::ScreenSpaceOverlay`, the anchor is always the
+	/// `anchor_point` fraction of the current viewport size, with no camera
+	/// involved.
 	pub x: f32,
 	pub y: f32,
 	pub width: f32,
 	pub height: f32,
+	/// Which point of the viewport (for `ScreenSpaceOverlay`, and as the
+	/// `WorldSpace` fallback when there's no camera/transform to project
+	/// through) `x`/`y` are offset from, and which point of this element's own
+	/// `width`/`height` box is aligned to that anchor. Keeps the element
+	/// correctly positioned relative to a screen edge/corner/center as the
+	/// window is resized, instead of drifting at a fixed pixel offset from
+	/// the top-left corner. Defaults to `TopLeft`, which reproduces the
+	/// original fixed-pixel-from-top-left behavior exactly regardless of
+	/// viewport size.
+	pub anchor_point: UIAnchorPoint,
 }
 
 impl Default for UIRect {
@@ -24,6 +37,49 @@ impl Default for UIRect {
 			y: 0.0,
 			width: 0.0,
 			height: 0.0,
+			anchor_point: UIAnchorPoint::default(),
+		}
+	}
+}
+
+/// A reference point on the viewport, as a 0..1 fraction of its width/height.
+///
+/// A `UIRect`'s `x`/`y` offset is measured from this point, and the element's
+/// own box is aligned to it via the same fraction. For example `BottomRight`
+/// keeps an element's bottom-right corner pinned `x`/`y` pixels in from the
+/// viewport's bottom-right corner, regardless of viewport size; `TopLeft` (the
+/// default) reproduces plain absolute-pixel-from-top-left placement.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, Default)]
+#[serde(crate = "ze_ecs::serde")]
+#[schemars(crate = "ze_ecs::schemars")]
+pub enum UIAnchorPoint {
+	#[default]
+	TopLeft,
+	TopCenter,
+	TopRight,
+	MiddleLeft,
+	MiddleCenter,
+	MiddleRight,
+	BottomLeft,
+	BottomCenter,
+	BottomRight,
+}
+
+impl UIAnchorPoint {
+	/// The (x, y) fraction of the viewport/element box this anchor point
+	/// corresponds to, each in `0.0..=1.0`.
+	#[must_use]
+	pub const fn fractions(self) -> (f32, f32) {
+		match self {
+			Self::TopLeft => (0.0, 0.0),
+			Self::TopCenter => (0.5, 0.0),
+			Self::TopRight => (1.0, 0.0),
+			Self::MiddleLeft => (0.0, 0.5),
+			Self::MiddleCenter => (0.5, 0.5),
+			Self::MiddleRight => (1.0, 0.5),
+			Self::BottomLeft => (0.0, 1.0),
+			Self::BottomCenter => (0.5, 1.0),
+			Self::BottomRight => (1.0, 1.0),
 		}
 	}
 }

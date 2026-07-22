@@ -13,3 +13,7 @@ enable_debug_draw = false
 [game]
 name = "Sandbox"
 version = "0.1.0"
+
+[ui]
+reference_width = 1920.0
+reference_height = 1080.0

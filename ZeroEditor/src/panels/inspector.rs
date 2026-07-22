@@ -24,7 +24,7 @@ use ze_renderer::{
 use ze_scripting_cs::{
 	Script as ScriptData, ScriptFieldMetadata, ScriptFieldValue, ScriptingSystem, Scripts as ZeScripts,
 };
-use ze_ui::{UIAnchorMode, UIBar, UIButton, UIImage, UIRect, UIText};
+use ze_ui::{UIAnchorMode, UIAnchorPoint, UIBar, UIButton, UIImage, UIRect, UIText};
 
 use super::{EditorPanelContext, EditorSelection, Panel, texture_sheet_common::asset_picker};
 use crate::undo_redo::SceneSnapshotCommand;
@@ -192,6 +192,7 @@ impl InspectableComponent {
 						y: 0.0,
 						width: 100.0,
 						height: 30.0,
+						..UIRect::default()
 					},
 					anchor_mode: UIAnchorMode::default(),
 					text: "Button".to_string(),
@@ -211,6 +212,7 @@ impl InspectableComponent {
 						y: 0.0,
 						width: 200.0,
 						height: 20.0,
+						..UIRect::default()
 					},
 					anchor_mode: UIAnchorMode::default(),
 					current: 50.0,
@@ -228,6 +230,7 @@ impl InspectableComponent {
 						y: 0.0,
 						width: 200.0,
 						height: 20.0,
+						..UIRect::default()
 					},
 					anchor_mode: UIAnchorMode::default(),
 					text: "Text".to_string(),
@@ -243,6 +246,7 @@ impl InspectableComponent {
 						y: 0.0,
 						width: 100.0,
 						height: 100.0,
+						..UIRect::default()
 					},
 					anchor_mode: UIAnchorMode::default(),
 					texture: TextureSource::File(AssetRef::game(String::new())),
@@ -1032,6 +1036,18 @@ impl InspectorPanel {
 			changed |= vec3_editor(ui, "Gravity", &mut state.project.physics.gravity).changed;
 			changed |= drag_f32(ui, "Timestep", &mut state.project.physics.timestep).changed;
 			changed |= drag_u32(ui, "Solver iterations", &mut state.project.physics.solver_iterations);
+			if changed {
+				state.status_message = None;
+				state.dirty = true;
+			}
+		});
+
+		ui.collapsing("UI", |ui| {
+			ui.label("Reference resolution ScreenSpaceOverlay UI is authored against.");
+			ui.label("The UI canvas scales by viewport width / reference width.");
+			let mut changed = false;
+			changed |= drag_f32(ui, "Reference width", &mut state.project.ui.reference_width).changed;
+			changed |= drag_f32(ui, "Reference height", &mut state.project.ui.reference_height).changed;
 			if changed {
 				state.status_message = None;
 				state.dirty = true;
@@ -2655,6 +2671,49 @@ fn show_ui_anchor_mode_combo(ui: &mut Ui, field_edit: &mut FieldEdit, anchor_mod
 		});
 }
 
+const fn ui_anchor_point_label(anchor_point: UIAnchorPoint) -> &'static str {
+	match anchor_point {
+		UIAnchorPoint::TopLeft => "Top Left",
+		UIAnchorPoint::TopCenter => "Top Center",
+		UIAnchorPoint::TopRight => "Top Right",
+		UIAnchorPoint::MiddleLeft => "Middle Left",
+		UIAnchorPoint::MiddleCenter => "Middle Center",
+		UIAnchorPoint::MiddleRight => "Middle Right",
+		UIAnchorPoint::BottomLeft => "Bottom Left",
+		UIAnchorPoint::BottomCenter => "Bottom Center",
+		UIAnchorPoint::BottomRight => "Bottom Right",
+	}
+}
+
+/// Which point of the viewport (and of the element's own box) `rect.x`/`y`
+/// are measured from, so the element stays correctly placed relative to that
+/// edge/corner/center as the window is resized -- see `UIAnchorPoint`.
+fn show_ui_anchor_point_combo(ui: &mut Ui, field_edit: &mut FieldEdit, anchor_point: &mut UIAnchorPoint) {
+	const ALL: [UIAnchorPoint; 9] = [
+		UIAnchorPoint::TopLeft,
+		UIAnchorPoint::TopCenter,
+		UIAnchorPoint::TopRight,
+		UIAnchorPoint::MiddleLeft,
+		UIAnchorPoint::MiddleCenter,
+		UIAnchorPoint::MiddleRight,
+		UIAnchorPoint::BottomLeft,
+		UIAnchorPoint::BottomCenter,
+		UIAnchorPoint::BottomRight,
+	];
+
+	egui::ComboBox::from_label("Anchor Point")
+		.selected_text(ui_anchor_point_label(*anchor_point))
+		.show_ui(ui, |ui| {
+			for candidate in ALL {
+				field_edit.include(response_field_edit(&ui.selectable_value(
+					anchor_point,
+					candidate,
+					ui_anchor_point_label(candidate),
+				)));
+			}
+		});
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ColliderShapeKind {
 	Box,
@@ -2743,6 +2802,7 @@ impl InspectorPanel {
 			field_edit.include(drag_f32(ui, "Font Size", &mut button.font_size));
 
 			show_ui_anchor_mode_combo(ui, &mut field_edit, &mut button.anchor_mode);
+			show_ui_anchor_point_combo(ui, &mut field_edit, &mut button.rect.anchor_point);
 
 			ui.horizontal(|ui| {
 				ui.label("X");
@@ -2833,6 +2893,7 @@ impl InspectorPanel {
 			field_edit.include(drag_f32(ui, "Max", &mut bar.max));
 
 			show_ui_anchor_mode_combo(ui, &mut field_edit, &mut bar.anchor_mode);
+			show_ui_anchor_point_combo(ui, &mut field_edit, &mut bar.rect.anchor_point);
 
 			ui.horizontal(|ui| {
 				ui.label("X");
@@ -2938,6 +2999,7 @@ impl InspectorPanel {
 			});
 
 			show_ui_anchor_mode_combo(ui, &mut field_edit, &mut text_component.anchor_mode);
+			show_ui_anchor_point_combo(ui, &mut field_edit, &mut text_component.rect.anchor_point);
 
 			ui.horizontal(|ui| {
 				ui.label("X");
@@ -3042,6 +3104,7 @@ impl InspectorPanel {
 			}
 
 			show_ui_anchor_mode_combo(ui, &mut field_edit, &mut image.anchor_mode);
+			show_ui_anchor_point_combo(ui, &mut field_edit, &mut image.rect.anchor_point);
 
 			ui.horizontal(|ui| {
 				ui.label("X");
