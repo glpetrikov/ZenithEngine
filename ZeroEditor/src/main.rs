@@ -47,7 +47,8 @@ use ze_physics::PhysicsSystem;
 use ze_project::Project;
 use ze_renderer::{Camera, CameraProjection, CameraViewSystem, CompositeMode, RenderSystem, Renderer};
 use ze_scripting_cs::{
-	SHUTDOWN_REQUESTED, ScriptingSceneLoadCommand, ScriptingSystem, drain_scripting_scene_load_commands,
+	CursorApiCommand, SHUTDOWN_REQUESTED, ScriptingCursorGrabMode, ScriptingSceneLoadCommand, ScriptingSystem,
+	drain_cursor_commands, drain_scripting_scene_load_commands,
 };
 use ze_ui::{UISystem, UiManagerHandle};
 
@@ -896,6 +897,8 @@ impl ApplicationHandler for EditorApp {
 						return;
 					}
 
+					apply_editor_cursor_commands(&window, game_running);
+
 					let scene_infos = scene_manager.scene_infos();
 					let has_dirty_scenes = scene_manager.has_dirty_scenes();
 					let Some(scene) = scene_manager.active_scene_mut() else {
@@ -1627,6 +1630,34 @@ thumbs.db
 	const fn mark_save_failed(&mut self) {
 		if let Some(editor_flow) = &mut self.editor_flow {
 			editor_flow.mark_save_failed();
+		}
+	}
+}
+
+/// Applies cursor visibility/grab requests queued by C# scripts to the editor
+/// window while in Play mode. Outside Play mode no scripts run, so the queue is
+/// just drained-and-discarded to keep it from growing.
+fn apply_editor_cursor_commands(window: &Window, game_running: bool) {
+	let commands = drain_cursor_commands();
+	if !game_running {
+		return;
+	}
+	for command in commands {
+		match command {
+			CursorApiCommand::SetVisible(visible) => window.set_cursor_visible(visible),
+			CursorApiCommand::SetGrabMode(mode) => match mode {
+				ScriptingCursorGrabMode::None => {
+					let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
+				}
+				ScriptingCursorGrabMode::Confined => {
+					let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Confined);
+				}
+				ScriptingCursorGrabMode::Locked => {
+					let _ = window
+						.set_cursor_grab(winit::window::CursorGrabMode::Locked)
+						.or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Confined));
+				}
+			},
 		}
 	}
 }

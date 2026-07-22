@@ -21,6 +21,17 @@ public static unsafe class Physics
 
     public static void Add2DImpulse(ulong entity, float x, float y) => EngineAPI.Current->add_2d_impulse(entity, x, y);
 
+    public static void SetVelocity(ulong entity, Vector2 velocity) =>
+        EngineAPI.Current->set_velocity(entity, velocity.X, velocity.Y);
+
+    // Default range for the no-distance overload. Large enough to cross any
+    // sane 2D scene while still finite, so the native side's `max_distance > 0`
+    // guard and ray normalization behave predictably.
+    public const float DefaultRaycastDistance = 1_000_000.0f;
+
+    public static bool Raycast(Vector2 origin, Vector2 direction, out RaycastHit hit) =>
+        Raycast(origin, direction, DefaultRaycastDistance, out hit);
+
     public static bool Raycast(Vector2 origin, Vector2 direction, float maxDistance, out RaycastHit hit)
     {
         float pointX = 0.0f, pointY = 0.0f;

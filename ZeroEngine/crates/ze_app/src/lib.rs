@@ -24,8 +24,8 @@ use ze_renderer::{
 	Camera, CameraViewSystem, EditorCameraSystem, RenderStatus, RenderSystem, register_renderer_components,
 };
 use ze_scripting_cs::{
-	SHUTDOWN_REQUESTED, ScriptingSceneLoadCommand, ScriptingSystem, drain_scripting_scene_load_commands,
-	register_scripting_components,
+	CursorApiCommand, SHUTDOWN_REQUESTED, ScriptingCursorGrabMode, ScriptingSceneLoadCommand, ScriptingSystem,
+	drain_cursor_commands, drain_scripting_scene_load_commands, register_scripting_components,
 };
 use ze_ui::{UISystem, register_ui_components, ui_manager::UiManagerHandle};
 
@@ -538,6 +538,30 @@ fn show_missing_primary_camera_dialog(scene_name: &str) {
 		.show();
 }
 
+/// Drains cursor visibility/grab requests queued by C# scripts and applies them
+/// to the game window. `CursorGrabMode::Locked` falls back to `Confined` where
+/// the platform can't lock (e.g. some X11 setups), matching the startup grab.
+fn apply_cursor_commands(window: &Window) {
+	for command in drain_cursor_commands() {
+		match command {
+			CursorApiCommand::SetVisible(visible) => window.set_cursor_visible(visible),
+			CursorApiCommand::SetGrabMode(mode) => match mode {
+				ScriptingCursorGrabMode::None => {
+					let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
+				}
+				ScriptingCursorGrabMode::Confined => {
+					let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Confined);
+				}
+				ScriptingCursorGrabMode::Locked => {
+					let _ = window
+						.set_cursor_grab(winit::window::CursorGrabMode::Locked)
+						.or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Confined));
+				}
+			},
+		}
+	}
+}
+
 fn exit_for_missing_primary_camera(
 	event_loop: &ActiveEventLoop,
 	dialog_state: &mut MissingPrimaryCameraDialogState,
@@ -622,6 +646,7 @@ impl ApplicationHandler<CustomEvents> for App {
 			if let Err(error) = self.update_active_scene_systems(dt) {
 				ze_log::error!("System update failed: {error:?}");
 			}
+			apply_cursor_commands(&window);
 			window.request_redraw();
 		}
 		if SHUTDOWN_REQUESTED.swap(false, Ordering::SeqCst) {

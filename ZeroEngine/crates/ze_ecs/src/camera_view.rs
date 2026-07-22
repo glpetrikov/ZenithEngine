@@ -92,4 +92,75 @@ impl ActiveCameraView {
 		let screen_y = (1.0 - ndc.y.mul_add(0.5, 0.5)) * self.viewport_size.y;
 		Some(Vec2::new(screen_x, screen_y))
 	}
+
+	/// Inverse of [`project_to_screen`](Self::project_to_screen): maps a
+	/// screen-space pixel coordinate (origin top-left, +Y down) back onto the
+	/// world-space `z = 0` plane. Intended for 2D cursor picking, where the
+	/// camera is orthographic and every relevant object lives on that plane.
+	/// Returns `None` if the viewport has zero size or the view-projection is
+	/// non-invertible.
+	pub fn unproject_to_world(&self, screen_pos: Vec2) -> Option<Vec2> {
+		use ze_core::Vec4;
+
+		if self.viewport_size.x <= 0.0 || self.viewport_size.y <= 0.0 {
+			return None;
+		}
+
+		let ndc_x = (screen_pos.x / self.viewport_size.x).mul_add(2.0, -1.0);
+		let ndc_y = -(screen_pos.y / self.viewport_size.y).mul_add(2.0, -1.0);
+
+		let inverse = self.view_projection.inverse();
+		if !inverse.is_finite() {
+			return None;
+		}
+
+		let world = inverse * Vec4::new(ndc_x, ndc_y, 0.0, 1.0);
+		if world.w.abs() <= f32::EPSILON {
+			return None;
+		}
+
+		Some(Vec2::new(world.x / world.w, world.y / world.w))
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use ze_core::{Mat4, Vec2, Vec3};
+
+	use super::ActiveCameraView;
+
+	#[test]
+	fn unproject_is_inverse_of_project() {
+		let camera = ActiveCameraView {
+			view_projection: Mat4::orthographic_rh(-10.0, 10.0, -10.0, 10.0, -1.0, 1.0),
+			viewport_size: Vec2::new(200.0, 100.0),
+		};
+
+		let world = Vec3::new(2.5, -3.0, 0.0);
+		let screen = camera.project_to_screen(world).expect("point projects");
+		let round_tripped = camera.unproject_to_world(screen).expect("point unprojects");
+
+		assert!(
+			(round_tripped.x - world.x).abs() < 1e-3,
+			"x: {} vs {}",
+			round_tripped.x,
+			world.x
+		);
+		assert!(
+			(round_tripped.y - world.y).abs() < 1e-3,
+			"y: {} vs {}",
+			round_tripped.y,
+			world.y
+		);
+	}
+
+	#[test]
+	fn unproject_rejects_zero_viewport() {
+		let camera = ActiveCameraView {
+			view_projection: Mat4::IDENTITY,
+			viewport_size: Vec2::ZERO,
+		};
+
+		assert!(camera.unproject_to_world(Vec2::new(10.0, 10.0)).is_none());
+	}
 }

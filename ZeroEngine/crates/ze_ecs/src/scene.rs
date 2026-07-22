@@ -177,6 +177,39 @@ impl Scene {
 		}
 	}
 
+	/// Spawns a new entity that is a component-for-component copy of
+	/// `template`.
+	///
+	/// Every registered component on the template is serialized and re-loaded
+	/// onto the fresh entity, so the clone starts life with identical component
+	/// values. Hierarchy links (`Parent`/`Children`) are deliberately skipped
+	/// so the clone is a free-standing root rather than silently sharing the
+	/// template's parent or being registered as a child that nothing points to.
+	///
+	/// Returns `None` when the template has no serializable components (e.g. it
+	/// was already destroyed), so callers can distinguish a real clone from a
+	/// no-op.
+	pub fn clone_entity(&mut self, template: EntityId) -> Option<EntityId> {
+		let saved = self.registry.save_entity(template, &self.world);
+		if saved.components.is_empty() {
+			return None;
+		}
+
+		let new_entity = self.world.add_entity((Name {
+			name: "Entity".to_string(),
+		},));
+		for component in saved.components {
+			if component.component_type == "ze.parent" || component.component_type == "ze.children" {
+				continue;
+			}
+			// Best-effort: a component that fails to round-trip just doesn't make
+			// it onto the clone rather than aborting the whole copy.
+			let _ = self.registry.load_component(new_entity, &mut self.world, component);
+		}
+
+		Some(new_entity)
+	}
+
 	pub fn descendant_entities(&self, root: EntityId) -> Vec<EntityId> {
 		let mut entities = vec![root];
 		let mut index = 0usize;
@@ -553,6 +586,38 @@ mod tests {
 		);
 
 		(scene, parent, child)
+	}
+
+	#[test]
+	fn clone_entity_copies_components_onto_a_new_entity() {
+		let mut scene = Scene::new("Clone Test");
+		let template = scene.create_entity("Template");
+		scene.world_mut().add_component(
+			template,
+			(Transform {
+				position: Vec3::new(3.0, 4.0, 0.0),
+				..Transform::default()
+			},),
+		);
+
+		let clone = scene.clone_entity(template).expect("template has components to clone");
+
+		assert_ne!(clone, template);
+		let cloned_transform = scene.world().get::<&Transform>(clone).expect("clone has a transform");
+		assert!((cloned_transform.position.x - 3.0).abs() < f32::EPSILON);
+		assert!((cloned_transform.position.y - 4.0).abs() < f32::EPSILON);
+		// Original stays intact.
+		assert!(scene.world().get::<&Name>(template).is_ok());
+	}
+
+	#[test]
+	fn clone_entity_skips_parent_and_children_links() {
+		let (mut scene, parent, child) = parent_child_scene();
+
+		let clone = scene.clone_entity(child).expect("child has components to clone");
+
+		assert!(scene.world().get::<&Parent>(clone).is_err());
+		assert!(scene.world().get::<&Children>(parent).is_ok());
 	}
 
 	#[test]

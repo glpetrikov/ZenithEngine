@@ -51,6 +51,18 @@ public unsafe struct EngineAPI
     public delegate* unmanaged[Cdecl]<byte*, int, void> log_debug;
     public delegate* unmanaged[Cdecl]<void> quit_game;
     public delegate* unmanaged[Cdecl]<ulong, byte*, int, void> set_animator_state;
+    public delegate* unmanaged[Cdecl]<ulong, float, float, void> set_velocity;
+    public delegate* unmanaged[Cdecl]<byte*, int, ulong> find_entity_by_name;
+    public delegate* unmanaged[Cdecl]<byte*, int, ulong> find_entity_by_tag;
+    public delegate* unmanaged[Cdecl]<byte*, int, ulong*, int, int> find_entities_by_tag;
+    public delegate* unmanaged[Cdecl]<uint, ulong> find_entity_by_id;
+    public delegate* unmanaged[Cdecl]<ulong, float, float, float, ulong*, bool> instantiate_entity;
+    public delegate* unmanaged[Cdecl]<ulong, void> destroy_entity;
+    public delegate* unmanaged[Cdecl]<ulong, uint, void> add_component;
+    public delegate* unmanaged[Cdecl]<ulong, uint, void> remove_component;
+    public delegate* unmanaged[Cdecl]<float*, float*, void> get_mouse_world_position;
+    public delegate* unmanaged[Cdecl]<int, void> set_cursor_visible;
+    public delegate* unmanaged[Cdecl]<int, void> set_cursor_grab_mode;
 
     private static EngineAPI* current;
     private static bool consoleRedirected;

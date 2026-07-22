@@ -19,6 +19,7 @@ public sealed unsafe class Rigidbody : ZEComponent
             EngineAPI.Current->get_velocity(EntityId, &x, &y);
             return new Vector2(x, y);
         }
+        set => EngineAPI.Current->set_velocity(EntityId, value.X, value.Y);
     }
 
     public void Add2DForce(float x, float y, ForceMode mode = ForceMode.Impulse)

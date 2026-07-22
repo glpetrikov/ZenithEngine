@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -28,11 +29,18 @@ public abstract class ZEScript
     // callbacks without requiring the script to call IsClicked() itself.
     private readonly List<ZEComponent> _boundComponents = new();
 
+    // Coroutines started on this script instance, advanced once per update /
+    // fixed-update tick (see TickCoroutines) and torn down in OnDestroy.
+    private readonly List<Coroutine> _coroutines = new();
+
     public ulong EntityId { get; protected set; }
 
     public uint EntityIndex => (uint)(EntityId & 0xFFFFFFFF);
 
     public uint EntityGeneration => (uint)(EntityId >> 32);
+
+    /// A handle to this script's own entity.
+    protected Entity Self => new(EntityId);
 
     public T GetComponent<T>()
         where T : ZEComponent, new()
@@ -57,6 +65,90 @@ public abstract class ZEScript
             component.PollEvents();
         }
     }
+
+    /// Starts a coroutine, Unity-style. The routine advances once per update
+    /// tick (and per fixed-update tick for `WaitForFixedUpdate`), starting on
+    /// the next tick after this call.
+    public Coroutine StartCoroutine(IEnumerator routine)
+    {
+        if (routine is null)
+        {
+            throw new ArgumentNullException(nameof(routine));
+        }
+
+        var handle = new Coroutine(new CoroutineRunner(routine));
+        _coroutines.Add(handle);
+        return handle;
+    }
+
+    public void StopCoroutine(Coroutine coroutine)
+    {
+        if (coroutine is null)
+        {
+            return;
+        }
+
+        coroutine.Runner.Stop();
+        _coroutines.Remove(coroutine);
+    }
+
+    public void StopCoroutine(IEnumerator routine)
+    {
+        if (routine is null)
+        {
+            return;
+        }
+
+        for (int i = _coroutines.Count - 1; i >= 0; i--)
+        {
+            if (ReferenceEquals(_coroutines[i].Runner.Root, routine))
+            {
+                _coroutines[i].Runner.Stop();
+                _coroutines.RemoveAt(i);
+            }
+        }
+    }
+
+    public void StopAllCoroutines()
+    {
+        foreach (var coroutine in _coroutines)
+        {
+            coroutine.Runner.Stop();
+        }
+
+        _coroutines.Clear();
+    }
+
+    private void TickCoroutines(bool isFixed)
+    {
+        if (_coroutines.Count == 0)
+        {
+            return;
+        }
+
+        // Iterate a snapshot so a coroutine that starts or stops another during
+        // its step doesn't disturb this pass.
+        var snapshot = _coroutines.ToArray();
+        foreach (var coroutine in snapshot)
+        {
+            if (!coroutine.IsDone)
+            {
+                coroutine.Runner.Tick(isFixed);
+            }
+        }
+
+        _coroutines.RemoveAll(coroutine => coroutine.IsDone);
+    }
+
+    /// Spawns a component-for-component copy of `template` at the given position
+    /// and rotation (degrees). See <see cref="Entity.Instantiate(Entity, Vector2, float)"/>.
+    public static Entity Instantiate(Entity template, Vector2 position, float rotation) =>
+        Entity.Instantiate(template, position, rotation);
+
+    public static Entity Instantiate(Entity template, Vector2 position) =>
+        Entity.Instantiate(template, position);
+
+    public static Entity Instantiate(Entity template) => Entity.Instantiate(template);
 
     public virtual void OnCreate() { }
 
@@ -240,6 +332,7 @@ public abstract class ZEScript
             var key = InstanceKey(entityId, classPath);
             if (_instances.Remove(key, out var instance))
             {
+                instance.StopAllCoroutines();
                 instance.OnDestroy();
             }
         }
@@ -258,6 +351,7 @@ public abstract class ZEScript
             var instance = Lookup(entityId, classPath);
             instance.PollBoundComponents();
             instance.OnUpdate();
+            instance.TickCoroutines(isFixed: false);
         }
         catch (Exception ex)
         {
@@ -271,7 +365,9 @@ public abstract class ZEScript
         try
         {
             var classPath = Encoding.UTF8.GetString(classPathPtr, classPathLength);
-            Lookup(entityId, classPath).OnFixedUpdate();
+            var instance = Lookup(entityId, classPath);
+            instance.OnFixedUpdate();
+            instance.TickCoroutines(isFixed: true);
         }
         catch (Exception ex)
         {

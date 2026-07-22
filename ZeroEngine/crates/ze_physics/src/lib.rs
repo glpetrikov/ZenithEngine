@@ -10,8 +10,8 @@ use ze_ecs::{
 	RigidBodyType, Scene, System, Transform,
 };
 use ze_scripting_cs::{
-	RaycastHit2D, ScriptingApiCommand, ScriptingRuntimeHandle, clear_raycast_provider, drain_scripting_api_commands,
-	refresh_scripting_api_velocity_cache, set_raycast_provider,
+	RaycastHit2D, SceneProviderGuard, ScriptingApiCommand, ScriptingRuntimeHandle, clear_raycast_provider,
+	drain_scripting_api_commands, refresh_scripting_api_velocity_cache, set_raycast_provider,
 };
 
 pub const DEFAULT_GRAVITY: Vec2 = Vec2::new(0.0, -9.81);
@@ -107,6 +107,17 @@ impl PhysicsWorld {
 		};
 
 		body.apply_impulse(Vector::new(impulse.x, impulse.y), true);
+	}
+
+	pub fn set_velocity(&mut self, entity: EntityId, velocity: Vec2) {
+		let Some(entry) = self.entity_bodies.get(&entity).copied() else {
+			return;
+		};
+		let Some(body) = self.rigid_bodies.get_mut(entry.handle) else {
+			return;
+		};
+
+		body.set_linvel(Vector::new(velocity.x, velocity.y), true);
 	}
 
 	pub fn reset_forces(&mut self) {
@@ -446,7 +457,13 @@ impl System for PhysicsSystem {
 				fixed_update_result?;
 
 				self.apply_scripting_api_commands();
-				self.dispatch_script_collision_events(&scripting, collision_events);
+				{
+					// Contact/sensor handlers run outside `scripting.fixed_update`, so
+					// re-expose the scene to entity-manipulation FFI for their duration
+					// (e.g. spawning an explosion or destroying a bullet on impact).
+					let _scene_guard = SceneProviderGuard::new(scene);
+					self.dispatch_script_collision_events(&scripting, collision_events);
+				}
 				self.apply_scripting_api_commands();
 			}
 
@@ -468,6 +485,9 @@ impl PhysicsSystem {
 				}
 				ScriptingApiCommand::Add2DImpulse { entity, x, y } => {
 					self.world.add_2d_impulse(entity, Vec2::new(x, y));
+				}
+				ScriptingApiCommand::SetVelocity { entity, x, y } => {
+					self.world.set_velocity(entity, Vec2::new(x, y));
 				}
 			}
 		}

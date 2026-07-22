@@ -89,6 +89,18 @@ pub struct EngineAPI {
 	pub log_debug: extern "C" fn(*const u8, i32),
 	pub quit_game: extern "C" fn(),
 	pub set_animator_state: extern "C" fn(u64, *const u8, i32),
+	pub set_velocity: extern "C" fn(u64, f32, f32),
+	pub find_entity_by_name: extern "C" fn(*const u8, i32) -> u64,
+	pub find_entity_by_tag: extern "C" fn(*const u8, i32) -> u64,
+	pub find_entities_by_tag: extern "C" fn(*const u8, i32, *mut u64, i32) -> i32,
+	pub find_entity_by_id: extern "C" fn(u32) -> u64,
+	pub instantiate_entity: extern "C" fn(u64, f32, f32, f32, *mut u64) -> bool,
+	pub destroy_entity: extern "C" fn(u64),
+	pub add_component: extern "C" fn(u64, u32),
+	pub remove_component: extern "C" fn(u64, u32),
+	pub get_mouse_world_position: extern "C" fn(*mut f32, *mut f32),
+	pub set_cursor_visible: extern "C" fn(i32),
+	pub set_cursor_grab_mode: extern "C" fn(i32),
 }
 
 pub static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
@@ -172,6 +184,18 @@ static ENGINE_API: EngineAPI = EngineAPI {
 	log_debug: api::log_debug,
 	quit_game: api::quit_game,
 	set_animator_state: api::set_animator_state,
+	set_velocity: api::set_velocity,
+	find_entity_by_name: api::find_entity_by_name,
+	find_entity_by_tag: api::find_entity_by_tag,
+	find_entities_by_tag: api::find_entities_by_tag,
+	find_entity_by_id: api::find_entity_by_id,
+	instantiate_entity: api::instantiate_entity,
+	destroy_entity: api::destroy_entity,
+	add_component: api::add_component,
+	remove_component: api::remove_component,
+	get_mouse_world_position: api::get_mouse_world_position,
+	set_cursor_visible: api::set_cursor_visible,
+	set_cursor_grab_mode: api::set_cursor_grab_mode,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -1227,6 +1251,30 @@ pub fn clear_raycast_provider() { RAYCAST_PROVIDER.with(|cell| cell.set(None)); 
 pub enum ScriptingApiCommand {
 	Add2DForce { entity: EntityId, x: f32, y: f32 },
 	Add2DImpulse { entity: EntityId, x: f32, y: f32 },
+	SetVelocity { entity: EntityId, x: f32, y: f32 },
+}
+
+/// How the OS cursor should be constrained to the window.
+///
+/// Mirrors C#'s `Input.CursorGrabMode`. Drained via [`drain_cursor_commands`]
+/// and applied by whichever shell owns the winit window (the standalone app or
+/// the editor).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptingCursorGrabMode {
+	None,
+	Confined,
+	Locked,
+}
+
+/// Cursor visibility/grab requests queued by C# scripts, drained by the window
+/// owner.
+///
+/// Modelled as discrete commands (rather than polled state) so a script that
+/// never touches the cursor leaves the shell's own defaults alone.
+#[derive(Debug, Clone, Copy)]
+pub enum CursorApiCommand {
+	SetVisible(bool),
+	SetGrabMode(ScriptingCursorGrabMode),
 }
 
 /// Fire-and-forget audio commands queued by C# scripts.
@@ -1358,10 +1406,37 @@ pub fn refresh_scripting_api_audio_playing_cache(playing: impl IntoIterator<Item
 
 pub fn drain_scripting_scene_load_commands() -> Vec<ScriptingSceneLoadCommand> { api::drain_scene_load_commands() }
 
+pub fn drain_cursor_commands() -> Vec<CursorApiCommand> { api::drain_cursor_commands() }
+
 fn drain_scripting_scene_commands() -> Vec<ScriptingSceneCommand> { api::drain_scene_commands() }
 
 pub fn sync_scene_script_fields(scene: &mut Scene, runtime: &ScriptingRuntimeHandle) -> Result<usize> {
 	runtime.sync_scene_script_fields(scene)
+}
+
+/// RAII guard that makes `scene` reachable from the C# FFI callbacks for as
+/// long as it is held, and disconnects it on drop.
+///
+/// While C# scripts run they are driven synchronously and single-threaded from
+/// Rust, and the outer `&mut Scene` borrow is parked on the stack (not touched)
+/// for the duration of each callback -- the same reentrancy story as the
+/// raycast provider. Construct one around a block that will call into C# (a
+/// script tick or a collision dispatch) so entity-manipulation FFI
+/// (`Instantiate`, `Destroy`, `AddComponent`, ...) can operate on the real
+/// scene.
+pub struct SceneProviderGuard {
+	_private: (),
+}
+
+impl SceneProviderGuard {
+	pub fn new(scene: &mut Scene) -> Self {
+		api::set_scene_provider(std::ptr::from_mut(scene));
+		Self { _private: () }
+	}
+}
+
+impl Drop for SceneProviderGuard {
+	fn drop(&mut self) { api::clear_scene_provider(); }
 }
 
 struct ScriptInstance {
@@ -1509,6 +1584,10 @@ impl ScriptingRuntime {
 	fn update(&mut self, scene: &mut Scene, dt: f32) -> Result<()> {
 		self.ensure_engine_loaded()?;
 		api::begin_update(dt);
+		// Expose the live scene to FFI callbacks (Instantiate/Destroy/AddComponent/
+		// GetMouseWorldPosition) for the duration of this tick; cleared on drop even
+		// on the early-return paths below.
+		let _scene_guard = SceneProviderGuard::new(scene);
 		api::refresh_scene_cache(scene);
 		if self.needs_scene_script_field_sync(scene) {
 			self.sync_scene_script_fields(scene)?;
@@ -1536,6 +1615,7 @@ impl ScriptingRuntime {
 	fn fixed_update(&mut self, scene: &mut Scene, dt: f32) -> Result<()> {
 		self.ensure_engine_loaded()?;
 		api::begin_fixed_update(dt);
+		let _scene_guard = SceneProviderGuard::new(scene);
 		api::refresh_scene_cache(scene);
 		if self.needs_scene_script_field_sync(scene) {
 			self.sync_scene_script_fields(scene)?;
@@ -2277,17 +2357,22 @@ mod api {
 
 	use ze_core::Vec2;
 	use ze_ecs::{
-		Animator, AudioSource, Children, Collider, EntitiesView, EntityId, Inactive, Name, Parent, PhysicsSettings,
-		RigidBody, Scene, Tag, Transform,
+		ActiveCameraView, Animator, AudioSource, Children, Collider, EntitiesView, EntityId, Inactive, Name, Parent,
+		PhysicsSettings, RigidBody, Scene, Tag, Transform, shipyard::UniqueView,
 	};
 	use ze_input::{Input, ZKeyCode, ZMouseCode};
 	use ze_renderer::{Camera, Sprite};
 	use ze_ui::{UIBar, UIButton, UIImage, UIText};
 
 	use crate::{
-		AnimatorApiCommand, AudioApiCommand, RAYCAST_PROVIDER, ScriptingApiCommand, ScriptingSceneCommand,
-		ScriptingSceneLoadCommand, ScriptingTimeState, Scripts, entity_id_to_script_arg, script_arg_to_entity_id,
+		AnimatorApiCommand, AudioApiCommand, CursorApiCommand, RAYCAST_PROVIDER, ScriptingApiCommand,
+		ScriptingCursorGrabMode, ScriptingSceneCommand, ScriptingSceneLoadCommand, ScriptingTimeState, Scripts,
+		entity_id_to_script_arg, script_arg_to_entity_id,
 	};
+
+	/// Sentinel returned by the entity-lookup FFI functions when no entity
+	/// matches; mirrors `Entity.Null` on the C# side.
+	const INVALID_ENTITY: u64 = u64::MAX;
 
 	#[derive(Default)]
 	struct ApiState {
@@ -2296,12 +2381,16 @@ mod api {
 		animator_commands: Vec<AnimatorApiCommand>,
 		scene_load_commands: Vec<ScriptingSceneLoadCommand>,
 		scene_commands: Vec<ScriptingSceneCommand>,
+		cursor_commands: Vec<CursorApiCommand>,
 		components: HashSet<(EntityId, ComponentKind)>,
 		transform_positions: HashMap<EntityId, (f32, f32)>,
 		velocities: HashMap<EntityId, (f32, f32)>,
 		sprite_texture_rotations: HashMap<EntityId, f32>,
 		button_clicked: HashMap<EntityId, bool>,
 		audio_playing: HashMap<EntityId, bool>,
+		names: HashMap<String, EntityId>,
+		tags: HashMap<String, Vec<EntityId>>,
+		entities_by_index: HashMap<u32, EntityId>,
 	}
 
 	struct TimeStateCell(UnsafeCell<ScriptingTimeState>);
@@ -2334,10 +2423,33 @@ mod api {
 
 	thread_local! {
 		static API_STATE: RefCell<ApiState> = RefCell::new(ApiState::default());
+		// Raw pointer to the scene currently being ticked, set by `SceneProviderGuard`
+		// for the span of each C# callback so entity-manipulation FFI can reach the
+		// live world. `None` outside a script tick.
+		static SCENE_PROVIDER: Cell<Option<*mut Scene>> = const { Cell::new(None) };
+	}
+
+	pub fn set_scene_provider(scene: *mut Scene) { SCENE_PROVIDER.with(|cell| cell.set(Some(scene))); }
+
+	pub fn clear_scene_provider() { SCENE_PROVIDER.with(|cell| cell.set(None)); }
+
+	/// Runs `f` against the scene currently being ticked, if any.
+	///
+	/// # Safety contract
+	/// Relies on the invariant upheld by `SceneProviderGuard`: the pointer is
+	/// only ever set to a `&mut Scene` that stays valid and untouched by outer
+	/// Rust code for the duration of the synchronous C# callback that reaches
+	/// this function.
+	fn with_scene<R>(f: impl FnOnce(&mut Scene) -> R) -> Option<R> {
+		SCENE_PROVIDER.with(Cell::get).map(|ptr| f(unsafe { &mut *ptr }))
 	}
 
 	pub fn drain_commands() -> Vec<ScriptingApiCommand> {
 		API_STATE.with(|state| state.borrow_mut().commands.drain(..).collect())
+	}
+
+	pub fn drain_cursor_commands() -> Vec<CursorApiCommand> {
+		API_STATE.with(|state| state.borrow_mut().cursor_commands.drain(..).collect())
 	}
 
 	pub fn drain_audio_commands() -> Vec<AudioApiCommand> {
@@ -2388,14 +2500,21 @@ mod api {
 		let mut transform_positions = HashMap::new();
 		let mut sprite_texture_rotations = HashMap::new();
 		let mut button_clicked = HashMap::new();
+		let mut names = HashMap::new();
+		let mut tags: HashMap<String, Vec<EntityId>> = HashMap::new();
+		let mut entities_by_index = HashMap::new();
 
 		world.run(|entities: EntitiesView| {
 			for entity in entities.iter() {
-				if world.get::<&Name>(entity).is_ok() {
+				entities_by_index.insert((entity.index() & 0xffff_ffff) as u32, entity);
+				if let Ok(name) = world.get::<&Name>(entity) {
 					components.insert((entity, ComponentKind::Name));
+					// First writer wins so `Find` is stable when names collide.
+					names.entry(name.name.clone()).or_insert(entity);
 				}
-				if world.get::<&Tag>(entity).is_ok() {
+				if let Ok(tag) = world.get::<&Tag>(entity) {
 					components.insert((entity, ComponentKind::Tag));
+					tags.entry(tag.tag.clone()).or_default().push(entity);
 				}
 				if world.get::<&Transform>(entity).is_ok() {
 					components.insert((entity, ComponentKind::Transform));
@@ -2465,6 +2584,9 @@ mod api {
 			state.transform_positions = transform_positions;
 			state.sprite_texture_rotations = sprite_texture_rotations;
 			state.button_clicked = button_clicked;
+			state.names = names;
+			state.tags = tags;
+			state.entities_by_index = entities_by_index;
 		});
 	}
 
@@ -2569,6 +2691,14 @@ mod api {
 
 	pub extern "C" fn add_2d_impulse(entity: u64, x: f32, y: f32) {
 		push_command(ScriptingApiCommand::Add2DImpulse {
+			entity: script_arg_to_entity_id(entity),
+			x,
+			y,
+		});
+	}
+
+	pub extern "C" fn set_velocity(entity: u64, x: f32, y: f32) {
+		push_command(ScriptingApiCommand::SetVelocity {
 			entity: script_arg_to_entity_id(entity),
 			x,
 			y,
@@ -2853,6 +2983,211 @@ mod api {
 		push_animator_command(AnimatorApiCommand::SetState { entity, state });
 	}
 
+	pub extern "C" fn find_entity_by_name(name: *const u8, len: i32) -> u64 {
+		let Some(name) = read_utf8(name, len) else {
+			ze_log::error!(target: "zeroengine.script", "script Entity.Find bridge received an invalid name buffer");
+			return INVALID_ENTITY;
+		};
+		API_STATE.with(|state| {
+			state
+				.borrow()
+				.names
+				.get(&name)
+				.map_or(INVALID_ENTITY, |entity| entity_id_to_script_arg(*entity))
+		})
+	}
+
+	pub extern "C" fn find_entity_by_tag(tag: *const u8, len: i32) -> u64 {
+		let Some(tag) = read_utf8(tag, len) else {
+			ze_log::error!(target: "zeroengine.script", "script Entity.FindWithTag bridge received an invalid tag buffer");
+			return INVALID_ENTITY;
+		};
+		API_STATE.with(|state| {
+			state
+				.borrow()
+				.tags
+				.get(&tag)
+				.and_then(|entities| entities.first())
+				.map_or(INVALID_ENTITY, |entity| entity_id_to_script_arg(*entity))
+		})
+	}
+
+	/// Writes up to `capacity` matching entity ids into `out`, returning the
+	/// total number of matches (which may exceed `capacity` -- the C# side
+	/// calls once with a null/zero buffer to size, then again to fill).
+	pub extern "C" fn find_entities_by_tag(tag: *const u8, len: i32, out: *mut u64, capacity: i32) -> i32 {
+		let Some(tag) = read_utf8(tag, len) else {
+			ze_log::error!(target: "zeroengine.script", "script Entity.FindAllWithTag bridge received an invalid tag buffer");
+			return -1;
+		};
+
+		API_STATE.with(|state| {
+			let state = state.borrow();
+			let Some(entities) = state.tags.get(&tag) else {
+				return 0;
+			};
+
+			if !out.is_null() && capacity > 0 {
+				let writable = usize::min(entities.len(), capacity as usize);
+				for (index, entity) in entities.iter().take(writable).enumerate() {
+					unsafe {
+						*out.add(index) = entity_id_to_script_arg(*entity);
+					}
+				}
+			}
+
+			i32::try_from(entities.len()).unwrap_or(i32::MAX)
+		})
+	}
+
+	pub extern "C" fn find_entity_by_id(index: u32) -> u64 {
+		API_STATE.with(|state| {
+			state
+				.borrow()
+				.entities_by_index
+				.get(&index)
+				.map_or(INVALID_ENTITY, |entity| entity_id_to_script_arg(*entity))
+		})
+	}
+
+	pub extern "C" fn instantiate_entity(
+		template: u64,
+		pos_x: f32,
+		pos_y: f32,
+		rotation_degrees: f32,
+		out_entity: *mut u64,
+	) -> bool {
+		let template = script_arg_to_entity_id(template);
+		let new_entity = with_scene(|scene| {
+			let new_entity = scene.clone_entity(template)?;
+			if let Ok(mut transform) = scene.world_mut().get::<&mut Transform>(new_entity) {
+				transform.position.x = pos_x;
+				transform.position.y = pos_y;
+				transform.rotation = ze_core::Quat::from_rotation_z(rotation_degrees.to_radians());
+			}
+			Some(new_entity)
+		})
+		.flatten();
+
+		if !out_entity.is_null() {
+			unsafe {
+				*out_entity = new_entity.map_or(INVALID_ENTITY, entity_id_to_script_arg);
+			}
+		}
+
+		new_entity.is_some()
+	}
+
+	pub extern "C" fn destroy_entity(entity: u64) {
+		let entity = script_arg_to_entity_id(entity);
+		with_scene(|scene| scene.destroy_entity(entity));
+	}
+
+	pub extern "C" fn add_component(entity: u64, component_type: u32) {
+		let entity = script_arg_to_entity_id(entity);
+		let Some(kind) = component_kind_from_u32(component_type) else {
+			return;
+		};
+		with_scene(|scene| add_default_component(scene, entity, kind));
+	}
+
+	pub extern "C" fn remove_component(entity: u64, component_type: u32) {
+		let entity = script_arg_to_entity_id(entity);
+		let Some(kind) = component_kind_from_u32(component_type) else {
+			return;
+		};
+		with_scene(|scene| remove_component_of_kind(scene, entity, kind));
+	}
+
+	pub extern "C" fn get_mouse_world_position(out_x: *mut f32, out_y: *mut f32) {
+		if out_x.is_null() || out_y.is_null() {
+			return;
+		}
+
+		let screen = Input::get_mouse_pos();
+		let world = with_scene(|scene| {
+			scene
+				.world()
+				.borrow::<UniqueView<ActiveCameraView>>()
+				.ok()
+				.and_then(|camera| camera.unproject_to_world(screen))
+		})
+		.flatten();
+
+		// No active camera view yet -> fall back to raw screen coordinates rather
+		// than lying with (0, 0).
+		let position = world.unwrap_or(screen);
+		write_position(out_x, out_y, position.x, position.y);
+	}
+
+	pub extern "C" fn set_cursor_visible(visible: i32) {
+		push_cursor_command(CursorApiCommand::SetVisible(visible != 0));
+	}
+
+	pub extern "C" fn set_cursor_grab_mode(mode: i32) {
+		let mode = match mode {
+			1 => ScriptingCursorGrabMode::Confined,
+			2 => ScriptingCursorGrabMode::Locked,
+			_ => ScriptingCursorGrabMode::None,
+		};
+		push_cursor_command(CursorApiCommand::SetGrabMode(mode));
+	}
+
+	/// Adds a default-constructed component of `kind` to `entity`. Only the
+	/// component kinds that have a meaningful zero-argument default are
+	/// supported; the rest (sprites, cameras, UI widgets, hierarchy links)
+	/// carry data that a script can't sensibly conjure, so they are logged and
+	/// skipped.
+	fn add_default_component(scene: &mut Scene, entity: EntityId, kind: ComponentKind) {
+		let world = scene.world_mut();
+		match kind {
+			ComponentKind::Transform => world.add_component(entity, (Transform::default(),)),
+			ComponentKind::Rigidbody => world.add_component(entity, (RigidBody::default(),)),
+			ComponentKind::Collider => world.add_component(entity, (Collider::default(),)),
+			ComponentKind::PhysicsSettings => world.add_component(entity, (PhysicsSettings::default(),)),
+			ComponentKind::Animator => world.add_component(entity, (Animator::default(),)),
+			ComponentKind::Audio => world.add_component(entity, (AudioSource::default(),)),
+			ComponentKind::Inactive => world.add_component(entity, (Inactive,)),
+			ComponentKind::Tag => world.add_component(entity, (Tag { tag: String::new() },)),
+			ComponentKind::Name => world.add_component(entity, (Name { name: String::new() },)),
+			other => {
+				ze_log::warn!(
+					target: "zeroengine.script",
+					"AddComponent is not supported for component kind {other:?}; skipping"
+				);
+			}
+		}
+	}
+
+	fn remove_component_of_kind(scene: &mut Scene, entity: EntityId, kind: ComponentKind) {
+		let world = scene.world_mut();
+		match kind {
+			ComponentKind::Name => drop(world.remove::<(Name,)>(entity)),
+			ComponentKind::Tag => drop(world.remove::<(Tag,)>(entity)),
+			ComponentKind::Transform => drop(world.remove::<(Transform,)>(entity)),
+			ComponentKind::Parent => drop(world.remove::<(Parent,)>(entity)),
+			ComponentKind::Children => drop(world.remove::<(Children,)>(entity)),
+			ComponentKind::Inactive => drop(world.remove::<(Inactive,)>(entity)),
+			ComponentKind::Rigidbody => drop(world.remove::<(RigidBody,)>(entity)),
+			ComponentKind::PhysicsSettings => drop(world.remove::<(PhysicsSettings,)>(entity)),
+			ComponentKind::Collider => drop(world.remove::<(Collider,)>(entity)),
+			ComponentKind::Sprite => drop(world.remove::<(Sprite,)>(entity)),
+			ComponentKind::Camera => drop(world.remove::<(Camera,)>(entity)),
+			ComponentKind::UIButton => drop(world.remove::<(UIButton,)>(entity)),
+			ComponentKind::UIBar => drop(world.remove::<(UIBar,)>(entity)),
+			ComponentKind::UIText => drop(world.remove::<(UIText,)>(entity)),
+			ComponentKind::UIImage => drop(world.remove::<(UIImage,)>(entity)),
+			ComponentKind::Audio => drop(world.remove::<(AudioSource,)>(entity)),
+			ComponentKind::Animator => drop(world.remove::<(Animator,)>(entity)),
+			ComponentKind::Script => {
+				ze_log::warn!(
+					target: "zeroengine.script",
+					"RemoveComponent is not supported for script components; skipping"
+				);
+			}
+		}
+	}
+
 	pub extern "C" fn log_info(message: *const u8, len: i32) {
 		match read_utf8(message, len) {
 			Some(message) => {
@@ -2918,6 +3253,12 @@ mod api {
 	fn push_scene_load_command(command: ScriptingSceneLoadCommand) {
 		API_STATE.with(|state| {
 			state.borrow_mut().scene_load_commands.push(command);
+		});
+	}
+
+	fn push_cursor_command(command: CursorApiCommand) {
+		API_STATE.with(|state| {
+			state.borrow_mut().cursor_commands.push(command);
 		});
 	}
 
@@ -3082,6 +3423,84 @@ mod tests {
 		let script_arg = entity_id_to_script_arg(entity);
 
 		assert_eq!(script_arg_to_entity_id(script_arg), entity);
+	}
+
+	#[test]
+	fn set_velocity_queues_a_command() {
+		let _ = api::drain_commands();
+		let entity = EntityId::new_from_index_and_gen(2, 0);
+
+		api::set_velocity(entity_id_to_script_arg(entity), 1.5, -2.0);
+
+		let commands = api::drain_commands();
+		assert_eq!(commands.len(), 1);
+		match commands[0] {
+			ScriptingApiCommand::SetVelocity { entity: e, x, y } => {
+				assert_eq!(e, entity);
+				assert!((x - 1.5).abs() < f32::EPSILON);
+				assert!((y + 2.0).abs() < f32::EPSILON);
+			}
+			other => panic!("expected SetVelocity, got {other:?}"),
+		}
+	}
+
+	#[test]
+	fn cursor_calls_queue_visibility_and_grab_commands() {
+		let _ = api::drain_cursor_commands();
+
+		api::set_cursor_visible(0);
+		api::set_cursor_grab_mode(2);
+
+		let commands = api::drain_cursor_commands();
+		assert_eq!(commands.len(), 2);
+		assert!(matches!(commands[0], CursorApiCommand::SetVisible(false)));
+		assert!(matches!(
+			commands[1],
+			CursorApiCommand::SetGrabMode(ScriptingCursorGrabMode::Locked)
+		));
+	}
+
+	#[test]
+	fn find_entity_bridges_read_the_scene_cache() {
+		let mut scene = Scene::new("Find Test");
+		let hero = scene.create_entity("Hero");
+		scene.world_mut().add_component(
+			hero,
+			(ze_ecs::Tag {
+				tag: "enemy".to_string(),
+			},),
+		);
+		let goblin = scene.create_entity("Goblin");
+		scene.world_mut().add_component(
+			goblin,
+			(ze_ecs::Tag {
+				tag: "enemy".to_string(),
+			},),
+		);
+
+		api::refresh_scene_cache(&scene);
+
+		let hero_name = b"Hero";
+		assert_eq!(
+			api::find_entity_by_name(hero_name.as_ptr(), i32::try_from(hero_name.len()).expect("length fits in i32")),
+			entity_id_to_script_arg(hero)
+		);
+
+		let missing = b"Nobody";
+		assert_eq!(
+			api::find_entity_by_name(missing.as_ptr(), i32::try_from(missing.len()).expect("length fits in i32")),
+			u64::MAX
+		);
+
+		let tag = b"enemy";
+		assert_eq!(
+			api::find_entities_by_tag(tag.as_ptr(), i32::try_from(tag.len()).expect("length fits in i32"), std::ptr::null_mut(), 0),
+			2
+		);
+
+		let hero_index = u32::try_from(hero.index() & 0xffff_ffff).expect("index fits in u32");
+		assert_eq!(api::find_entity_by_id(hero_index), entity_id_to_script_arg(hero));
+		assert_eq!(api::find_entity_by_id(9_999), u64::MAX);
 	}
 
 	#[test]
