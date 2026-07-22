@@ -109,6 +109,28 @@ impl PhysicsWorld {
 		body.apply_impulse(Vector::new(impulse.x, impulse.y), true);
 	}
 
+	pub fn add_torque(&mut self, entity: EntityId, torque: f32) {
+		let Some(entry) = self.entity_bodies.get(&entity).copied() else {
+			return;
+		};
+		let Some(body) = self.rigid_bodies.get_mut(entry.handle) else {
+			return;
+		};
+
+		body.add_torque(torque, true);
+	}
+
+	pub fn add_torque_impulse(&mut self, entity: EntityId, torque: f32) {
+		let Some(entry) = self.entity_bodies.get(&entity).copied() else {
+			return;
+		};
+		let Some(body) = self.rigid_bodies.get_mut(entry.handle) else {
+			return;
+		};
+
+		body.apply_torque_impulse(torque, true);
+	}
+
 	pub fn set_velocity(&mut self, entity: EntityId, velocity: Vec2) {
 		let Some(entry) = self.entity_bodies.get(&entity).copied() else {
 			return;
@@ -123,6 +145,7 @@ impl PhysicsWorld {
 	pub fn reset_forces(&mut self) {
 		for (_, body) in self.rigid_bodies.iter_mut() {
 			body.reset_forces(false);
+			body.reset_torques(false);
 		}
 	}
 
@@ -488,6 +511,12 @@ impl PhysicsSystem {
 				}
 				ScriptingApiCommand::SetVelocity { entity, x, y } => {
 					self.world.set_velocity(entity, Vec2::new(x, y));
+				}
+				ScriptingApiCommand::AddTorque { entity, torque } => {
+					self.world.add_torque(entity, torque);
+				}
+				ScriptingApiCommand::AddTorqueImpulse { entity, torque } => {
+					self.world.add_torque_impulse(entity, torque);
 				}
 			}
 		}

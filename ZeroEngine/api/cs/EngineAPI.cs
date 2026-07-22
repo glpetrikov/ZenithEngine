@@ -25,6 +25,8 @@ public unsafe struct EngineAPI
     public delegate* unmanaged[Cdecl]<ulong, float, float, void> set_scale;
     public delegate* unmanaged[Cdecl]<ulong, float, float, void> add_2d_force;
     public delegate* unmanaged[Cdecl]<ulong, float, float, void> add_2d_impulse;
+    public delegate* unmanaged[Cdecl]<ulong, float, void> add_torque;
+    public delegate* unmanaged[Cdecl]<ulong, float, void> add_torque_impulse;
     public delegate* unmanaged[Cdecl]<ulong, void> play_audio;
     public delegate* unmanaged[Cdecl]<ulong, void> stop_audio;
     public delegate* unmanaged[Cdecl]<ulong, float, void> set_audio_volume;

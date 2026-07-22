@@ -63,6 +63,8 @@ pub struct EngineAPI {
 	pub set_scale: extern "C" fn(u64, f32, f32),
 	pub add_2d_force: extern "C" fn(u64, f32, f32),
 	pub add_2d_impulse: extern "C" fn(u64, f32, f32),
+	pub add_torque: extern "C" fn(u64, f32),
+	pub add_torque_impulse: extern "C" fn(u64, f32),
 	pub play_audio: extern "C" fn(u64),
 	pub stop_audio: extern "C" fn(u64),
 	pub set_audio_volume: extern "C" fn(u64, f32),
@@ -163,6 +165,8 @@ static ENGINE_API: EngineAPI = EngineAPI {
 	set_scale: api::set_scale,
 	add_2d_force: api::add_2d_force,
 	add_2d_impulse: api::add_2d_impulse,
+	add_torque: api::add_torque,
+	add_torque_impulse: api::add_torque_impulse,
 	play_audio: api::play_audio,
 	stop_audio: api::stop_audio,
 	set_audio_volume: api::set_audio_volume,
@@ -1262,6 +1266,8 @@ pub enum ScriptingApiCommand {
 	Add2DForce { entity: EntityId, x: f32, y: f32 },
 	Add2DImpulse { entity: EntityId, x: f32, y: f32 },
 	SetVelocity { entity: EntityId, x: f32, y: f32 },
+	AddTorque { entity: EntityId, torque: f32 },
+	AddTorqueImpulse { entity: EntityId, torque: f32 },
 }
 
 /// How the OS cursor should be constrained to the window.
@@ -2780,6 +2786,20 @@ mod api {
 			entity: script_arg_to_entity_id(entity),
 			x,
 			y,
+		});
+	}
+
+	pub extern "C" fn add_torque(entity: u64, torque: f32) {
+		push_command(ScriptingApiCommand::AddTorque {
+			entity: script_arg_to_entity_id(entity),
+			torque,
+		});
+	}
+
+	pub extern "C" fn add_torque_impulse(entity: u64, torque: f32) {
+		push_command(ScriptingApiCommand::AddTorqueImpulse {
+			entity: script_arg_to_entity_id(entity),
+			torque,
 		});
 	}
 
