@@ -56,7 +56,11 @@ pub struct EngineAPI {
 	pub get_time_state_ptr: extern "C" fn() -> *const ScriptingTimeState,
 	pub has_component: extern "C" fn(u64, u32) -> bool,
 	pub get_position: extern "C" fn(u64, *mut f32, *mut f32),
-	pub get_velocity: extern "C" fn(u64, *mut f32, *mut f32),
+	pub set_position: extern "C" fn(u64, f32, f32),
+	pub get_rotation: extern "C" fn(u64) -> f32,
+	pub set_rotation: extern "C" fn(u64, f32),
+	pub get_scale: extern "C" fn(u64, *mut f32, *mut f32),
+	pub set_scale: extern "C" fn(u64, f32, f32),
 	pub add_2d_force: extern "C" fn(u64, f32, f32),
 	pub add_2d_impulse: extern "C" fn(u64, f32, f32),
 	pub play_audio: extern "C" fn(u64),
@@ -89,6 +93,7 @@ pub struct EngineAPI {
 	pub log_debug: extern "C" fn(*const u8, i32),
 	pub quit_game: extern "C" fn(),
 	pub set_animator_state: extern "C" fn(u64, *const u8, i32),
+	pub get_velocity: extern "C" fn(u64, *mut f32, *mut f32),
 	pub set_velocity: extern "C" fn(u64, f32, f32),
 	pub find_entity_by_name: extern "C" fn(*const u8, i32) -> u64,
 	pub find_entity_by_tag: extern "C" fn(*const u8, i32) -> u64,
@@ -151,7 +156,11 @@ static ENGINE_API: EngineAPI = EngineAPI {
 	get_time_state_ptr: api::get_time_state_ptr,
 	has_component: api::has_component,
 	get_position: api::get_position,
-	get_velocity: api::get_velocity,
+	set_position: api::set_position,
+	get_rotation: api::get_rotation,
+	set_rotation: api::set_rotation,
+	get_scale: api::get_scale,
+	set_scale: api::set_scale,
 	add_2d_force: api::add_2d_force,
 	add_2d_impulse: api::add_2d_impulse,
 	play_audio: api::play_audio,
@@ -184,6 +193,7 @@ static ENGINE_API: EngineAPI = EngineAPI {
 	log_debug: api::log_debug,
 	quit_game: api::quit_game,
 	set_animator_state: api::set_animator_state,
+	get_velocity: api::get_velocity,
 	set_velocity: api::set_velocity,
 	find_entity_by_name: api::find_entity_by_name,
 	find_entity_by_tag: api::find_entity_by_tag,
@@ -2384,6 +2394,8 @@ mod api {
 		cursor_commands: Vec<CursorApiCommand>,
 		components: HashSet<(EntityId, ComponentKind)>,
 		transform_positions: HashMap<EntityId, (f32, f32)>,
+		transform_rotations: HashMap<EntityId, f32>,
+		transform_scales: HashMap<EntityId, (f32, f32)>,
 		velocities: HashMap<EntityId, (f32, f32)>,
 		sprite_texture_rotations: HashMap<EntityId, f32>,
 		button_clicked: HashMap<EntityId, bool>,
@@ -2498,6 +2510,8 @@ mod api {
 		let world = scene.world();
 		let mut components = HashSet::new();
 		let mut transform_positions = HashMap::new();
+		let mut transform_rotations = HashMap::new();
+		let mut transform_scales = HashMap::new();
 		let mut sprite_texture_rotations = HashMap::new();
 		let mut button_clicked = HashMap::new();
 		let mut names = HashMap::new();
@@ -2522,6 +2536,10 @@ mod api {
 					// (which operate in the physics world's coordinate space) expect.
 					if let Some(world_transform) = scene.world_transform(entity) {
 						transform_positions.insert(entity, (world_transform.position.x, world_transform.position.y));
+						let (_euler_x, _euler_y, euler_z) =
+							world_transform.rotation.to_euler(ze_core::glam::EulerRot::XYZ);
+						transform_rotations.insert(entity, euler_z.to_degrees());
+						transform_scales.insert(entity, (world_transform.scale.x, world_transform.scale.y));
 					}
 				}
 				if world.get::<&Parent>(entity).is_ok() {
@@ -2582,6 +2600,8 @@ mod api {
 			let mut state = state.borrow_mut();
 			state.components = components;
 			state.transform_positions = transform_positions;
+			state.transform_rotations = transform_rotations;
+			state.transform_scales = transform_scales;
 			state.sprite_texture_rotations = sprite_texture_rotations;
 			state.button_clicked = button_clicked;
 			state.names = names;
@@ -2666,6 +2686,64 @@ mod api {
 			.unwrap_or((0.0, 0.0));
 
 		write_position(out_x, out_y, x, y);
+	}
+
+	pub extern "C" fn set_position(entity: u64, x: f32, y: f32) {
+		let entity = script_arg_to_entity_id(entity);
+		with_scene(|scene| {
+			if let Ok(mut transform) = scene.world_mut().get::<&mut Transform>(entity) {
+				transform.position.x = x;
+				transform.position.y = y;
+			}
+		});
+		API_STATE.with(|state| {
+			state.borrow_mut().transform_positions.insert(entity, (x, y));
+		});
+	}
+
+	pub extern "C" fn get_rotation(entity: u64) -> f32 {
+		let entity = script_arg_to_entity_id(entity);
+		API_STATE
+			.with(|state| state.borrow().transform_rotations.get(&entity).copied())
+			.unwrap_or(0.0)
+	}
+
+	pub extern "C" fn set_rotation(entity: u64, rotation_degrees: f32) {
+		let entity = script_arg_to_entity_id(entity);
+		with_scene(|scene| {
+			if let Ok(mut transform) = scene.world_mut().get::<&mut Transform>(entity) {
+				transform.rotation = ze_core::Quat::from_rotation_z(rotation_degrees.to_radians());
+			}
+		});
+		API_STATE.with(|state| {
+			state.borrow_mut().transform_rotations.insert(entity, rotation_degrees);
+		});
+	}
+
+	pub extern "C" fn get_scale(entity: u64, out_x: *mut f32, out_y: *mut f32) {
+		if out_x.is_null() || out_y.is_null() {
+			return;
+		}
+
+		let entity = script_arg_to_entity_id(entity);
+		let (x, y) = API_STATE
+			.with(|state| state.borrow().transform_scales.get(&entity).copied())
+			.unwrap_or((1.0, 1.0));
+
+		write_position(out_x, out_y, x, y);
+	}
+
+	pub extern "C" fn set_scale(entity: u64, x: f32, y: f32) {
+		let entity = script_arg_to_entity_id(entity);
+		with_scene(|scene| {
+			if let Ok(mut transform) = scene.world_mut().get::<&mut Transform>(entity) {
+				transform.scale.x = x;
+				transform.scale.y = y;
+			}
+		});
+		API_STATE.with(|state| {
+			state.borrow_mut().transform_scales.insert(entity, (x, y));
+		});
 	}
 
 	pub extern "C" fn get_velocity(entity: u64, out_x: *mut f32, out_y: *mut f32) {
@@ -3482,19 +3560,30 @@ mod tests {
 
 		let hero_name = b"Hero";
 		assert_eq!(
-			api::find_entity_by_name(hero_name.as_ptr(), i32::try_from(hero_name.len()).expect("length fits in i32")),
+			api::find_entity_by_name(
+				hero_name.as_ptr(),
+				i32::try_from(hero_name.len()).expect("length fits in i32")
+			),
 			entity_id_to_script_arg(hero)
 		);
 
 		let missing = b"Nobody";
 		assert_eq!(
-			api::find_entity_by_name(missing.as_ptr(), i32::try_from(missing.len()).expect("length fits in i32")),
+			api::find_entity_by_name(
+				missing.as_ptr(),
+				i32::try_from(missing.len()).expect("length fits in i32")
+			),
 			u64::MAX
 		);
 
 		let tag = b"enemy";
 		assert_eq!(
-			api::find_entities_by_tag(tag.as_ptr(), i32::try_from(tag.len()).expect("length fits in i32"), std::ptr::null_mut(), 0),
+			api::find_entities_by_tag(
+				tag.as_ptr(),
+				i32::try_from(tag.len()).expect("length fits in i32"),
+				std::ptr::null_mut(),
+				0
+			),
 			2
 		);
 

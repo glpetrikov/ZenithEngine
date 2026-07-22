@@ -18,7 +18,11 @@ public unsafe struct EngineAPI
     public delegate* unmanaged[Cdecl]<TimeState*> get_time_state_ptr;
     public delegate* unmanaged[Cdecl]<ulong, uint, bool> has_component;
     public delegate* unmanaged[Cdecl]<ulong, float*, float*, void> get_position;
-    public delegate* unmanaged[Cdecl]<ulong, float*, float*, void> get_velocity;
+    public delegate* unmanaged[Cdecl]<ulong, float, float, void> set_position;
+    public delegate* unmanaged[Cdecl]<ulong, float> get_rotation;
+    public delegate* unmanaged[Cdecl]<ulong, float, void> set_rotation;
+    public delegate* unmanaged[Cdecl]<ulong, float*, float*, void> get_scale;
+    public delegate* unmanaged[Cdecl]<ulong, float, float, void> set_scale;
     public delegate* unmanaged[Cdecl]<ulong, float, float, void> add_2d_force;
     public delegate* unmanaged[Cdecl]<ulong, float, float, void> add_2d_impulse;
     public delegate* unmanaged[Cdecl]<ulong, void> play_audio;
@@ -51,6 +55,7 @@ public unsafe struct EngineAPI
     public delegate* unmanaged[Cdecl]<byte*, int, void> log_debug;
     public delegate* unmanaged[Cdecl]<void> quit_game;
     public delegate* unmanaged[Cdecl]<ulong, byte*, int, void> set_animator_state;
+    public delegate* unmanaged[Cdecl]<ulong, float*, float*, void> get_velocity;
     public delegate* unmanaged[Cdecl]<ulong, float, float, void> set_velocity;
     public delegate* unmanaged[Cdecl]<byte*, int, ulong> find_entity_by_name;
     public delegate* unmanaged[Cdecl]<byte*, int, ulong> find_entity_by_tag;
