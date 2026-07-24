@@ -51,4 +51,17 @@ public static unsafe class Physics
 
         return didHit;
     }
+
+    /// Returns the entity under the current mouse world position, or
+    /// <c>Entity.Null</c> when nothing is hit.
+    public static Entity GetHoveredEntity()
+    {
+        Vector2 mouseWorld = Input.GetMouseWorldPosition();
+        if (Raycast(mouseWorld, new Vector2(0, -1), out RaycastHit hit))
+        {
+            return new Entity(hit.EntityId);
+        }
+
+        return Entity.Null;
+    }
 }

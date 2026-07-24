@@ -44,6 +44,69 @@ pub enum RenderStatus {
 	MissingPrimaryCamera { scene_name: String },
 }
 
+/// Finds the entity with the primary `Camera` component, preferring
+/// non-editor cameras over `EditorOnly` ones.
+pub fn find_primary_camera_entity(scene: &Scene) -> Option<EntityId> {
+	let world = scene.world();
+	let Ok(cameras) = world.borrow::<View<Camera>>() else {
+		return None;
+	};
+	let mut game_camera = None;
+	let mut editor_camera = None;
+
+	for (entity, camera) in cameras.iter().with_id() {
+		if !camera.primary || world.get::<&Inactive>(entity).is_ok() {
+			continue;
+		}
+
+		if world.get::<&EditorOnly>(entity).is_ok() {
+			if editor_camera.is_none() {
+				editor_camera = Some(entity);
+			}
+			continue;
+		}
+
+		game_camera = Some(entity);
+		break;
+	}
+
+	game_camera.or(editor_camera)
+}
+
+/// Builds the combined view-projection matrix for the given camera.
+pub fn build_camera_data(transform: &Transform, camera: &Camera, aspect: f32) -> CameraRenderData {
+	let camera_transform = Mat4::from_scale_rotation_translation(Vec3::ONE, transform.rotation, transform.position);
+	let view = camera_transform.inverse();
+
+	let projection = match camera.projection {
+		CameraProjection::Orthographic { size, near, far } => {
+			let half_height = size * 0.5;
+			let half_width = half_height * aspect;
+			Mat4::orthographic_rh(-half_width, half_width, -half_height, half_height, near, far)
+		}
+		CameraProjection::Perspective {
+			fov_y_radians,
+			near,
+			far,
+		} => Mat4::perspective_rh(fov_y_radians, aspect, near, far),
+	};
+
+	CameraRenderData {
+		view_projection: projection * view,
+		clear_color: camera.clear_color,
+	}
+}
+
+/// Locates the primary camera in `scene` and builds its view-projection
+/// matrix for the given viewport aspect ratio.
+pub fn compute_active_camera(scene: &Scene, aspect: f32) -> Option<CameraRenderData> {
+	let entity = find_primary_camera_entity(scene)?;
+	let world = scene.world();
+	let camera = world.get::<&Camera>(entity).ok()?;
+	let transform = scene.world_transform(entity)?;
+	Some(build_camera_data(&transform, &camera, aspect))
+}
+
 #[derive(Default)]
 pub struct RenderSystem {
 	items: Vec<SpriteRenderItem>,
@@ -61,7 +124,7 @@ impl RenderSystem {
 
 	fn render_scene(&mut self, scene: &Scene, renderer: &mut Renderer, resources: &ResourceManager) -> RenderStatus {
 		self.reset_missing_primary_camera_report_on_scene_change(&scene.name);
-		let Some(camera) = Self::find_primary_camera(scene, renderer.aspect_ratio()) else {
+		let Some(camera) = compute_active_camera(scene, renderer.aspect_ratio()) else {
 			self.items.clear();
 			self.debug_lines.clear();
 			let _ = scene.world().remove_unique::<ActiveCameraView>();
@@ -75,12 +138,10 @@ impl RenderSystem {
 			};
 		};
 
-		let viewport_size = renderer.viewport_size();
-		let viewport_size = Vec2::new(viewport_size.width as f32, viewport_size.height as f32);
-		scene.world().add_unique(ActiveCameraView {
-			view_projection: camera.view_projection,
-			viewport_size,
-		});
+		// ActiveCameraView is already set by CameraViewSystem earlier this
+		// frame — do not overwrite it here, which would silently replace the
+		// value scripts may have already read with a potentially-different
+		// viewport size.
 
 		let _prev_count = self.items.len();
 		self.items = Self::collect_items(scene);
@@ -99,66 +160,8 @@ impl RenderSystem {
 		self.missing_primary_camera_reported_scene = None;
 	}
 
-	fn find_primary_camera(scene: &Scene, aspect: f32) -> Option<CameraRenderData> {
-		let entity = Self::primary_camera_entity(scene)?;
-		let world = scene.world();
-		let camera = world.get::<&Camera>(entity).ok()?;
-		let transform = scene.world_transform(entity)?;
-		Some(Self::build_camera_data(&transform, &camera, aspect))
-	}
-
-	fn primary_camera_entity(scene: &Scene) -> Option<EntityId> {
-		let world = scene.world();
-		let Ok(cameras) = world.borrow::<View<Camera>>() else {
-			return None;
-		};
-		let mut game_camera = None;
-		let mut editor_camera = None;
-
-		for (entity, camera) in cameras.iter().with_id() {
-			if !camera.primary || world.get::<&Inactive>(entity).is_ok() {
-				continue;
-			}
-
-			if world.get::<&EditorOnly>(entity).is_ok() {
-				if editor_camera.is_none() {
-					editor_camera = Some(entity);
-				}
-				continue;
-			}
-
-			game_camera = Some(entity);
-			break;
-		}
-
-		game_camera.or(editor_camera)
-	}
-
 	#[cfg(test)]
-	fn primary_camera_exists(scene: &Scene) -> bool { Self::primary_camera_entity(scene).is_some() }
-
-	fn build_camera_data(transform: &Transform, camera: &Camera, aspect: f32) -> CameraRenderData {
-		let camera_transform = Mat4::from_scale_rotation_translation(Vec3::ONE, transform.rotation, transform.position);
-		let view = camera_transform.inverse();
-
-		let projection = match camera.projection {
-			CameraProjection::Orthographic { size, near, far } => {
-				let half_height = size * 0.5;
-				let half_width = half_height * aspect;
-				Mat4::orthographic_rh(-half_width, half_width, -half_height, half_height, near, far)
-			}
-			CameraProjection::Perspective {
-				fov_y_radians,
-				near,
-				far,
-			} => Mat4::perspective_rh(fov_y_radians, aspect, near, far),
-		};
-
-		CameraRenderData {
-			view_projection: projection * view,
-			clear_color: camera.clear_color,
-		}
-	}
+	fn primary_camera_exists(scene: &Scene) -> bool { find_primary_camera_entity(scene).is_some() }
 
 	fn collect_items(scene: &Scene) -> Vec<SpriteRenderItem> {
 		let mut items = Vec::new();
@@ -343,7 +346,7 @@ impl System for CameraViewSystem {
 			return Ok(());
 		};
 
-		let Some(camera) = RenderSystem::find_primary_camera(scene, viewport.aspect_ratio()) else {
+		let Some(camera) = compute_active_camera(scene, viewport.aspect_ratio()) else {
 			let _ = scene.world().remove_unique::<ActiveCameraView>();
 			return Ok(());
 		};
@@ -531,7 +534,7 @@ mod tests {
 			tag: "Ball".to_string(),
 		});
 
-		assert_eq!(RenderSystem::primary_camera_entity(&scene), Some(entity));
+		assert_eq!(find_primary_camera_entity(&scene), Some(entity));
 		assert!(RenderSystem::primary_camera_exists(&scene));
 	}
 
@@ -544,7 +547,7 @@ mod tests {
 		scene.entity_mut(entity).add_component(primary_camera());
 		scene.entity_mut(entity).add_component(Inactive);
 
-		assert_eq!(RenderSystem::primary_camera_entity(&scene), None);
+		assert_eq!(find_primary_camera_entity(&scene), None);
 		assert!(!RenderSystem::primary_camera_exists(&scene));
 	}
 
@@ -562,7 +565,7 @@ mod tests {
 		scene.entity_mut(game_camera).add_component(Transform::default());
 		scene.entity_mut(game_camera).add_component(primary_camera());
 
-		assert_eq!(RenderSystem::primary_camera_entity(&scene), Some(game_camera));
+		assert_eq!(find_primary_camera_entity(&scene), Some(game_camera));
 	}
 
 	#[test]
@@ -575,6 +578,6 @@ mod tests {
 		scene.entity_mut(editor_camera).add_component(primary_camera());
 		scene.entity_mut(editor_camera).add_component(EditorOnly);
 
-		assert_eq!(RenderSystem::primary_camera_entity(&scene), Some(editor_camera));
+		assert_eq!(find_primary_camera_entity(&scene), Some(editor_camera));
 	}
 }

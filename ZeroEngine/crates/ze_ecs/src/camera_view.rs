@@ -163,4 +163,43 @@ mod tests {
 
 		assert!(camera.unproject_to_world(Vec2::new(10.0, 10.0)).is_none());
 	}
+
+	#[test]
+	fn unproject_roundtrips_with_different_aspect_ratios() {
+		let world_points = [
+			Vec3::new(0.0, 0.0, 0.0),
+			Vec3::new(5.0, -3.0, 0.0),
+			Vec3::new(-8.0, 4.5, 0.0),
+			Vec3::new(10.0, 7.0, 0.0),
+		];
+
+		for aspect in [0.5, 1.0, 16.0 / 9.0, 21.0 / 9.0, 3.0] {
+			let half_height = 10.0;
+			let half_width = half_height * aspect;
+			let view_projection = Mat4::orthographic_rh(-half_width, half_width, -half_height, half_height, -1.0, 1.0);
+			let viewport_size = Vec2::new(1920.0, 1920.0 / aspect);
+
+			let camera = ActiveCameraView {
+				view_projection,
+				viewport_size,
+			};
+
+			for &world in &world_points {
+				let screen = camera.project_to_screen(world).expect("project");
+				let round_tripped = camera.unproject_to_world(screen).expect("unproject");
+				assert!(
+					(round_tripped.x - world.x).abs() < 1e-3,
+					"aspect={aspect}: x={} vs {}",
+					round_tripped.x,
+					world.x,
+				);
+				assert!(
+					(round_tripped.y - world.y).abs() < 1e-3,
+					"aspect={aspect}: y={} vs {}",
+					round_tripped.y,
+					world.y,
+				);
+			}
+		}
+	}
 }

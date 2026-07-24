@@ -492,10 +492,20 @@ fn global_runtime_context(
 ) -> Result<std::sync::MutexGuard<'static, Option<HostfxrContext<InitializedForRuntimeConfig>>>> {
 	let mut guard = RUNTIME_CONTEXT.lock().expect("C# runtime context mutex was poisoned");
 	if guard.is_none() {
-		let hostfxr = load_hostfxr().context("failed to load .NET hostfxr")?;
-		let context = hostfxr
-			.initialize_for_runtime_config(runtime_config_path)
-			.context("failed to initialize .NET runtime for Scripts")?;
+		let (hostfxr, dotnet_root) = load_hostfxr().context("failed to load .NET hostfxr")?;
+		let context = if let Some(ref root) = dotnet_root {
+			ze_log::debug!("initializing .NET runtime with bundled dotnet_root: {}", root.display());
+			let root_cstr = PdCString::from_os_str(root)
+				.with_context(|| format!("failed to encode dotnet root path {}", root.display()))?;
+			hostfxr
+				.initialize_for_runtime_config_with_dotnet_root(runtime_config_path, root_cstr.as_ref())
+				.context("failed to initialize .NET runtime for Scripts with bundled dotnet_root")?
+		} else {
+			ze_log::debug!("initializing .NET runtime without bundled dotnet_root (system discovery)");
+			hostfxr
+				.initialize_for_runtime_config(runtime_config_path)
+				.context("failed to initialize .NET runtime for Scripts")?
+		};
 		*guard = Some(context);
 	}
 	Ok(guard)
@@ -2266,20 +2276,26 @@ fn assembly_name_from_path(path: &Path) -> Result<String> {
 
 fn workspace_root() -> Result<PathBuf> { ze_core::resolve_engine_root() }
 
-fn load_hostfxr() -> Result<Hostfxr> {
+fn load_hostfxr() -> Result<(Hostfxr, Option<PathBuf>)> {
 	// Stage 1: Bundled deployment (Dist build priority)
-	if let Some(bundled_path) = bundled_hostfxr_path() {
-		ze_log::debug!("Using bundled hostfxr at: {}", bundled_path.display());
-		return Hostfxr::load_from_path(&bundled_path)
-			.with_context(|| format!("Failed to load bundled hostfxr from {}", bundled_path.display()));
+	if let Some((bundled_path, dotnet_root)) = bundled_hostfxr_with_root() {
+		ze_log::debug!(
+			"Using bundled hostfxr at: {} (dotnet_root: {})",
+			bundled_path.display(),
+			dotnet_root.display()
+		);
+		let hostfxr = Hostfxr::load_from_path(&bundled_path)
+			.with_context(|| format!("Failed to load bundled hostfxr from {}", bundled_path.display()))?;
+		return Ok((hostfxr, Some(dotnet_root)));
 	}
 	ze_log::debug!("Bundled dotnet runtime not found next to executable");
 
 	// Stage 2: Runtime system discovery (Replaces nethost compile-time discovery)
 	if let Some(detected_path) = find_system_hostfxr_path() {
 		ze_log::debug!("Successfully located system hostfxr at: {}", detected_path.display());
-		return Hostfxr::load_from_path(&detected_path)
-			.with_context(|| format!("Failed to load system hostfxr from {}", detected_path.display()));
+		let hostfxr = Hostfxr::load_from_path(&detected_path)
+			.with_context(|| format!("Failed to load system hostfxr from {}", detected_path.display()))?;
+		return Ok((hostfxr, None));
 	}
 	ze_log::debug!("System hostfxr discovery failed");
 
@@ -2287,8 +2303,9 @@ fn load_hostfxr() -> Result<Hostfxr> {
 	ze_log::debug!("Attempting manual path enumeration fallback...");
 	let hostfxr_path = find_hostfxr_path_fallback().context("Failed to locate libhostfxr via any available method")?;
 
-	Hostfxr::load_from_path(&hostfxr_path)
-		.with_context(|| format!("Failed to load hostfxr from fallback path: {}", hostfxr_path.display()))
+	let hostfxr = Hostfxr::load_from_path(&hostfxr_path)
+		.with_context(|| format!("Failed to load hostfxr from fallback path: {}", hostfxr_path.display()))?;
+	Ok((hostfxr, None))
 }
 
 /// Helper to scan well-known system candidates at runtime.
@@ -2302,13 +2319,29 @@ fn find_system_hostfxr_path() -> Option<PathBuf> {
 }
 
 /// Check for a bundled dotnet runtime next to the executable (dist build
-/// scenario).
-fn bundled_hostfxr_path() -> Option<PathBuf> {
+/// scenario). Returns the hostfxr path and the dotnet root directory.
+fn bundled_hostfxr_with_root() -> Option<(PathBuf, PathBuf)> {
 	let exe_dir = env::current_exe().ok()?.parent()?.to_path_buf();
 	let bundled = exe_dir.join("dotnet");
-	if bundled.join("host/fxr").exists() {
-		return latest_hostfxr_path_in(&bundled);
+
+	// Primary: proper .NET layout (dotnet/host/fxr/<version>/hostfxr.dll).
+	if let Some(hostfxr) = latest_hostfxr_path_in(&bundled) {
+		return Some((hostfxr, bundled));
 	}
+
+	// Fallback: flat layout for backward compatibility with older dist builds
+	// where hostfxr.dll sits directly in dotnet/.
+	let flat_hostfxr = if cfg!(target_os = "windows") {
+		bundled.join("hostfxr.dll")
+	} else if cfg!(target_os = "macos") {
+		bundled.join("libhostfxr.dylib")
+	} else {
+		bundled.join("libhostfxr.so")
+	};
+	if flat_hostfxr.exists() {
+		return Some((flat_hostfxr, bundled));
+	}
+
 	None
 }
 
@@ -2374,10 +2407,10 @@ mod api {
 	use ze_core::Vec2;
 	use ze_ecs::{
 		ActiveCameraView, Animator, AudioSource, Children, Collider, EntitiesView, EntityId, Inactive, Name, Parent,
-		PhysicsSettings, RigidBody, Scene, Tag, Transform, shipyard::UniqueView,
+		PhysicsSettings, RigidBody, Scene, Tag, Transform, ViewportInfo, shipyard::UniqueView,
 	};
 	use ze_input::{Input, ZKeyCode, ZMouseCode};
-	use ze_renderer::{Camera, Sprite};
+	use ze_renderer::{Camera, Sprite, compute_active_camera};
 	use ze_ui::{UIBar, UIButton, UIImage, UIText};
 
 	use crate::{
@@ -3204,11 +3237,27 @@ mod api {
 
 		let screen = Input::get_mouse_pos();
 		let world = with_scene(|scene| {
-			scene
+			// Fast path: use the pre-computed ActiveCameraView written by the
+			// renderer at the end of the previous frame / earlier this frame.
+			if let Ok(camera) = scene.world().borrow::<UniqueView<ActiveCameraView>>() {
+				return camera.unproject_to_world(screen);
+			}
+
+			// Slow path: CameraViewSystem hasn't run yet, so compute the
+			// view-projection matrix on the fly from the primary camera.
+			let viewport_size = scene
 				.world()
-				.borrow::<UniqueView<ActiveCameraView>>()
+				.borrow::<UniqueView<ViewportInfo>>()
 				.ok()
-				.and_then(|camera| camera.unproject_to_world(screen))
+				.map(|v| v.size)
+				.unwrap_or(Vec2::new(1.0, 1.0));
+			let aspect = viewport_size.x / viewport_size.y.max(1.0);
+			let camera = compute_active_camera(scene, aspect)?;
+			ActiveCameraView {
+				view_projection: camera.view_projection,
+				viewport_size,
+			}
+			.unproject_to_world(screen)
 		})
 		.flatten();
 

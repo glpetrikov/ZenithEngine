@@ -1680,6 +1680,24 @@ fn update_editor_scene_before_render(
 		scene.with_system_mut::<AnimationSystem, _>(|system, _scene| {
 			system.invalidate_clips(asset_reload.animation_clip_assets());
 		});
+
+		// CameraViewSystem must run before ScriptingSystem so that C# scripts
+		// calling GetMouseWorldPosition() read a fresh ActiveCameraView.
+		let viewport_size = renderer.viewport_size();
+		scene.world().add_unique(ViewportInfo {
+			size: ze_core::Vec2::new(viewport_size.width as f32, viewport_size.height as f32),
+		});
+		scene
+			.world()
+			.add_unique(
+				active_project.map_or_else(UiReferenceResolution::default, |project| UiReferenceResolution {
+					size: ze_core::Vec2::new(project.ui.reference_width, project.ui.reference_height),
+				}),
+			);
+		if let Err(error) = scene.update_system::<CameraViewSystem>(dt) {
+			ze_log::error!("failed to update camera view system: {error:?}");
+		}
+
 		if game_running {
 			if let Err(error) = scene.update_system::<ScriptingSystem>(dt) {
 				ze_log::error!("failed to update scripting system: {error:?}");
@@ -1693,29 +1711,6 @@ fn update_editor_scene_before_render(
 			if let Err(error) = scene.update_system::<AnimationSystem>(dt) {
 				ze_log::error!("failed to update animation system: {error:?}");
 			}
-		}
-
-		// Refresh ActiveCameraView from this tick's (post-physics) camera
-		// transform before UISystem runs below, so resolve_screen_pos doesn't
-		// project entity positions with last frame's view-projection matrix --
-		// see CameraViewSystem's doc comment for why that one-frame lag caused
-		// jittering/ghosting UI during fast camera motion.
-		let viewport_size = renderer.viewport_size();
-		scene.world().add_unique(ViewportInfo {
-			size: ze_core::Vec2::new(viewport_size.width as f32, viewport_size.height as f32),
-		});
-		// Match-by-width canvas scaling of ScreenSpaceOverlay UI needs the
-		// project's reference/design resolution; fall back to the 1920x1080
-		// default when no project is loaded.
-		scene
-			.world()
-			.add_unique(
-				active_project.map_or_else(UiReferenceResolution::default, |project| UiReferenceResolution {
-					size: ze_core::Vec2::new(project.ui.reference_width, project.ui.reference_height),
-				}),
-			);
-		if let Err(error) = scene.update_system::<CameraViewSystem>(dt) {
-			ze_log::error!("failed to update camera view system: {error:?}");
 		}
 
 		asset_reload

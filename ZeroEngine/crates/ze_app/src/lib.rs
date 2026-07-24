@@ -272,22 +272,18 @@ pub fn load_project_scene(
 	activate_runtime_camera(&mut scene);
 	apply_project_physics_defaults(&mut scene, active_project);
 	scene.add_system(EditorCameraSystem::new());
+	// CameraViewSystem must run before ScriptingSystem so that C# scripts
+	// calling GetMouseWorldPosition() read a fresh ActiveCameraView instead
+	// of a stale / missing one.  Running before PhysicsSystem means the
+	// view-projection is based on the previous frame's camera transform,
+	// which is acceptable for cursor picking.
+	scene.add_system(CameraViewSystem::new());
 	let (scripts_path, runtime_config_path) = scripting_paths(active_project, resources);
 	let scripting_system = ScriptingSystem::from_paths(scripts_path, runtime_config_path);
 	let scripting_runtime = scripting_system.runtime();
 	scene.add_system(scripting_system);
 	scene.add_system(PhysicsSystem::with_scripting(scripting_runtime));
 	scene.add_system(AnimationSystem::new(resources.clone()));
-	// update_systems() ticks systems in add_system() push order (no explicit
-	// ordering contract) -- CameraViewSystem must run after PhysicsSystem (so
-	// it sees this tick's post-physics camera transform) and before UISystem
-	// (so UISystem's resolve_screen_pos projects with a fresh, not
-	// last-frame's, view-projection matrix); UISystem itself goes before
-	// RenderSystem so a frame's UI state is fresh by the time
-	// rendering-adjacent systems run. AnimationSystem runs right after
-	// PhysicsSystem and before RenderSystem so a state-switch's/frame-advance's
-	// resulting Sprite.texture is fresh by the time this tick renders.
-	scene.add_system(CameraViewSystem::new());
 	if let Some(handle) = ui_manager {
 		scene.add_system(UISystem::new(handle, resources.clone()));
 	}
@@ -627,6 +623,19 @@ impl ApplicationHandler<CustomEvents> for App {
 
 		self.window = Some(window);
 
+		// Ensure ViewportInfo is available immediately so that any systems
+		// running before the first `about_to_wait()` tick (e.g. a Resized
+		// event delivered during the same loop iteration) see a valid
+		// viewport size.
+		if let Some(renderer) = &self.renderer {
+			let size = renderer.viewport_size();
+			if let Some(scene) = self.active_scene_mut() {
+				scene.world().add_unique(ViewportInfo {
+					size: Vec2::new(size.width as f32, size.height as f32),
+				});
+			}
+		}
+
 		self.last_frame_time = Instant::now();
 	}
 	fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -677,10 +686,22 @@ impl ApplicationHandler<CustomEvents> for App {
 			WindowEvent::Resized(size) => {
 				self.minimized = size.width == 0 || size.height == 0;
 
-				if let Some(renderer) = &mut self.renderer
-					&& !self.minimized
-				{
-					renderer.resize(size);
+				if !self.minimized {
+					if let Some(renderer) = &mut self.renderer {
+						renderer.resize(size);
+					}
+					// Keep ViewportInfo in sync so that CameraViewSystem and
+					// any C# scripts calling GetMouseWorldPosition see the
+					// updated viewport size before the next about_to_wait()
+					// tick.
+					if let Some(renderer) = &self.renderer {
+						let vs = renderer.viewport_size();
+						if let Some(scene) = self.active_scene_mut() {
+							scene.world().add_unique(ViewportInfo {
+								size: Vec2::new(vs.width as f32, vs.height as f32),
+							});
+						}
+					}
 				}
 			}
 			WindowEvent::Focused(focused) => {

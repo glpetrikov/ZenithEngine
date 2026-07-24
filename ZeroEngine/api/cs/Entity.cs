@@ -72,6 +72,9 @@ public readonly unsafe struct Entity : IEquatable<Entity>
     }
 
     /// Returns every entity tagged with `tag` (empty array if none).
+    public static Entity[] FindEntitiesWithTag(string tag) => FindAllWithTag(tag);
+
+    /// Returns every entity tagged with `tag` (empty array if none).
     public static Entity[] FindAllWithTag(string tag)
     {
         if (string.IsNullOrEmpty(tag))

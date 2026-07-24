@@ -44,6 +44,9 @@ pub struct PhysicsWorld {
 struct PhysicsBodyEntry {
 	handle: RigidBodyHandle,
 	body_type: RigidBodyType,
+	freeze_position_x: bool,
+	freeze_position_y: bool,
+	freeze_rotation_z: bool,
 }
 
 type ColliderPairKey = (ColliderHandle, ColliderHandle);
@@ -260,6 +263,9 @@ impl PhysicsWorld {
 			PhysicsBodyEntry {
 				handle: body_handle,
 				body_type: rigid_body.body_type,
+				freeze_position_x: rigid_body.freeze_position_x,
+				freeze_position_y: rigid_body.freeze_position_y,
+				freeze_rotation_z: rigid_body.freeze_rotation_z,
 			},
 		);
 		self.entity_colliders.insert(entity, collider_handle);
@@ -331,18 +337,24 @@ impl PhysicsWorld {
 			.filter_map(|(entity, entry)| {
 				self.rigid_bodies.get(entry.handle).map(|body| {
 					let position = body.translation();
-					(*entity, position.x, position.y, body.rotation().angle())
+					(*entity, position.x, position.y, body.rotation().angle(), *entry)
 				})
 			})
 			.collect::<Vec<_>>();
 
-		for (entity, x, y, angle) in updates {
+		for (entity, x, y, angle, entry) in updates {
 			let Some(mut transform) = scene.world_transform(entity) else {
 				continue;
 			};
-			transform.position.x = x;
-			transform.position.y = y;
-			transform.rotation = Quat::from_rotation_z(angle);
+			if !entry.freeze_position_x {
+				transform.position.x = x;
+			}
+			if !entry.freeze_position_y {
+				transform.position.y = y;
+			}
+			if !entry.freeze_rotation_z {
+				transform.rotation = Quat::from_rotation_z(angle);
+			}
 			scene.set_world_transform(entity, transform)?;
 		}
 

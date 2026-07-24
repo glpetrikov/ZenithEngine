@@ -55,6 +55,14 @@ impl BuildTarget {
 			Self::Windows => "win-x64",
 		}
 	}
+
+	#[must_use]
+	pub const fn hostfxr_file_name(self) -> &'static str {
+		match self {
+			Self::Windows => "hostfxr.dll",
+			Self::Linux => "libhostfxr.so",
+		}
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -188,7 +196,7 @@ pub fn build_project_dist(project: &Project, options: &BuildOptions) -> ze_core:
 		)
 	})?;
 
-	copy_dotnet_runtime_to_dist(project, output_dir, &publish_temp)?;
+	copy_dotnet_runtime_to_dist(project, output_dir, &publish_temp, options.target)?;
 	let _ = fs::remove_dir_all(&publish_temp);
 
 	let notice = output_dir.join("Engine").join("NOTICE");
@@ -321,13 +329,32 @@ fn publish_self_contained_scripts(
 	Ok(())
 }
 
-fn copy_dotnet_runtime_to_dist(project: &Project, output_dir: &Path, publish_dir: &Path) -> ze_core::Result<()> {
+fn copy_dotnet_runtime_to_dist(
+	project: &Project,
+	output_dir: &Path,
+	publish_dir: &Path,
+	target: BuildTarget,
+) -> ze_core::Result<()> {
 	if !publish_dir.exists() {
 		ze_core::bail!("self-contained publish output not found at {}", publish_dir.display());
 	}
 
+	let runtime_version = parse_self_contained_runtime_version(publish_dir).with_context(|| {
+		format!(
+			"failed to parse runtime version from self-contained publish output at {}",
+			publish_dir.display()
+		)
+	})?;
+	let version = runtime_version.as_deref().unwrap_or("10.0.0");
+	ze_log::debug!("bundled .NET runtime version: {version}");
+
 	let dotnet_dir = output_dir.join("dotnet");
-	fs::create_dir_all(&dotnet_dir)?;
+	let hostfxr_dir = dotnet_dir.join("host").join("fxr").join(version);
+	let framework_dir = dotnet_dir.join("shared").join("Microsoft.NETCore.App").join(version);
+	fs::create_dir_all(&hostfxr_dir)?;
+	fs::create_dir_all(&framework_dir)?;
+
+	let hostfxr_file_name = target.hostfxr_file_name();
 
 	let mut copied_any = false;
 	for entry in fs::read_dir(publish_dir)? {
@@ -367,7 +394,20 @@ fn copy_dotnet_runtime_to_dist(project: &Project, output_dir: &Path, publish_dir
 			continue;
 		}
 
-		copy_recursive(&path, &dotnet_dir.join(&file_name))?;
+		// Skip the build subdirectory (intermediate output from dotnet publish).
+		if path.is_dir() && file_name.to_str() == Some("build") {
+			continue;
+		}
+
+		// Place hostfxr in the proper versioned fxr directory.
+		if path.is_file() && file_name.to_str() == Some(hostfxr_file_name) {
+			copy_recursive(&path, &hostfxr_dir.join(&file_name))?;
+			copied_any = true;
+			continue;
+		}
+
+		// Everything else goes in the framework shared directory.
+		copy_recursive(&path, &framework_dir.join(&file_name))?;
 		copied_any = true;
 	}
 
@@ -380,6 +420,63 @@ fn copy_dotnet_runtime_to_dist(project: &Project, output_dir: &Path, publish_dir
 	}
 
 	Ok(())
+}
+
+fn parse_self_contained_runtime_version(publish_dir: &Path) -> ze_core::Result<Option<String>> {
+	for entry in fs::read_dir(publish_dir)? {
+		let entry = entry?;
+		let path = entry.path();
+		if path.extension().is_none_or(|ext| ext != "json") {
+			continue;
+		}
+		let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+			continue;
+		};
+		if !stem.ends_with(".runtimeconfig") {
+			continue;
+		}
+		let content = fs::read_to_string(&path)?;
+		let config: serde_json::Value = serde_json::from_str(&content)?;
+
+		// Self-contained config has "includedFrameworks".
+		if let Some(version) = config
+			.get("runtimeOptions")
+			.and_then(|ro| ro.get("includedFrameworks"))
+			.and_then(|f| f.as_array())
+			.and_then(|frameworks| {
+				frameworks.iter().find_map(|fw| {
+					let name = fw.get("name").and_then(|n| n.as_str())?;
+					let version = fw.get("version").and_then(|v| v.as_str())?;
+					if name == "Microsoft.NETCore.App" {
+						Some(version.to_string())
+					} else {
+						None
+					}
+				})
+			}) {
+			return Ok(Some(version));
+		}
+
+		// Framework-dependent fallback has "framework".
+		if let Some(version) = config
+			.get("runtimeOptions")
+			.and_then(|ro| ro.get("framework"))
+			.and_then(|f| f.get("name"))
+			.and_then(|n| n.as_str())
+			.filter(|name| *name == "Microsoft.NETCore.App")
+			.and_then(|_| {
+				config
+					.get("runtimeOptions")
+					.and_then(|ro| ro.get("framework"))
+					.and_then(|f| f.get("version"))
+					.and_then(|v| v.as_str())
+					.map(String::from)
+			}) {
+			return Ok(Some(version));
+		}
+	}
+
+	Ok(None)
 }
 
 fn copy_recursive(source: &Path, target: &Path) -> io::Result<()> {
