@@ -9,5 +9,9 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[[bin]]
+name = "ZeroEngine"
+path = "src/main.rs"
+
 [dependencies]
-zeroengine = { version = "0.1.0", path = "crates/zeroengine" }
+zeroengine = { version = "0.1.0", path = "../crates/zeroengine" }

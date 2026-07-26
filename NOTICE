@@ -1307,14 +1307,6 @@ Name: yakui-winit
 Version: 0.3.0
 License: Apache License 2.0
 
-Name: ZeroEditor
-Version: 0.1.0
-License: Apache License 2.0
-
-Name: ZeroEngine
-Version: 0.1.0
-License: Apache License 2.0
-
 Name: zepack_cli
 Version: 0.1.0
 License: Apache License 2.0
@@ -1380,6 +1372,14 @@ Version: 0.1.0
 License: Apache License 2.0
 
 Name: zeroengine
+Version: 0.1.0
+License: Apache License 2.0
+
+Name: ZeroEditor
+Version: 0.1.0
+License: Apache License 2.0
+
+Name: ZeroEngine
 Version: 0.1.0
 License: Apache License 2.0
 

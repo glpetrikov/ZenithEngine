@@ -1,25 +1,11 @@
 [workspace]
 members = [
-    "ZeroEngine",
-    "ZeroEditor",
-    "ZeroEngine/cli/zepack",
-    "ZeroEngine/crates/ze_animation",
-    "ZeroEngine/crates/ze_app",
-    "ZeroEngine/crates/ze_assets",
-    "ZeroEngine/crates/ze_audio",
-    "ZeroEngine/crates/ze_project",
-    "ZeroEngine/crates/ze_build",
-    "ZeroEngine/crates/ze_core",
-    "ZeroEngine/crates/ze_input",
-    "ZeroEngine/crates/ze_log",
-    "ZeroEngine/crates/ze_physics",
-    "ZeroEngine/crates/ze_renderer",
-    "ZeroEngine/crates/ze_scripting_cs",
-    "ZeroEngine/crates/zepack",
-    "ZeroEngine/crates/ze_ecs",
-    "ZeroEngine/crates/ze_ui",
-    "ZeroEngine/crates/zeroengine",
+    "runtime",
+    "editor",
+    "cli/*",
+    "crates/*",
 ]
+default-members = ["editor"]
 resolver = "3"
 
 [workspace.package]

@@ -3,7 +3,6 @@
 import subprocess
 import sys
 
-
 TARGETS = [
     {
         "name": "ZeroEngine",
@@ -12,8 +11,8 @@ TARGETS = [
     },
     {
         "name": "zepack CLI",
-        "manifest_path": "ZeroEngine/cli/zepack/Cargo.toml",
-        "output_path": "ZeroEngine/cli/zepack/NOTICE",
+        "manifest_path": "cli/zepack/Cargo.toml",
+        "output_path": "cli/zepack/NOTICE",
     },
 ]
 
