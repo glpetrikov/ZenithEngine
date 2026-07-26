@@ -108,6 +108,8 @@ pub struct EngineAPI {
 	pub get_mouse_world_position: extern "C" fn(*mut f32, *mut f32),
 	pub set_cursor_visible: extern "C" fn(i32),
 	pub set_cursor_grab_mode: extern "C" fn(i32),
+	pub get_name: extern "C" fn(u64, *mut u8, i32) -> i32,
+	pub get_tag: extern "C" fn(u64, *mut u8, i32) -> i32,
 }
 
 pub static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
@@ -210,6 +212,8 @@ static ENGINE_API: EngineAPI = EngineAPI {
 	get_mouse_world_position: api::get_mouse_world_position,
 	set_cursor_visible: api::set_cursor_visible,
 	set_cursor_grab_mode: api::set_cursor_grab_mode,
+	get_name: api::get_name,
+	get_tag: api::get_tag,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -490,21 +494,36 @@ static RUNTIME_CONTEXT: Mutex<Option<HostfxrContext<InitializedForRuntimeConfig>
 fn global_runtime_context(
 	runtime_config_path: &PdCStr,
 ) -> Result<std::sync::MutexGuard<'static, Option<HostfxrContext<InitializedForRuntimeConfig>>>> {
+	ze_log::debug!("[.NET] runtimeconfig path: {}", runtime_config_path.to_string_lossy());
+	ze_log::debug!(
+		"[.NET] runtimeconfig exists: {}",
+		std::path::Path::new(&runtime_config_path.to_string_lossy().to_string()).exists()
+	);
+
 	let mut guard = RUNTIME_CONTEXT.lock().expect("C# runtime context mutex was poisoned");
 	if guard.is_none() {
 		let (hostfxr, dotnet_root) = load_hostfxr().context("failed to load .NET hostfxr")?;
 		let context = if let Some(ref root) = dotnet_root {
-			ze_log::debug!("initializing .NET runtime with bundled dotnet_root: {}", root.display());
+			ze_log::debug!("[.NET] dotnet_root: {}", root.display());
 			let root_cstr = PdCString::from_os_str(root)
 				.with_context(|| format!("failed to encode dotnet root path {}", root.display()))?;
-			hostfxr
-				.initialize_for_runtime_config_with_dotnet_root(runtime_config_path, root_cstr.as_ref())
-				.context("failed to initialize .NET runtime for Scripts with bundled dotnet_root")?
+			ze_log::debug!("[.NET] calling initialize_for_runtime_config_with_dotnet_root()");
+			let result =
+				hostfxr.initialize_for_runtime_config_with_dotnet_root(runtime_config_path, root_cstr.as_ref());
+			match &result {
+				Ok(_) => ze_log::debug!("[.NET] hostfxr initialization result: success"),
+				Err(e) => ze_log::error!("[.NET] hostfxr initialization result: FAILURE ({e:?})"),
+			}
+			result.context("failed to initialize .NET runtime for Scripts with bundled dotnet_root")?
 		} else {
-			ze_log::debug!("initializing .NET runtime without bundled dotnet_root (system discovery)");
-			hostfxr
-				.initialize_for_runtime_config(runtime_config_path)
-				.context("failed to initialize .NET runtime for Scripts")?
+			ze_log::debug!("[.NET] dotnet_root: (none — using system discovery)");
+			ze_log::debug!("[.NET] calling initialize_for_runtime_config()");
+			let result = hostfxr.initialize_for_runtime_config(runtime_config_path);
+			match &result {
+				Ok(_) => ze_log::debug!("[.NET] hostfxr initialization result: success"),
+				Err(e) => ze_log::error!("[.NET] hostfxr initialization result: FAILURE ({e:?})"),
+			}
+			result.context("failed to initialize .NET runtime for Scripts")?
 		};
 		*guard = Some(context);
 	}
@@ -526,6 +545,10 @@ impl ScriptingEngine {
 	pub fn new() -> Result<Self> { Self::from_paths(ASSEMBLY_PATH.into(), RUNTIME_CONFIG_PATH.into()) }
 
 	pub fn from_paths(assembly_path: PathBuf, runtime_config_path: PathBuf) -> Result<Self> {
+		ze_log::debug!("[.NET] Entering ScriptingEngine::from_paths()");
+		ze_log::debug!("[.NET] assembly path: {}", assembly_path.display());
+		ze_log::debug!("[.NET] runtimeconfig path: {}", runtime_config_path.display());
+
 		let runtime_config_path = normalize_path(runtime_config_path)?;
 		let prepared_runtime_config_path = PdCString::from_os_str(&runtime_config_path).with_context(|| {
 			format!(
@@ -534,13 +557,21 @@ impl ScriptingEngine {
 			)
 		})?;
 
+		ze_log::debug!("[.NET] calling global_runtime_context()...");
 		let guard = global_runtime_context(&prepared_runtime_config_path)?;
+		ze_log::debug!("[.NET] global_runtime_context: success");
 		let context = guard
 			.as_ref()
 			.expect("C# runtime should be initialized after global_runtime_context succeeds");
+
+		ze_log::debug!("[.NET] calling ScriptAssembly::from_paths()...");
 		let assembly = ScriptAssembly::from_paths(context, assembly_path, runtime_config_path)?;
+		ze_log::debug!("[.NET] ScriptAssembly::from_paths: success");
 		drop(guard);
+
+		ze_log::debug!("[.NET] calling validate_bridge()...");
 		assembly.validate_bridge()?;
+		ze_log::debug!("[.NET] validate_bridge: success");
 
 		Ok(Self {
 			assembly: Some(assembly),
@@ -621,19 +652,25 @@ impl ScriptAssembly {
 		let assembly_path = normalize_path(assembly_path)?;
 		let runtime_config_path = normalize_path(runtime_config_path)?;
 		let assembly_name = assembly_name_from_path(&assembly_path)?;
+
+		ze_log::debug!("[.NET] ScriptAssembly loading: {}", assembly_path.display());
+		ze_log::debug!("[.NET] assembly exists: {}", assembly_path.exists());
+
 		let prepared = prepare_reloadable_assembly(&assembly_path, &runtime_config_path)?;
 
 		ze_log::debug!(
-			"loading C# assembly `{assembly_name}` from original `{}` → shadow `{}`",
+			"[.NET] loading C# assembly `{assembly_name}` from original `{}` → shadow `{}`",
 			assembly_path.display(),
 			prepared.assembly_path.display()
 		);
 
 		let assembly_path = PdCString::from_os_str(&prepared.assembly_path)
 			.with_context(|| format!("failed to encode C# assembly path {}", prepared.assembly_path.display()))?;
+		ze_log::debug!("[.NET] calling get_delegate_loader_for_assembly()...");
 		let loader = context
 			.get_delegate_loader_for_assembly(assembly_path)
 			.context("failed to load C# assembly")?;
+		ze_log::debug!("[.NET] get_delegate_loader_for_assembly: success");
 
 		Ok(Self {
 			loader,
@@ -1251,10 +1288,21 @@ pub struct RaycastHit2D {
 /// `ze_physics` owns rapier2d's query pipeline and can't be depended on from
 /// here directly -- it already depends on `ze_scripting_cs`, so a reverse
 /// dependency would be circular. Instead `PhysicsSystem` registers a plain fn
-/// pointer + opaque context pointer for the duration of each `fixed_update`
-/// call it drives, the same "expose latest physics state to scripts" idea
-/// as the velocity cache, but for a query that takes arbitrary parameters
-/// instead of being keyed by entity.
+/// pointer + opaque context pointer, the same "expose latest physics state to
+/// scripts" idea as the velocity cache, but for a query that takes arbitrary
+/// parameters instead of being keyed by entity.
+///
+/// The registration is long-lived, not scoped to a single call: `PhysicsWorld`
+/// queries (`raycast`) only ever borrow `&self`, and `PhysicsSystem::world` is
+/// a stable field of a heap-boxed, long-lived system (its address doesn't
+/// move even when its *contents* are replaced by `PhysicsSystem::reset`), so
+/// the registered pointer stays valid across frames -- letting a script query
+/// "the physics state as of the last fixed step" from a regular `OnUpdate`
+/// tick, not just from inside `OnFixedUpdate` where a step just ran. The one
+/// real hazard is the registration outliving the `PhysicsWorld` itself (e.g.
+/// a scene switch dropping the whole `PhysicsSystem`); `PhysicsSystem`'s
+/// `Drop` impl calls [`clear_raycast_provider_if`] to close that window
+/// regardless of when/why it's dropped.
 pub type RaycastQueryFn = fn(*const (), Vec2, Vec2, f32) -> Option<RaycastHit2D>;
 
 thread_local! {
@@ -1263,13 +1311,28 @@ thread_local! {
 
 /// # Safety
 /// `context` must stay valid for as long as the provider is registered. Callers
-/// must pair this with [`clear_raycast_provider`] before `context`'s pointee
-/// can be moved, reset, or dropped.
+/// must clear it (directly, or via [`clear_raycast_provider_if`]) before
+/// `context`'s pointee can be moved or dropped -- note that *replacing* the
+/// pointee's value in place (e.g. `*mut T = new_value`) does not require
+/// clearing first, since the pointer address itself stays valid.
 pub unsafe fn set_raycast_provider(context: *const (), query: RaycastQueryFn) {
 	RAYCAST_PROVIDER.with(|cell| cell.set(Some((context, query))));
 }
 
 pub fn clear_raycast_provider() { RAYCAST_PROVIDER.with(|cell| cell.set(None)); }
+
+/// Clears the raycast provider only if it's still the one registered for
+/// `context`, so tearing down one provider (e.g. a `PhysicsSystem` being
+/// dropped) can never clobber a different, still-live provider that
+/// registered itself afterward (e.g. a newly-activated scene's own
+/// `PhysicsSystem`, already running before the old one's `Drop` fires).
+pub fn clear_raycast_provider_if(context: *const ()) {
+	RAYCAST_PROVIDER.with(|cell| {
+		if matches!(cell.get(), Some((current, _)) if current == context) {
+			cell.set(None);
+		}
+	});
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ScriptingApiCommand {
@@ -1482,11 +1545,18 @@ impl ScriptingRuntime {
 	fn new() -> Self { Self::new_with_paths(ASSEMBLY_PATH.into(), RUNTIME_CONFIG_PATH.into()) }
 
 	fn new_with_paths(assembly_path: PathBuf, runtime_config_path: PathBuf) -> Self {
+		ze_log::debug!("[.NET] Entering ScriptingRuntime::new_with_paths()");
+		ze_log::debug!("[.NET] assembly path: {}", assembly_path.display());
+		ze_log::debug!("[.NET] runtimeconfig path: {}", runtime_config_path.display());
+
 		let (engine, last_engine_init_error) = match ScriptingEngine::from_paths(assembly_path, runtime_config_path) {
-			Ok(engine) => (Some(engine), None),
+			Ok(engine) => {
+				ze_log::debug!("[.NET] ScriptingEngine::from_paths: SUCCESS");
+				(Some(engine), None)
+			}
 			Err(error) => {
 				let message = format!("{error:?}");
-				ze_log::error!("failed to initialize C# scripting engine: {message}");
+				ze_log::error!("[.NET] ScriptingEngine::from_paths: FAILURE — {message}");
 				(None, Some(message))
 			}
 		};
@@ -2277,32 +2347,38 @@ fn assembly_name_from_path(path: &Path) -> Result<String> {
 fn workspace_root() -> Result<PathBuf> { ze_core::resolve_engine_root() }
 
 fn load_hostfxr() -> Result<(Hostfxr, Option<PathBuf>)> {
+	ze_log::debug!("[.NET] loading hostfxr...");
+
 	// Stage 1: Bundled deployment (Dist build priority)
 	if let Some((bundled_path, dotnet_root)) = bundled_hostfxr_with_root() {
 		ze_log::debug!(
-			"Using bundled hostfxr at: {} (dotnet_root: {})",
+			"[.NET] loading bundled hostfxr: {} (dotnet_root: {})",
 			bundled_path.display(),
 			dotnet_root.display()
 		);
+		ze_log::debug!("[.NET] using bundled hostfxr: true");
 		let hostfxr = Hostfxr::load_from_path(&bundled_path)
 			.with_context(|| format!("Failed to load bundled hostfxr from {}", bundled_path.display()))?;
 		return Ok((hostfxr, Some(dotnet_root)));
 	}
-	ze_log::debug!("Bundled dotnet runtime not found next to executable");
+	ze_log::debug!("[.NET] bundled hostfxr not found, trying system discovery");
 
 	// Stage 2: Runtime system discovery (Replaces nethost compile-time discovery)
 	if let Some(detected_path) = find_system_hostfxr_path() {
-		ze_log::debug!("Successfully located system hostfxr at: {}", detected_path.display());
+		ze_log::debug!("[.NET] loading system hostfxr: {}", detected_path.display());
+		ze_log::debug!("[.NET] using bundled hostfxr: false");
 		let hostfxr = Hostfxr::load_from_path(&detected_path)
 			.with_context(|| format!("Failed to load system hostfxr from {}", detected_path.display()))?;
 		return Ok((hostfxr, None));
 	}
-	ze_log::debug!("System hostfxr discovery failed");
+	ze_log::debug!("[.NET] system hostfxr discovery failed");
 
 	// Stage 3: Manual path enumeration fallback (CI / Edge cases)
-	ze_log::debug!("Attempting manual path enumeration fallback...");
+	ze_log::debug!("[.NET] attempting manual path enumeration fallback...");
 	let hostfxr_path = find_hostfxr_path_fallback().context("Failed to locate libhostfxr via any available method")?;
 
+	ze_log::debug!("[.NET] loading fallback hostfxr: {}", hostfxr_path.display());
+	ze_log::debug!("[.NET] using bundled hostfxr: false");
 	let hostfxr = Hostfxr::load_from_path(&hostfxr_path)
 		.with_context(|| format!("Failed to load hostfxr from fallback path: {}", hostfxr_path.display()))?;
 	Ok((hostfxr, None))
@@ -2321,12 +2397,37 @@ fn find_system_hostfxr_path() -> Option<PathBuf> {
 /// Check for a bundled dotnet runtime next to the executable (dist build
 /// scenario). Returns the hostfxr path and the dotnet root directory.
 fn bundled_hostfxr_with_root() -> Option<(PathBuf, PathBuf)> {
-	let exe_dir = env::current_exe().ok()?.parent()?.to_path_buf();
+	let exe_path = match env::current_exe() {
+		Ok(p) => p,
+		Err(e) => {
+			ze_log::error!("[.NET] failed to get current exe path: {e}");
+			return None;
+		}
+	};
+	let exe_dir = match exe_path.parent() {
+		Some(d) => d.to_path_buf(),
+		None => {
+			ze_log::error!("[.NET] exe path has no parent directory: {}", exe_path.display());
+			return None;
+		}
+	};
+
+	ze_log::debug!("[.NET] exe path: {}", exe_path.display());
+	ze_log::debug!("[.NET] exe dir: {}", exe_dir.display());
+
 	let bundled = exe_dir.join("dotnet");
+	ze_log::debug!("[.NET] bundled dotnet root: {}", bundled.display());
 
 	// Primary: proper .NET layout (dotnet/host/fxr/<version>/hostfxr.dll).
-	if let Some(hostfxr) = latest_hostfxr_path_in(&bundled) {
-		return Some((hostfxr, bundled));
+	match latest_hostfxr_path_in(&bundled) {
+		Some(hostfxr) => {
+			ze_log::debug!("[.NET] checking bundled hostfxr: {}", hostfxr.display());
+			ze_log::debug!("[.NET] hostfxr exists: {}", hostfxr.exists());
+			return Some((hostfxr, bundled));
+		}
+		None => {
+			ze_log::debug!("[.NET] no hostfxr found under {}", bundled.display());
+		}
 	}
 
 	// Fallback: flat layout for backward compatibility with older dist builds
@@ -2338,6 +2439,8 @@ fn bundled_hostfxr_with_root() -> Option<(PathBuf, PathBuf)> {
 	} else {
 		bundled.join("libhostfxr.so")
 	};
+	ze_log::debug!("[.NET] checking flat fallback hostfxr: {}", flat_hostfxr.display());
+	ze_log::debug!("[.NET] flat hostfxr exists: {}", flat_hostfxr.exists());
 	if flat_hostfxr.exists() {
 		return Some((flat_hostfxr, bundled));
 	}
@@ -2407,7 +2510,8 @@ mod api {
 	use ze_core::Vec2;
 	use ze_ecs::{
 		ActiveCameraView, Animator, AudioSource, Children, Collider, EntitiesView, EntityId, Inactive, Name, Parent,
-		PhysicsSettings, RigidBody, Scene, Tag, Transform, ViewportInfo, shipyard::UniqueView,
+		PhysicsSettings, RigidBody, Scene, Tag, Transform, UiReferenceResolution, ViewportInfo, fit_aspect,
+		shipyard::UniqueView,
 	};
 	use ze_input::{Input, ZKeyCode, ZMouseCode};
 	use ze_renderer::{Camera, Sprite, compute_active_camera};
@@ -2441,6 +2545,8 @@ mod api {
 		audio_playing: HashMap<EntityId, bool>,
 		names: HashMap<String, EntityId>,
 		tags: HashMap<String, Vec<EntityId>>,
+		entity_names: HashMap<EntityId, String>,
+		entity_tags: HashMap<EntityId, String>,
 		entities_by_index: HashMap<u32, EntityId>,
 	}
 
@@ -2555,6 +2661,8 @@ mod api {
 		let mut button_clicked = HashMap::new();
 		let mut names = HashMap::new();
 		let mut tags: HashMap<String, Vec<EntityId>> = HashMap::new();
+		let mut entity_names = HashMap::new();
+		let mut entity_tags = HashMap::new();
 		let mut entities_by_index = HashMap::new();
 
 		world.run(|entities: EntitiesView| {
@@ -2564,10 +2672,12 @@ mod api {
 					components.insert((entity, ComponentKind::Name));
 					// First writer wins so `Find` is stable when names collide.
 					names.entry(name.name.clone()).or_insert(entity);
+					entity_names.insert(entity, name.name.clone());
 				}
 				if let Ok(tag) = world.get::<&Tag>(entity) {
 					components.insert((entity, ComponentKind::Tag));
 					tags.entry(tag.tag.clone()).or_default().push(entity);
+					entity_tags.insert(entity, tag.tag.clone());
 				}
 				if world.get::<&Transform>(entity).is_ok() {
 					components.insert((entity, ComponentKind::Transform));
@@ -2645,6 +2755,8 @@ mod api {
 			state.button_clicked = button_clicked;
 			state.names = names;
 			state.tags = tags;
+			state.entity_names = entity_names;
+			state.entity_tags = entity_tags;
 			state.entities_by_index = entities_by_index;
 		});
 	}
@@ -2705,13 +2817,79 @@ mod api {
 
 	pub extern "C" fn get_time_state_ptr() -> *const ScriptingTimeState { TIME_STATE.0.get().cast_const() }
 
+	/// True when `entity` is currently alive in the live `shipyard::World`,
+	/// checked generation-and-all via `Entities::is_alive` -- unlike the
+	/// `ApiState` snapshot caches below, this always reflects the world as it
+	/// is *right now*, not as of the last `refresh_scene_cache` call. Needed
+	/// because `destroy_entity` mutates the live world synchronously but
+	/// doesn't touch those caches, so a script that destroys an entity and
+	/// then immediately queries it again in the same tick would otherwise see
+	/// stale "still alive" cache data until the next refresh.
+	fn entity_is_alive(entity: EntityId) -> bool {
+		with_scene(|scene| {
+			scene
+				.world()
+				.borrow::<EntitiesView>()
+				.is_ok_and(|entities| entities.is_alive(entity))
+		})
+		.unwrap_or(false)
+	}
+
 	pub extern "C" fn has_component(entity: u64, component_type: u32) -> bool {
 		let entity = script_arg_to_entity_id(entity);
 		let Some(component_kind) = component_kind_from_u32(component_type) else {
 			return false;
 		};
 
+		if !entity_is_alive(entity) {
+			return false;
+		}
+
 		API_STATE.with(|state| state.borrow().components.contains(&(entity, component_kind)))
+	}
+
+	/// Writes up to `out_capacity` UTF-8 bytes of `text` into `out_buf` and
+	/// returns the full byte length of `text` (mirrors the size-then-fill
+	/// convention scripts already use for `find_entities_by_tag`: call once
+	/// with a null/zero-length buffer to size, then again with a buffer of
+	/// that size to fill).
+	fn write_utf8_to_buffer(text: &str, out_buf: *mut u8, out_capacity: i32) -> i32 {
+		let bytes = text.as_bytes();
+		let len = i32::try_from(bytes.len()).unwrap_or(i32::MAX);
+		if out_buf.is_null() || out_capacity <= 0 {
+			return len;
+		}
+
+		let written = bytes.len().min(out_capacity as usize);
+		unsafe {
+			std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_buf, written);
+		}
+
+		len
+	}
+
+	pub extern "C" fn get_name(entity: u64, out_buf: *mut u8, out_capacity: i32) -> i32 {
+		let entity = script_arg_to_entity_id(entity);
+		let name = if entity_is_alive(entity) {
+			API_STATE
+				.with(|state| state.borrow().entity_names.get(&entity).cloned())
+				.unwrap_or_default()
+		} else {
+			String::new()
+		};
+		write_utf8_to_buffer(&name, out_buf, out_capacity)
+	}
+
+	pub extern "C" fn get_tag(entity: u64, out_buf: *mut u8, out_capacity: i32) -> i32 {
+		let entity = script_arg_to_entity_id(entity);
+		let tag = if entity_is_alive(entity) {
+			API_STATE
+				.with(|state| state.borrow().entity_tags.get(&entity).cloned())
+				.unwrap_or_default()
+		} else {
+			String::new()
+		};
+		write_utf8_to_buffer(&tag, out_buf, out_capacity)
 	}
 
 	pub extern "C" fn get_position(entity: u64, out_x: *mut f32, out_y: *mut f32) {
@@ -2720,9 +2898,13 @@ mod api {
 		}
 
 		let entity = script_arg_to_entity_id(entity);
-		let (x, y) = API_STATE
-			.with(|state| state.borrow().transform_positions.get(&entity).copied())
-			.unwrap_or((0.0, 0.0));
+		let (x, y) = if entity_is_alive(entity) {
+			API_STATE
+				.with(|state| state.borrow().transform_positions.get(&entity).copied())
+				.unwrap_or((0.0, 0.0))
+		} else {
+			(0.0, 0.0)
+		};
 
 		write_position(out_x, out_y, x, y);
 	}
@@ -2742,6 +2924,9 @@ mod api {
 
 	pub extern "C" fn get_rotation(entity: u64) -> f32 {
 		let entity = script_arg_to_entity_id(entity);
+		if !entity_is_alive(entity) {
+			return 0.0;
+		}
 		API_STATE
 			.with(|state| state.borrow().transform_rotations.get(&entity).copied())
 			.unwrap_or(0.0)
@@ -2765,9 +2950,13 @@ mod api {
 		}
 
 		let entity = script_arg_to_entity_id(entity);
-		let (x, y) = API_STATE
-			.with(|state| state.borrow().transform_scales.get(&entity).copied())
-			.unwrap_or((1.0, 1.0));
+		let (x, y) = if entity_is_alive(entity) {
+			API_STATE
+				.with(|state| state.borrow().transform_scales.get(&entity).copied())
+				.unwrap_or((1.0, 1.0))
+		} else {
+			(1.0, 1.0)
+		};
 
 		write_position(out_x, out_y, x, y);
 	}
@@ -2791,9 +2980,13 @@ mod api {
 		}
 
 		let entity = script_arg_to_entity_id(entity);
-		let (x, y) = API_STATE
-			.with(|state| state.borrow().velocities.get(&entity).copied())
-			.unwrap_or((0.0, 0.0));
+		let (x, y) = if entity_is_alive(entity) {
+			API_STATE
+				.with(|state| state.borrow().velocities.get(&entity).copied())
+				.unwrap_or((0.0, 0.0))
+		} else {
+			(0.0, 0.0)
+		};
 
 		write_position(out_x, out_y, x, y);
 	}
@@ -3244,18 +3437,26 @@ mod api {
 			}
 
 			// Slow path: CameraViewSystem hasn't run yet, so compute the
-			// view-projection matrix on the fly from the primary camera.
+			// view-projection matrix on the fly from the primary camera. Mirrors
+			// `refresh_active_camera_view`: project with the fixed reference
+			// aspect ratio, then letterbox/pillarbox-fit that into the actual
+			// viewport, so this fallback agrees with the fast path.
 			let viewport_size = scene
 				.world()
 				.borrow::<UniqueView<ViewportInfo>>()
 				.ok()
 				.map(|v| v.size)
 				.unwrap_or(Vec2::new(1.0, 1.0));
-			let aspect = viewport_size.x / viewport_size.y.max(1.0);
-			let camera = compute_active_camera(scene, aspect)?;
+			let target_aspect = scene.world().borrow::<UniqueView<UiReferenceResolution>>().map_or_else(
+				|_| UiReferenceResolution::default().aspect_ratio(),
+				|r| r.aspect_ratio(),
+			);
+			let camera = compute_active_camera(scene, target_aspect)?;
+			let (viewport_offset, viewport_size) = fit_aspect(viewport_size, target_aspect);
 			ActiveCameraView {
 				view_projection: camera.view_projection,
 				viewport_size,
+				viewport_offset,
 			}
 			.unproject_to_world(screen)
 		})
@@ -3272,6 +3473,7 @@ mod api {
 	}
 
 	pub extern "C" fn set_cursor_grab_mode(mode: i32) {
+		ze_log::debug!("[cursor] set_cursor_grab_mode FFI received raw mode={mode}");
 		let mode = match mode {
 			1 => ScriptingCursorGrabMode::Confined,
 			2 => ScriptingCursorGrabMode::Locked,
@@ -3662,6 +3864,60 @@ mod tests {
 	}
 
 	#[test]
+	fn get_name_and_get_tag_read_from_the_scene_cache() {
+		let mut scene = Scene::new("Name Tag Test");
+		let hero = scene.create_entity("Hero"); // `create_entity` already attaches `Name`.
+		scene.world_mut().add_component(
+			hero,
+			(ze_ecs::Tag {
+				tag: "enemy".to_string(),
+			},),
+		);
+		let untagged = scene.create_entity("Bystander");
+
+		api::refresh_scene_cache(&scene);
+		// get_name/get_tag check liveness against the *live* world (not just
+		// the cache) to reject entities destroyed earlier in the same tick, so
+		// they need an active scene provider, same as a real script tick would
+		// have via `SceneProviderGuard` in `ScriptingSystem::update`.
+		let _scene_guard = SceneProviderGuard::new(&mut scene);
+
+		let hero_arg = entity_id_to_script_arg(hero);
+		let mut buf = [0u8; 16];
+
+		// Sizing call: null/zero-length buffer just returns the required length.
+		assert_eq!(api::get_name(hero_arg, std::ptr::null_mut(), 0), 4);
+		let written = api::get_name(hero_arg, buf.as_mut_ptr(), i32::try_from(buf.len()).unwrap());
+		assert_eq!(written, 4);
+		assert_eq!(&buf[..4], b"Hero");
+
+		assert_eq!(api::get_tag(hero_arg, std::ptr::null_mut(), 0), 5);
+		let written = api::get_tag(hero_arg, buf.as_mut_ptr(), i32::try_from(buf.len()).unwrap());
+		assert_eq!(written, 5);
+		assert_eq!(&buf[..5], b"enemy");
+
+		// A capacity smaller than the string truncates the write but still
+		// reports the full length, mirroring `find_entities_by_tag`'s convention.
+		let mut small_buf = [0xffu8; 2];
+		let written = api::get_name(hero_arg, small_buf.as_mut_ptr(), 2);
+		assert_eq!(written, 4);
+		assert_eq!(&small_buf, b"He");
+
+		// No Tag component on this entity -> empty string, length 0.
+		let untagged_arg = entity_id_to_script_arg(untagged);
+		assert_eq!(
+			api::get_tag(untagged_arg, buf.as_mut_ptr(), i32::try_from(buf.len()).unwrap()),
+			0
+		);
+
+		// Unknown entity id -> empty string, not a panic.
+		assert_eq!(
+			api::get_name(u64::MAX, buf.as_mut_ptr(), i32::try_from(buf.len()).unwrap()),
+			0
+		);
+	}
+
+	#[test]
 	fn script_field_metadata_accepts_csharp_property_names() -> Result<()> {
 		let fields: Vec<ScriptFieldMetadata> = serde_json::from_str(
 			r#"[
@@ -3725,6 +3981,263 @@ mod tests {
 		assert_eq!(pruned, 1);
 		assert!(script.fields.contains_key("speed"));
 		assert!(!script.fields.contains_key("removed"));
+		Ok(())
+	}
+
+	// Loads the real Sandbox.dll (built from ZeroEngine/api/cs +
+	// Sandbox/assets/scripts) through hostfxr/CoreCLR and drives two live script
+	// instances across two entities -- no window/renderer involved. Requires
+	// `dotnet build Sandbox/assets/Sandbox.csproj` to have been run at least once
+	// so Sandbox/assets/bin/Sandbox.dll exists and includes
+	// CrossScriptLookupCallee/CrossScriptLookupCaller.
+	#[test]
+	fn get_component_returns_live_script_instance_across_entities() -> Result<()> {
+		let mut scene = Scene::new("Cross Script Lookup Test");
+		register_scripting_components(scene.registry_mut());
+
+		let callee = scene.create_entity("Callee");
+		scene.world_mut().add_component(
+			callee,
+			(ze_ecs::Tag {
+				tag: "CrossScriptLookupCallee".to_string(),
+			},),
+		);
+		scene.entity_mut(callee).add_component(Scripts {
+			list: vec![Script {
+				path: "CrossScriptLookupCallee".to_string(),
+				enabled: true,
+				fields: BTreeMap::new(),
+			}],
+		});
+
+		let caller = scene.create_entity("Caller");
+		scene.entity_mut(caller).add_component(Scripts {
+			list: vec![Script {
+				path: "CrossScriptLookupCaller".to_string(),
+				enabled: true,
+				fields: BTreeMap::new(),
+			}],
+		});
+
+		let assembly_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../Sandbox/assets/bin/Sandbox.dll");
+		let runtime_config_path =
+			Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../Sandbox/assets/bin/Sandbox.runtimeconfig.json");
+		let mut system = ScriptingSystem::from_paths(assembly_path, runtime_config_path);
+
+		let _ = api::drain_commands();
+
+		system.update(&mut scene, 1.0 / 60.0)?;
+		let commands = api::drain_commands();
+		let first = commands
+			.iter()
+			.find_map(|c| match c {
+				ScriptingApiCommand::SetVelocity { entity, x, .. } if *entity == caller => Some(*x),
+				_ => None,
+			})
+			.expect("caller script should have queued a SetVelocity command on first update");
+		assert!((first - 1.0).abs() < f32::EPSILON, "expected counter == 1, got {first}");
+
+		// A second tick re-fetches the callee via GetComponent<T>() again; if
+		// this returned a fresh instance each time (instead of the engine's
+		// live tracked one) the counter would reset to 1 instead of advancing.
+		system.update(&mut scene, 1.0 / 60.0)?;
+		let commands = api::drain_commands();
+		let second = commands
+			.iter()
+			.find_map(|c| match c {
+				ScriptingApiCommand::SetVelocity { entity, x, .. } if *entity == caller => Some(*x),
+				_ => None,
+			})
+			.expect("caller script should have queued a SetVelocity command on second update");
+		assert!(
+			(second - 2.0).abs() < f32::EPSILON,
+			"expected counter == 2 (live instance state persisted across calls), got {second}"
+		);
+
+		Ok(())
+	}
+
+	// Loads the real Sandbox.dll and drives `EntityLivenessProbe`
+	// (Sandbox/assets/scripts/EntityLivenessProbe.cs), which exercises
+	// `Entity.TryGetComponent`/`IsValid` against a never-assigned
+	// `default(Entity)`, `Entity.Null`, and an entity destroyed earlier in the
+	// same tick. Requires `dotnet build Sandbox/assets/Sandbox.csproj` to have
+	// been run at least once.
+	#[test]
+	fn try_get_component_rejects_non_live_entities() -> Result<()> {
+		let mut scene = Scene::new("Entity Liveness Test");
+		register_scripting_components(scene.registry_mut());
+
+		let probe = scene.create_entity("Probe");
+		scene.world_mut().add_component(probe, (ze_ecs::Transform::default(),));
+		scene.entity_mut(probe).add_component(Scripts {
+			list: vec![Script {
+				path: "EntityLivenessProbe".to_string(),
+				enabled: true,
+				fields: BTreeMap::new(),
+			}],
+		});
+
+		// Must exist *before* `system.update` runs so it's already in the
+		// engine's per-tick component cache when the probe destroys it and
+		// immediately re-checks it in the same tick.
+		let victim = scene.create_entity("Victim");
+		scene.world_mut().add_component(victim, (ze_ecs::Transform::default(),));
+		scene.world_mut().add_component(
+			victim,
+			(ze_ecs::Tag {
+				tag: "EntityLivenessProbeVictim".to_string(),
+			},),
+		);
+
+		let assembly_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../Sandbox/assets/bin/Sandbox.dll");
+		let runtime_config_path =
+			Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../Sandbox/assets/bin/Sandbox.runtimeconfig.json");
+		let mut system = ScriptingSystem::from_paths(assembly_path, runtime_config_path);
+
+		let _ = api::drain_commands();
+		system.update(&mut scene, 1.0 / 60.0)?;
+		let commands = api::drain_commands();
+
+		let result = commands
+			.iter()
+			.find_map(|c| match c {
+				ScriptingApiCommand::SetVelocity { entity, x, .. } if *entity == probe => Some(*x as i32),
+				_ => None,
+			})
+			.expect("EntityLivenessProbe should have reported a result via SetVelocity");
+
+		assert_eq!(
+			result, 15,
+			"expected all 4 liveness checks to pass (bits: default-TryGetComponent, default-IsValid, Null-IsValid, destroyed-same-tick-TryGetComponent), got bitmask {result}"
+		);
+
+		Ok(())
+	}
+
+	// Broad headless health check across the C# API surface, driven by
+	// Sandbox/assets/scripts/ApiHealthCheckScript.cs (+ ApiHealthCheckHelper.cs).
+	// Self-checkable results (Entity/Transform/Rigidbody-getter/Coroutine APIs)
+	// come back as a bitmask via SetVelocity(entity, mask, 0.0), the same
+	// convention as `try_get_component_rejects_non_live_entities`. Rigidbody
+	// force/torque/velocity-setter calls aren't self-observable under this
+	// headless mock (no real physics), so they're verified here instead by
+	// checking the right ScriptingApiCommand was queued for each.
+	#[test]
+	fn api_health_check_script_passes_every_check() -> Result<()> {
+		use ze_ecs::{RigidBody, Tag};
+
+		let mut scene = Scene::new("Api Health Check Test");
+		register_scripting_components(scene.registry_mut());
+
+		let template = scene.create_entity("InstantiateTemplate");
+		scene
+			.world_mut()
+			.add_component(template, (ze_ecs::Transform::default(),));
+
+		// Only needs to exist so Entity.Find("FindableEntity") resolves.
+		scene.create_entity("FindableEntity");
+
+		let multi_tag_a = scene.create_entity("MultiTagA");
+		scene.world_mut().add_component(
+			multi_tag_a,
+			(Tag {
+				tag: "MultiTag".to_string(),
+			},),
+		);
+		let multi_tag_b = scene.create_entity("MultiTagB");
+		scene.world_mut().add_component(
+			multi_tag_b,
+			(Tag {
+				tag: "MultiTag".to_string(),
+			},),
+		);
+
+		let health_check = scene.create_entity("HealthCheckEntity");
+		scene
+			.world_mut()
+			.add_component(health_check, (ze_ecs::Transform::default(),));
+		scene.world_mut().add_component(health_check, (RigidBody::default(),));
+		scene.world_mut().add_component(
+			health_check,
+			(Tag {
+				tag: "HealthCheckTag".to_string(),
+			},),
+		);
+		scene.entity_mut(health_check).add_component(Scripts {
+			list: vec![Script {
+				path: "ApiHealthCheckScript".to_string(),
+				enabled: true,
+				fields: BTreeMap::new(),
+			}],
+		});
+
+		let assembly_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../Sandbox/assets/bin/Sandbox.dll");
+		let runtime_config_path =
+			Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../Sandbox/assets/bin/Sandbox.runtimeconfig.json");
+		let mut system = ScriptingSystem::from_paths(assembly_path, runtime_config_path);
+
+		api::refresh_velocity_cache([(health_check, 3.0, 4.0)]);
+
+		let _ = api::drain_commands();
+		let mut all_commands = Vec::new();
+		for _ in 0..10 {
+			system.update(&mut scene, 1.0 / 60.0)?;
+			all_commands.extend(api::drain_commands());
+		}
+
+		let final_mask = all_commands
+			.iter()
+			.filter_map(|c| match c {
+				ScriptingApiCommand::SetVelocity { entity, x, y } if *entity == health_check && *y == 0.0 => {
+					Some(*x as i32)
+				}
+				_ => None,
+			})
+			.next_back()
+			.expect("ApiHealthCheckScript should have reported a result bitmask via SetVelocity");
+
+		const FULL_MASK: i32 = (1 << 19) - 1;
+		assert_eq!(
+			final_mask,
+			FULL_MASK,
+			"expected all self-checkable API checks to pass, missing bits: {:#021b}",
+			!final_mask & FULL_MASK
+		);
+
+		let has_command = |matcher: &dyn Fn(&ScriptingApiCommand) -> bool| all_commands.iter().any(|c| matcher(c));
+
+		assert!(
+			has_command(
+				&|c| matches!(c, ScriptingApiCommand::SetVelocity { entity, x, y } if *entity == health_check && (*x - 9.0).abs() < f32::EPSILON && (*y - 9.0).abs() < f32::EPSILON)
+			),
+			"Rigidbody.Velocity setter should have queued SetVelocity(9, 9)"
+		);
+		assert!(
+			has_command(
+				&|c| matches!(c, ScriptingApiCommand::Add2DForce { entity, x, y } if *entity == health_check && (*x - 1.0).abs() < f32::EPSILON && (*y - 2.0).abs() < f32::EPSILON)
+			),
+			"Rigidbody.Add2DForce(Force) should have queued Add2DForce(1, 2)"
+		);
+		assert!(
+			has_command(
+				&|c| matches!(c, ScriptingApiCommand::Add2DImpulse { entity, x, y } if *entity == health_check && (*x - 3.0).abs() < f32::EPSILON && (*y - 4.0).abs() < f32::EPSILON)
+			),
+			"Rigidbody.Add2DForce(Impulse) should have queued Add2DImpulse(3, 4)"
+		);
+		assert!(
+			has_command(
+				&|c| matches!(c, ScriptingApiCommand::AddTorque { entity, torque } if *entity == health_check && (*torque - 5.0).abs() < f32::EPSILON)
+			),
+			"Rigidbody.AddTorque(Force) should have queued AddTorque(5)"
+		);
+		assert!(
+			has_command(
+				&|c| matches!(c, ScriptingApiCommand::AddTorqueImpulse { entity, torque } if *entity == health_check && (*torque - 6.0).abs() < f32::EPSILON)
+			),
+			"Rigidbody.AddTorque(Impulse) should have queued AddTorqueImpulse(6)"
+		);
+
 		Ok(())
 	}
 }

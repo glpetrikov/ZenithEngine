@@ -160,4 +160,9 @@ public static unsafe class Input
     /// Locks (or confines/frees) the OS cursor relative to the game window.
     public static void SetCursorGrabMode(CursorGrabMode mode) =>
         EngineAPI.Current->set_cursor_grab_mode((int)mode);
+
+    /// Shows or hides the OS cursor over the game window, independently of
+    /// SetCursorGrabMode -- releasing a grab does not make the cursor visible
+    /// on its own. Equivalent to setting CursorVisible.
+    public static void SetCursorVisible(bool visible) => CursorVisible = visible;
 }

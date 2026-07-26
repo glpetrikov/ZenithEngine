@@ -4,8 +4,8 @@ use transform_gizmo_egui::{
 	prelude::{Gizmo, GizmoConfig, GizmoInteraction, GizmoMode, GizmoOrientation, GizmoResult, mint},
 };
 use ze_core::{Mat4, Quat, Vec2 as ZeVec2, Vec3};
-use ze_ecs::{Collider, ColliderShape, EntitiesView, EntityId, Inactive, SaveFile, Scene, Transform};
-use ze_renderer::{Camera, CameraProjection, Sprite, SpriteSize};
+use ze_ecs::{Collider, ColliderShape, EntitiesView, EntityId, Inactive, SaveFile, Scene, Transform, fit_aspect};
+use ze_renderer::{Camera, CameraProjection, Sprite, SpriteSize, reference_aspect};
 
 use super::{EditorPanelContext, EditorSelection, Panel};
 use crate::{
@@ -287,8 +287,7 @@ impl ScenePanel {
 		context: &mut EditorPanelContext<'_>,
 	) {
 		self.camera.zoom = sanitize_zoom(self.camera.zoom);
-		let aspect = viewport.width() / viewport.height().max(1.0);
-		sync_camera_projection(context.scene, self.camera.mode, self.camera.zoom, aspect);
+		sync_camera_projection(context.scene, self.camera.mode, self.camera.zoom);
 		self.handle_focus_shortcut(ui, input_response, context);
 
 		let secondary_down = ui.input(|input| input.pointer.button_down(PointerButton::Secondary));
@@ -315,12 +314,7 @@ impl ScenePanel {
 				pointer.and_then(|pointer| cursor_world_on_2d_plane(context.scene, viewport, pointer, 0.0));
 			let zoom_factor = (-scroll_delta * ZOOM_WHEEL_SCALE).exp2();
 			self.camera.zoom = sanitize_zoom(self.camera.zoom * zoom_factor);
-			sync_camera_projection(
-				context.scene,
-				self.camera.mode,
-				self.camera.zoom,
-				viewport.width() / viewport.height().max(1.0),
-			);
+			sync_camera_projection(context.scene, self.camera.mode, self.camera.zoom);
 			if let (Some(pointer), Some(anchor_before_zoom)) = (pointer, anchor_before_zoom)
 				&& let Some(anchor_after_zoom) = cursor_world_on_2d_plane(context.scene, viewport, pointer, 0.0)
 			{
@@ -337,10 +331,11 @@ impl ScenePanel {
 
 		if pan_active {
 			let delta = ui.input(|input| input.pointer.delta());
-			let aspect = viewport.width() / viewport.height().max(1.0);
+			let target_aspect = reference_aspect(context.scene);
+			let fitted_size = fitted_viewport(context.scene, viewport).size();
 			let world_per_point = ZeVec2::new(
-				self.camera.zoom * aspect / viewport.width(),
-				self.camera.zoom / viewport.height(),
+				self.camera.zoom * target_aspect / fitted_size.x,
+				self.camera.zoom / fitted_size.y,
 			);
 			move_primary_camera(
 				context.scene,
@@ -579,7 +574,7 @@ impl ScenePanel {
 			return false;
 		};
 		let entity = *entity;
-		let Some(camera) = primary_camera(context.scene, viewport.width() / viewport.height().max(1.0)) else {
+		let Some(camera) = primary_camera(context.scene, reference_aspect(context.scene)) else {
 			self.gizmo_dragging = false;
 			return false;
 		};
@@ -591,7 +586,7 @@ impl ScenePanel {
 		self.gizmo.update_config(GizmoConfig {
 			view_matrix: row_matrix_from_mat4(camera.view),
 			projection_matrix: row_matrix_from_mat4(camera.projection),
-			viewport,
+			viewport: fitted_viewport(context.scene, viewport),
 			modes: GizmoMode::all(),
 			orientation: GizmoOrientation::Local,
 			..*self.gizmo.config()
@@ -637,6 +632,24 @@ fn sanitize_zoom(zoom: f32) -> f32 {
 struct CameraMatrices {
 	view: Mat4,
 	projection: Mat4,
+}
+
+/// The sub-rect of `viewport` (in the same egui point units) that the camera
+/// actually renders into once letterboxed/pillarboxed to the project's fixed
+/// reference aspect ratio -- see `ze_renderer::reference_aspect` and
+/// `ze_ecs::fit_aspect`, which this mirrors exactly. Editor screen<->world
+/// conversions (picking, dragging, panning, the gizmo, the tile grid overlay)
+/// must go through this instead of the raw panel rect, or they drift from
+/// what the fixed-reference-aspect render/gameplay path actually shows
+/// whenever the panel isn't exactly at the reference aspect ratio -- which is
+/// normal for a docked viewport.
+fn fitted_viewport(scene: &Scene, viewport: egui::Rect) -> egui::Rect {
+	let target_aspect = reference_aspect(scene);
+	let (offset, size) = fit_aspect(ZeVec2::new(viewport.width(), viewport.height()), target_aspect);
+	egui::Rect::from_min_size(
+		egui::pos2(viewport.left() + offset.x, viewport.top() + offset.y),
+		egui::vec2(size.x, size.y),
+	)
 }
 
 fn primary_camera(scene: &Scene, aspect: f32) -> Option<CameraMatrices> {
@@ -692,7 +705,7 @@ fn primary_camera_entity(scene: &Scene) -> Option<EntityId> {
 	primary
 }
 
-fn sync_camera_projection(scene: &mut Scene, mode: ViewportMode, zoom: f32, _aspect: f32) {
+fn sync_camera_projection(scene: &mut Scene, mode: ViewportMode, zoom: f32) {
 	let Some(entity) = primary_camera_entity(scene) else {
 		return;
 	};
@@ -926,7 +939,8 @@ fn row_from_columns(columns: [[f32; 4]; 4], row: usize) -> mint::Vector4<f64> {
 }
 
 fn pick_entity(scene: &Scene, viewport: egui::Rect, pointer: egui::Pos2) -> Option<EntityId> {
-	let camera = primary_camera(scene, viewport.width() / viewport.height().max(1.0))?;
+	let viewport = fitted_viewport(scene, viewport);
+	let camera = primary_camera(scene, reference_aspect(scene))?;
 	let ray = pointer_ray(camera, viewport, pointer)?;
 	let world = scene.world();
 	let mut picked = None;
@@ -999,7 +1013,8 @@ fn pointer_world_on_entity_z(
 	entity: EntityId,
 ) -> Option<Vec3> {
 	let transform = entity_world_transform(scene, entity)?;
-	let camera = primary_camera(scene, viewport.width() / viewport.height().max(1.0))?;
+	let viewport = fitted_viewport(scene, viewport);
+	let camera = primary_camera(scene, reference_aspect(scene))?;
 	let ray = pointer_ray(camera, viewport, pointer)?;
 
 	if ray.direction.z.abs() <= f32::EPSILON {
@@ -1011,7 +1026,8 @@ fn pointer_world_on_entity_z(
 }
 
 fn cursor_world_on_2d_plane(scene: &Scene, viewport: egui::Rect, pointer: egui::Pos2, plane_z: f32) -> Option<Vec3> {
-	let camera = primary_camera(scene, viewport.width() / viewport.height().max(1.0))?;
+	let viewport = fitted_viewport(scene, viewport);
+	let camera = primary_camera(scene, reference_aspect(scene))?;
 	let ray = pointer_ray(camera, viewport, pointer)?;
 
 	if ray.direction.z.abs() <= f32::EPSILON {
@@ -1058,10 +1074,10 @@ fn world_to_screen(camera: CameraMatrices, viewport: egui::Rect, world: Vec3) ->
 fn draw_tile_grid_overlay(ui: &Ui, viewport: egui::Rect, scene: &Scene) {
 	const MAX_GRID_LINES: i32 = 500;
 
-	let aspect = viewport.width() / viewport.height().max(1.0);
-	let Some(camera) = primary_camera(scene, aspect) else {
+	let Some(camera) = primary_camera(scene, reference_aspect(scene)) else {
 		return;
 	};
+	let fitted = fitted_viewport(scene, viewport);
 	let tile_size = tilemap::tile_world_size(scene).max(f32::EPSILON);
 
 	// World-space bounds of the visible viewport (its four corners projected
@@ -1095,8 +1111,8 @@ fn draw_tile_grid_overlay(ui: &Ui, viewport: egui::Rect, scene: &Scene) {
 	let mut col = first_col;
 	while col <= last_col {
 		let x = (col as f32 - 0.5) * tile_size;
-		let top = world_to_screen(camera, viewport, Vec3::new(x, min_y, 0.0));
-		let bottom = world_to_screen(camera, viewport, Vec3::new(x, max_y, 0.0));
+		let top = world_to_screen(camera, fitted, Vec3::new(x, min_y, 0.0));
+		let bottom = world_to_screen(camera, fitted, Vec3::new(x, max_y, 0.0));
 		painter.line_segment([top, bottom], (1.0, line_color));
 		col += 1;
 	}
@@ -1104,8 +1120,8 @@ fn draw_tile_grid_overlay(ui: &Ui, viewport: egui::Rect, scene: &Scene) {
 	let mut row = first_row;
 	while row <= last_row {
 		let y = (row as f32 - 0.5) * tile_size;
-		let left = world_to_screen(camera, viewport, Vec3::new(min_x, y, 0.0));
-		let right = world_to_screen(camera, viewport, Vec3::new(max_x, y, 0.0));
+		let left = world_to_screen(camera, fitted, Vec3::new(min_x, y, 0.0));
+		let right = world_to_screen(camera, fitted, Vec3::new(max_x, y, 0.0));
 		painter.line_segment([left, right], (1.0, line_color));
 		row += 1;
 	}
@@ -1117,8 +1133,8 @@ fn draw_tile_grid_overlay(ui: &Ui, viewport: egui::Rect, scene: &Scene) {
 		let (col, row) = world_to_cell(world, tile_size);
 		let cell_min = Vec3::new((col as f32 - 0.5) * tile_size, (row as f32 - 0.5) * tile_size, 0.0);
 		let cell_max = Vec3::new((col as f32 + 0.5) * tile_size, (row as f32 + 0.5) * tile_size, 0.0);
-		let screen_min = world_to_screen(camera, viewport, cell_min);
-		let screen_max = world_to_screen(camera, viewport, cell_max);
+		let screen_min = world_to_screen(camera, fitted, cell_min);
+		let screen_max = world_to_screen(camera, fitted, cell_max);
 		let rect = egui::Rect::from_two_pos(screen_min, screen_max);
 
 		painter.rect_filled(rect, 0.0, egui::Color32::from_rgba_unmultiplied(120, 210, 255, 40));

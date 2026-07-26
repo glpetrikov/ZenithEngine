@@ -21,7 +21,8 @@ use ze_input::{Input, ZKeyCode, ZMouseCode};
 use ze_physics::PhysicsSystem;
 use ze_project::Project;
 use ze_renderer::{
-	Camera, CameraViewSystem, EditorCameraSystem, RenderStatus, RenderSystem, register_renderer_components,
+	CameraViewSystem, EditorCameraSystem, LateCameraViewSystem, RenderStatus, RenderSystem,
+	register_renderer_components,
 };
 use ze_scripting_cs::{
 	CursorApiCommand, SHUTDOWN_REQUESTED, ScriptingCursorGrabMode, ScriptingSceneLoadCommand, ScriptingSystem,
@@ -63,15 +64,20 @@ impl Default for App {
 
 impl App {
 	pub fn new(active_project: Option<Project>) -> Result<Self> {
+		ze_log::debug!("[STARTUP 2a] Entered App::new()");
+
 		let resources = active_project.as_ref().map_or_else(
 			|| ResourceManager::for_runtime("Sandbox/assets"),
 			|project| ResourceManager::new(project.asset_dir.clone()),
 		);
+		ze_log::debug!("[STARTUP 2b] Loading main scene...");
 		let scene = load_main_scene(&resources, active_project.as_ref(), None)?;
+		ze_log::debug!("[STARTUP 2c] Main scene loaded");
 
 		if let Err(error) = resources.compile_game_shaders() {
 			ze_log::error!("Failed to compile game shaders: {error:?}");
 		}
+		ze_log::debug!("[STARTUP 2d] Game shaders compiled");
 
 		let active_scene = scene.name.clone();
 		let mut scenes = HashMap::new();
@@ -193,11 +199,7 @@ impl App {
 	}
 
 	fn load_main_scene(&mut self) -> Result<()> {
-		let scene_name = self
-			.active_project
-			.as_ref()
-			.map_or(DEFAULT_SCENE_NAME, |project| project.main_scene.as_str())
-			.to_string();
+		let scene_name = resolve_main_scene_name(&self.resources, self.active_project.as_ref());
 		self.load_and_activate_scene(&scene_name)
 	}
 
@@ -226,8 +228,25 @@ pub fn load_main_scene(
 	active_project: Option<&Project>,
 	ui_manager: Option<UiManagerHandle>,
 ) -> Result<Scene> {
-	let scene_name = active_project.map_or(DEFAULT_SCENE_NAME, |project| project.main_scene.as_str());
-	load_project_scene(resources, active_project, scene_name, ui_manager)
+	let scene_name = resolve_main_scene_name(resources, active_project);
+	load_project_scene(resources, active_project, &scene_name, ui_manager)
+}
+
+/// Picks the scene to boot into. When a `Project` is loaded (editor, or a
+/// standalone launch given an explicit project path) its `main_scene` is
+/// authoritative. Otherwise -- the normal path for a shipped/packaged
+/// standalone build, which runs with no `Project` at all -- fall back to the
+/// `main_scene` baked into `GameData.toml` at build time (see
+/// `ze_build::build_project_dist`), rather than a hardcoded scene name.
+fn resolve_main_scene_name(resources: &ResourceManager, active_project: Option<&Project>) -> String {
+	if let Some(project) = active_project {
+		return project.main_scene.clone();
+	}
+
+	let game_data_path = resources.game_assets_root().join("GameData.toml");
+	ze_project::GameData::load(&game_data_path)
+		.map(|game_data| game_data.main_scene)
+		.unwrap_or_else(|_| DEFAULT_SCENE_NAME.to_string())
 }
 
 pub fn load_project_scene(
@@ -269,21 +288,32 @@ pub fn load_project_scene(
 		.world()
 		.run(|entities: ze_ecs::EntitiesView| entities.iter().count());
 
-	activate_runtime_camera(&mut scene);
 	apply_project_physics_defaults(&mut scene, active_project);
 	scene.add_system(EditorCameraSystem::new());
 	// CameraViewSystem must run before ScriptingSystem so that C# scripts
 	// calling GetMouseWorldPosition() read a fresh ActiveCameraView instead
 	// of a stale / missing one.  Running before PhysicsSystem means the
 	// view-projection is based on the previous frame's camera transform,
-	// which is acceptable for cursor picking.
+	// which is acceptable for cursor picking. UISystem needs a fresher view
+	// than that (see LateCameraViewSystem below), so this pass alone is not
+	// sufficient for World Space UI projection.
 	scene.add_system(CameraViewSystem::new());
 	let (scripts_path, runtime_config_path) = scripting_paths(active_project, resources);
+	ze_log::debug!(
+		"[STARTUP 2e] Initializing scripting system (assembly: {}, runtimeconfig: {})",
+		scripts_path.display(),
+		runtime_config_path.display()
+	);
 	let scripting_system = ScriptingSystem::from_paths(scripts_path, runtime_config_path);
+	ze_log::debug!("[STARTUP 2f] Scripting system initialized");
 	let scripting_runtime = scripting_system.runtime();
 	scene.add_system(scripting_system);
 	scene.add_system(PhysicsSystem::with_scripting(scripting_runtime));
 	scene.add_system(AnimationSystem::new(resources.clone()));
+	// Re-refresh ActiveCameraView after simulation has moved things this
+	// tick, so UISystem's WorldSpace projection (below) isn't one tick behind
+	// -- see LateCameraViewSystem's doc comment for why that lag matters.
+	scene.add_system(LateCameraViewSystem::new());
 	if let Some(handle) = ui_manager {
 		scene.add_system(UISystem::new(handle, resources.clone()));
 	}
@@ -333,57 +363,6 @@ fn physics_settings_entity(scene: &Scene) -> Option<ze_ecs::EntityId> {
 		}
 	});
 	found
-}
-
-fn activate_runtime_camera(scene: &mut Scene) {
-	if has_primary_runtime_camera(scene) {
-		return;
-	}
-
-	let Some(camera) = first_runtime_camera(scene) else {
-		return;
-	};
-
-	if let Ok(mut camera) = scene.world_mut().get::<&mut Camera>(camera) {
-		camera.primary = true;
-	}
-}
-
-fn has_primary_runtime_camera(scene: &Scene) -> bool {
-	let world = scene.world();
-	let mut found = false;
-	world.run(|entities: EntitiesView| {
-		for entity in entities.iter() {
-			if world.get::<&EditorOnly>(entity).is_ok() {
-				continue;
-			}
-			let Ok(camera) = world.get::<&Camera>(entity) else {
-				continue;
-			};
-			if camera.primary {
-				found = true;
-				break;
-			}
-		}
-	});
-	found
-}
-
-fn first_runtime_camera(scene: &Scene) -> Option<ze_ecs::EntityId> {
-	let world = scene.world();
-	let mut camera = None;
-	world.run(|entities: EntitiesView| {
-		for entity in entities.iter() {
-			if world.get::<&EditorOnly>(entity).is_ok() {
-				continue;
-			}
-			if world.get::<&Camera>(entity).is_ok() {
-				camera = Some(entity);
-				break;
-			}
-		}
-	});
-	camera
 }
 
 fn scripting_paths(
@@ -523,12 +502,13 @@ fn validate_scene_name(scene_name: &str) -> Result<()> {
 
 fn show_missing_primary_camera_dialog(scene_name: &str) {
 	let name = if scene_name.is_empty() { "unnamed" } else { scene_name };
-	ze_log::error!("Scene `{name}` has no primary camera; exiting");
+	ze_log::error!("Scene `{name}` has no usable camera; exiting");
 	let _ = MessageDialog::new()
 		.set_level(MessageLevel::Error)
 		.set_title("ZeroEngine")
 		.set_description(format!(
-			"Scene `{scene_name}` is missing a primary camera. Add a Camera component with Primary enabled before running the build."
+			"Scene `{scene_name}` has no usable camera. Add a Camera component to the scene -- it doesn't need to be \
+			 marked Primary, the engine will use it automatically unless another camera is explicitly marked Primary."
 		))
 		.set_buttons(MessageButtons::Ok)
 		.show();
@@ -540,20 +520,25 @@ fn show_missing_primary_camera_dialog(scene_name: &str) {
 fn apply_cursor_commands(window: &Window) {
 	for command in drain_cursor_commands() {
 		match command {
-			CursorApiCommand::SetVisible(visible) => window.set_cursor_visible(visible),
-			CursorApiCommand::SetGrabMode(mode) => match mode {
-				ScriptingCursorGrabMode::None => {
-					let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
-				}
-				ScriptingCursorGrabMode::Confined => {
-					let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Confined);
-				}
-				ScriptingCursorGrabMode::Locked => {
-					let _ = window
+			CursorApiCommand::SetVisible(visible) => {
+				ze_log::debug!("[cursor] set_cursor_visible({visible})");
+				window.set_cursor_visible(visible);
+			}
+			CursorApiCommand::SetGrabMode(mode) => {
+				ze_log::debug!("[cursor] applying grab mode {mode:?}");
+				let result = match mode {
+					ScriptingCursorGrabMode::None => window.set_cursor_grab(winit::window::CursorGrabMode::None),
+					ScriptingCursorGrabMode::Confined => {
+						window.set_cursor_grab(winit::window::CursorGrabMode::Confined)
+					}
+					ScriptingCursorGrabMode::Locked => window
 						.set_cursor_grab(winit::window::CursorGrabMode::Locked)
-						.or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Confined));
+						.or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Confined)),
+				};
+				if let Err(error) = result {
+					ze_log::warn!("[cursor] set_cursor_grab({mode:?}) failed: {error:?}");
 				}
-			},
+			}
 		}
 	}
 }
@@ -572,6 +557,8 @@ fn exit_for_missing_primary_camera(
 
 impl ApplicationHandler<CustomEvents> for App {
 	fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+		ze_log::debug!("[STARTUP 3a] Creating window...");
+
 		let attrs = Window::default_attributes()
 			.with_title("ZeroEngine")
 			.with_inner_size(winit::dpi::LogicalSize::new(1280.0, 720.0));
@@ -580,22 +567,28 @@ impl ApplicationHandler<CustomEvents> for App {
 		let window = match event_loop.create_window(attrs) {
 			Ok(window) => Arc::new(window),
 			Err(error) => {
-				ze_log::error!("Failed to create window: {error}");
+				ze_log::error!("[STARTUP 3a] Failed to create window: {error}");
 				event_loop.exit();
 				return;
 			}
 		};
+		ze_log::debug!("[STARTUP 3b] Window created");
 
 		// TODO: add cursor grab parameters in game settings
-		let _ = window
+		if let Err(error) = window
 			.set_cursor_grab(winit::window::CursorGrabMode::Locked)
-			.or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Confined));
+			.or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Confined))
+		{
+			ze_log::warn!("[cursor] startup set_cursor_grab failed: {error:?}");
+		}
 
 		window.set_cursor_visible(false);
 
+		ze_log::debug!("[STARTUP 3c] Initializing renderer...");
 		let renderer = self.runtime.block_on(ze_renderer::Renderer::new(window.clone()));
 		match renderer {
 			Ok(mut renderer) => {
+				ze_log::debug!("[STARTUP 3d] Renderer initialized");
 				let ui_manager =
 					UiManagerHandle::new(ze_ui::UiManager::new(renderer.device(), renderer.queue(), &window));
 				renderer.set_ui_manager(ui_manager.clone());
@@ -615,7 +608,7 @@ impl ApplicationHandler<CustomEvents> for App {
 				}
 			}
 			Err(error) => {
-				ze_log::error!("Failed to create renderer: {error:?}");
+				ze_log::error!("[STARTUP 3c] Failed to create renderer: {error:?}");
 				event_loop.exit();
 				return;
 			}
@@ -637,6 +630,7 @@ impl ApplicationHandler<CustomEvents> for App {
 		}
 
 		self.last_frame_time = Instant::now();
+		ze_log::debug!("[STARTUP 3e] First frame setup complete — entering main loop");
 	}
 	fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
 		ze_log::trace!("App update");
@@ -794,7 +788,7 @@ impl ApplicationHandler<CustomEvents> for App {
 
 #[cfg(test)]
 mod tests {
-	use std::{collections::HashMap, time::Instant};
+	use std::{collections::HashMap, fs, path::PathBuf, time::Instant};
 
 	use ze_ecs::{Collider, Inactive, RigidBody, Transform};
 
@@ -845,5 +839,164 @@ mod tests {
 		});
 
 		Ok(())
+	}
+
+	// Regression test for the fix making `Physics.Raycast()`/`GetHoveredEntity()`
+	// work from a script's regular `OnUpdate`, not just `OnFixedUpdate` -- the
+	// native raycast provider used to be registered only for the duration of
+	// `PhysicsSystem`'s fixed-update step, so calling it from `OnUpdate` (the
+	// natural place for mouse-hover/click picking) silently always missed.
+	// Drives `RaycastFromUpdateProbe.cs` (Sandbox/assets/scripts/), which casts
+	// a fixed ray every `OnUpdate` tick and reports hit/miss + a tick counter
+	// via its own `Transform.Position`, read back through the real ECS (no
+	// scripting-side command queue involved, so nothing here can be confused
+	// with `PhysicsSystem`'s own consumption of `ScriptingApiCommand`s).
+	// Requires `dotnet build Sandbox/assets/Sandbox.csproj` to have been run at
+	// least once.
+	#[test]
+	fn raycast_from_regular_update_works_across_multiple_ticks() -> Result<()> {
+		use std::{collections::BTreeMap, path::Path};
+
+		use ze_core::Vec3;
+		use ze_ecs::{ColliderShape, RigidBodyType, Tag};
+		use ze_scripting_cs::{Script, Scripts};
+
+		let mut scene = Scene::new("Raycast From Update Test");
+		register_scripting_components(scene.registry_mut());
+
+		let target = scene.create_entity("RaycastTarget");
+		scene
+			.entity_mut(target)
+			.add_component(Transform {
+				position: Vec3::new(0.0, -3.0, 0.0),
+				..Transform::default()
+			})
+			.add_component(RigidBody {
+				body_type: RigidBodyType::Static,
+				..RigidBody::default()
+			})
+			.add_component(Collider {
+				shape: ColliderShape::Box {
+					half_extents: Vec2::new(1.0, 1.0),
+				},
+				..Collider::default()
+			});
+		scene.world_mut().add_component(
+			target,
+			(Tag {
+				tag: "RaycastTarget".to_string(),
+			},),
+		);
+
+		let probe = scene.create_entity("Probe");
+		scene.entity_mut(probe).add_component(Transform::default());
+		scene.entity_mut(probe).add_component(Scripts {
+			list: vec![Script {
+				path: "RaycastFromUpdateProbe".to_string(),
+				enabled: true,
+				fields: BTreeMap::new(),
+			}],
+		});
+
+		let assembly_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../Sandbox/assets/bin/Sandbox.dll");
+		let runtime_config_path =
+			Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../Sandbox/assets/bin/Sandbox.runtimeconfig.json");
+		let scripting_system = ScriptingSystem::from_paths(assembly_path, runtime_config_path);
+		let runtime = scripting_system.runtime();
+		let mut physics_system = PhysicsSystem::with_scripting(runtime.clone());
+
+		// Deliberately smaller than the physics fixed timestep, so most ticks
+		// accumulate without an actual physics step running -- proving the
+		// raycast provider survives *between* steps, not just during them.
+		let dt = ze_physics::DEFAULT_PHYSICS_TIMESTEP / 3.0;
+
+		let mut hits_after_warmup = 0;
+		let mut misses_after_warmup = 0;
+		for tick in 1..=15i32 {
+			// Same per-frame order as production (`ze_app`'s system registration):
+			// scripting's regular `OnUpdate` runs before `PhysicsSystem`'s tick.
+			runtime.update(&mut scene, dt)?;
+			physics_system.update(&mut scene, dt)?;
+
+			let position = scene
+				.world_transform(probe)
+				.expect("probe should have a transform")
+				.position;
+			assert_eq!(
+				position.y as i32, tick,
+				"probe should report exactly once per OnUpdate tick"
+			);
+
+			// A handful of ticks' grace for the very first physics step to land.
+			if tick >= 4 {
+				if (position.x - 1.0).abs() < f32::EPSILON {
+					hits_after_warmup += 1;
+				} else {
+					misses_after_warmup += 1;
+				}
+			}
+		}
+
+		assert_eq!(
+			misses_after_warmup,
+			0,
+			"Physics.Raycast() from OnUpdate should hit the target on every tick once physics has run at \
+			 least once, got {misses_after_warmup} misses out of {} post-warmup ticks",
+			hits_after_warmup + misses_after_warmup
+		);
+		assert!(hits_after_warmup > 0);
+
+		Ok(())
+	}
+
+	#[test]
+	fn resolve_main_scene_name_prefers_project_over_game_data() {
+		let dir = std::env::temp_dir().join(format!("ze_app-main-scene-project-{}", std::process::id()));
+		let _ = fs::remove_dir_all(&dir);
+		fs::create_dir_all(&dir).unwrap();
+		fs::write(dir.join("GameData.toml"), "main_scene = \"FromGameData\"\n").unwrap();
+
+		let mut project = ze_project::Project::new(
+			"Test".to_string(),
+			"FromProject".to_string(),
+			PathBuf::from("assets"),
+			PathBuf::from("assets/bin/Scripts.dll"),
+		);
+		project.scenes.push("FromProject".to_string());
+
+		let resources = ResourceManager::new(&dir);
+		assert_eq!(resolve_main_scene_name(&resources, Some(&project)), "FromProject");
+
+		let _ = fs::remove_dir_all(&dir);
+	}
+
+	#[test]
+	fn resolve_main_scene_name_falls_back_to_packaged_game_data_without_project() {
+		// This is the shipped-standalone-game code path: `ResourceManager::for_runtime`
+		// finds `Game/assets.zepack` next to the executable with no `Project`/
+		// `ZEProject.toml` in sight, so `GameData.toml` (baked in at build time
+		// from the editor's main-scene setting) must be consulted instead of a
+		// hardcoded scene name.
+		let dir = std::env::temp_dir().join(format!("ze_app-main-scene-gamedata-{}", std::process::id()));
+		let _ = fs::remove_dir_all(&dir);
+		fs::create_dir_all(&dir).unwrap();
+		fs::write(dir.join("GameData.toml"), "main_scene = \"MainMenu\"\n").unwrap();
+
+		let resources = ResourceManager::new(&dir);
+		assert_eq!(resolve_main_scene_name(&resources, None), "MainMenu");
+
+		let _ = fs::remove_dir_all(&dir);
+	}
+
+	#[test]
+	fn resolve_main_scene_name_defaults_when_no_project_and_no_game_data() {
+		let dir = std::env::temp_dir().join(format!("ze_app-main-scene-none-{}", std::process::id()));
+		let _ = fs::remove_dir_all(&dir);
+		fs::create_dir_all(&dir).unwrap();
+
+		let resources = ResourceManager::new(&dir);
+		assert_eq!(resolve_main_scene_name(&resources, None), DEFAULT_SCENE_NAME);
+
+		let _ = fs::remove_dir_all(&dir);
 	}
 }

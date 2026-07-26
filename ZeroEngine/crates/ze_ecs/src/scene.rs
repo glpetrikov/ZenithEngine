@@ -36,26 +36,49 @@ impl Scene {
 		let mut registry = ComponentRegistry::new();
 		Self::register_defaults(&mut registry);
 
+		let mut world = World::new();
+		reserve_entity_zero(&mut world);
+
 		Self {
 			name: name.to_string(),
 			display_name: name.to_string(),
 			scene_type: SceneType::Scene,
-			world: World::new(),
+			world,
 			registry,
 			systems: Vec::new(),
 		}
 	}
 
 	pub fn from_registry(name: &str, registry: ComponentRegistry) -> Self {
+		let mut world = World::new();
+		reserve_entity_zero(&mut world);
+
 		Self {
 			name: name.to_string(),
 			display_name: name.to_string(),
 			scene_type: SceneType::Scene,
-			world: World::new(),
+			world,
 			registry,
 			systems: Vec::new(),
 		}
 	}
+}
+
+/// Burns index 0 / generation 0 in a fresh `World` so it can never later be
+/// live, by spawning and immediately deleting a throwaway entity. shipyard's
+/// generational allocator guarantees any future reuse of index 0 gets a
+/// higher generation, so `EntityId(index=0, gen=0)` can never be alive again
+/// for the lifetime of this `World`.
+///
+/// This matters because scripts represent "no entity assigned" two ways: the
+/// explicit `Entity.Null` sentinel (native `EntityId::dead()`, always
+/// correctly rejected), and the C# `default(Entity)` value, whose `Id` field
+/// defaults to `0` -- which otherwise decodes to an entirely ordinary,
+/// possibly-live `EntityId`. Reserving index 0 up front means `default(Entity)`
+/// can never alias a real entity handed out by this `World`.
+fn reserve_entity_zero(world: &mut World) {
+	let sentinel = world.add_entity(());
+	world.delete_entity(sentinel);
 }
 
 impl Scene {
@@ -67,7 +90,11 @@ impl Scene {
 
 	pub const fn registry_mut(&mut self) -> &mut ComponentRegistry { &mut self.registry }
 
-	pub fn clear_world(&mut self) { self.world = World::new(); }
+	pub fn clear_world(&mut self) {
+		let mut world = World::new();
+		reserve_entity_zero(&mut world);
+		self.world = world;
+	}
 }
 
 impl Scene {
@@ -338,6 +365,18 @@ impl Scene {
 		self.scene_type = snapshot.scene_type;
 		self.clear_world();
 		let mut world = World::new();
+
+		// Reserve index 0 / generation 0 up front, same as `Scene::new`/
+		// `clear_world` -- but only if the snapshot doesn't already claim it
+		// itself (no existing scene file does, but a saved entity's exact id
+		// always wins over the reservation to preserve save-file fidelity).
+		let claims_entity_zero = snapshot
+			.entities
+			.iter()
+			.any(|saved_entity| EntityId::from(saved_entity.id).index() == 0);
+		if !claims_entity_zero {
+			reserve_entity_zero(&mut world);
+		}
 
 		for saved_entity in &snapshot.entities {
 			let entity = EntityId::from(saved_entity.id);
@@ -688,5 +727,69 @@ mod tests {
 
 		assert_eq!(save_file.name, "");
 		assert_eq!(save_file.scene_type, SceneType::Scene);
+	}
+
+	// `EntityId(index=0, gen=0)` is the raw id C#'s `default(Entity)` decodes
+	// to. Index 0 legitimately gets reused after being burned (shipyard
+	// recycles freed indices) -- what must never recur is that *exact*
+	// index+generation pair, since a reused index always comes back at a
+	// higher generation. So these tests assert on identity with
+	// `entity_zero`, not on the index alone.
+	fn entity_zero() -> EntityId { EntityId::new_from_index_and_gen(0, 0) }
+
+	fn is_alive(scene: &Scene, entity: EntityId) -> bool {
+		scene
+			.world()
+			.borrow::<EntitiesView>()
+			.is_ok_and(|entities| entities.is_alive(entity))
+	}
+
+	#[test]
+	fn entity_zero_is_never_alive_in_a_new_scene() {
+		let mut scene = Scene::new("Entity Zero Test");
+		let first = scene.create_entity("First");
+		assert_ne!(
+			first,
+			entity_zero(),
+			"the first real entity must never collide with the reserved index=0/gen=0 id"
+		);
+		assert!(
+			!is_alive(&scene, entity_zero()),
+			"EntityId(index=0, gen=0) must never be alive, matching C#'s default(Entity)"
+		);
+	}
+
+	#[test]
+	fn entity_zero_is_never_alive_after_clear_world() {
+		let mut scene = Scene::new("Clear World Test");
+		scene.clear_world();
+		let first = scene.create_entity("First");
+		assert_ne!(
+			first,
+			entity_zero(),
+			"index=0/gen=0 should still be reserved after clear_world"
+		);
+		assert!(!is_alive(&scene, entity_zero()));
+	}
+
+	#[test]
+	fn entity_zero_is_never_alive_after_restoring_a_snapshot() {
+		let mut scene = Scene::new("Restore Snapshot Test");
+		let snapshot = scene.snapshot();
+		scene
+			.restore_snapshot(snapshot)
+			.expect("restoring an empty snapshot should succeed");
+
+		assert!(
+			!is_alive(&scene, entity_zero()),
+			"restoring a snapshot that doesn't claim index 0 should still reserve it"
+		);
+
+		let first = scene.create_entity("First");
+		assert_ne!(
+			first,
+			entity_zero(),
+			"index=0/gen=0 should stay reserved after restoring a snapshot"
+		);
 	}
 }

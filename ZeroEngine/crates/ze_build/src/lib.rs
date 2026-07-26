@@ -8,6 +8,7 @@ use ze_core::Context;
 use ze_project::Project;
 
 const EDITOR_ONLY_COMPONENT_TYPE: &str = "ze.editor.only";
+const INACTIVE_COMPONENT_TYPE: &str = "ze.inactive";
 const CAMERA_COMPONENT_TYPE: &str = "ze.renderer.camera";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,11 +141,15 @@ pub fn build_project_dist(project: &Project, options: &BuildOptions) -> ze_core:
 	validate_included_scene_primary_cameras(project)?;
 
 	// Ensure GameData.toml exists in the project assets dir so it gets packed
-	// into assets.zepack via the staging step below.
+	// into assets.zepack via the staging step below. The packaged standalone
+	// game runs with no `Project`/`ZEProject.toml` available (see
+	// `ResourceManager::for_runtime`), so `main_scene` must be synced from the
+	// project into GameData.toml on every build -- otherwise the shipped game
+	// has no way to know which scene the editor's main-scene setting picked.
 	let game_data_path = project.game_data_path();
-	if !game_data_path.is_file() {
-		ze_project::GameData::default().save(&game_data_path)?;
-	}
+	let mut game_data = ze_project::GameData::load_or_create(&game_data_path);
+	game_data.main_scene = project.main_scene.clone();
+	game_data.save(&game_data_path)?;
 
 	build_scripts_assembly(project, &options.configuration, options.api_source_dir.as_deref())?;
 
@@ -196,7 +201,7 @@ pub fn build_project_dist(project: &Project, options: &BuildOptions) -> ze_core:
 		)
 	})?;
 
-	copy_dotnet_runtime_to_dist(project, output_dir, &publish_temp, options.target)?;
+	copy_dotnet_runtime_to_dist(output_dir, &publish_temp, options.target)?;
 	let _ = fs::remove_dir_all(&publish_temp);
 
 	let notice = output_dir.join("Engine").join("NOTICE");
@@ -329,12 +334,7 @@ fn publish_self_contained_scripts(
 	Ok(())
 }
 
-fn copy_dotnet_runtime_to_dist(
-	project: &Project,
-	output_dir: &Path,
-	publish_dir: &Path,
-	target: BuildTarget,
-) -> ze_core::Result<()> {
+fn copy_dotnet_runtime_to_dist(output_dir: &Path, publish_dir: &Path, target: BuildTarget) -> ze_core::Result<()> {
 	if !publish_dir.exists() {
 		ze_core::bail!("self-contained publish output not found at {}", publish_dir.display());
 	}
@@ -354,72 +354,113 @@ fn copy_dotnet_runtime_to_dist(
 	fs::create_dir_all(&hostfxr_dir)?;
 	fs::create_dir_all(&framework_dir)?;
 
+	// Source the complete framework directory (managed assemblies, native
+	// hosting libraries, and the `Microsoft.NETCore.App.{deps,runtimeconfig}.json`
+	// metadata files) straight from the restored runtime pack NuGet package
+	// instead of the flattened `dotnet publish --self-contained` output.
+	// hostfxr identifies an installed framework by treating
+	// `shared/Microsoft.NETCore.App/<version>/` as an opaque directory that
+	// must contain those two metadata files -- a self-contained publish never
+	// produces them (the app's own `deps.json`/`runtimeconfig.json` cover its
+	// needs instead), so copying only the publish output silently produces a
+	// `dotnet` directory hostfxr reports as "No frameworks were found" for.
+	let rid = target.dotnet_rid();
+	let nuget_packages_dir = resolve_nuget_global_packages_dir()?;
+	let runtime_pack_dir = nuget_packages_dir
+		.join(format!("microsoft.netcore.app.runtime.{rid}"))
+		.join(version);
+	if !runtime_pack_dir.is_dir() {
+		ze_core::bail!(
+			"runtime pack directory not found at {} (expected NuGet package \
+			 microsoft.netcore.app.runtime.{rid} version {version} to have been \
+			 restored by the self-contained publish step)",
+			runtime_pack_dir.display()
+		);
+	}
+	let runtimes_rid_dir = runtime_pack_dir.join("runtimes").join(rid);
+	let native_dir = runtimes_rid_dir.join("native");
+	let lib_root_dir = runtimes_rid_dir.join("lib");
+	let lib_dir = single_subdirectory(&lib_root_dir).with_context(|| {
+		format!(
+			"failed to locate target-framework directory under {}",
+			lib_root_dir.display()
+		)
+	})?;
+
 	let hostfxr_file_name = target.hostfxr_file_name();
 
 	let mut copied_any = false;
-	for entry in fs::read_dir(publish_dir)? {
-		let entry = entry?;
-		let path = entry.path();
-		let file_name = entry.file_name();
+	for source_dir in [&native_dir, &lib_dir] {
+		for entry in fs::read_dir(source_dir)? {
+			let entry = entry?;
+			let path = entry.path();
+			let file_name = entry.file_name();
 
-		// Skip the game assembly — it is placed in Game/ separately.
-		if file_name == project.scripts_dll.file_name().unwrap_or_default() {
-			continue;
-		}
-
-		// Skip config files — they go into assets.zepack.
-		if file_name
-			.to_str()
-			.is_some_and(|name| name.ends_with(".runtimeconfig.json") || name.ends_with(".deps.json"))
-		{
-			continue;
-		}
-
-		// Skip debug symbols.
-		if path.extension().is_some_and(|ext| ext == "pdb") {
-			continue;
-		}
-
-		// Skip XML documentation files.
-		if path.extension().is_some_and(|ext| ext == "xml") {
-			continue;
-		}
-
-		// Skip satellite resource directories (culture-specific assemblies).
-		if path.is_dir()
-			&& file_name
-				.to_str()
-				.is_some_and(|name| name.len() == 2 || (name.len() == 5 && name.contains('-')))
-		{
-			continue;
-		}
-
-		// Skip the build subdirectory (intermediate output from dotnet publish).
-		if path.is_dir() && file_name.to_str() == Some("build") {
-			continue;
-		}
-
-		// Place hostfxr in the proper versioned fxr directory.
-		if path.is_file() && file_name.to_str() == Some(hostfxr_file_name) {
-			copy_recursive(&path, &hostfxr_dir.join(&file_name))?;
+			// Place hostfxr in the proper versioned fxr directory.
+			if file_name.to_str() == Some(hostfxr_file_name) {
+				copy_recursive(&path, &hostfxr_dir.join(&file_name))?;
+			} else {
+				copy_recursive(&path, &framework_dir.join(&file_name))?;
+			}
 			copied_any = true;
-			continue;
 		}
-
-		// Everything else goes in the framework shared directory.
-		copy_recursive(&path, &framework_dir.join(&file_name))?;
-		copied_any = true;
 	}
 
 	if !copied_any {
 		ze_core::bail!(
-			"self-contained publish output at {} contained no runtime files to copy into {}",
-			publish_dir.display(),
+			"runtime pack at {} contained no runtime files to copy into {}",
+			runtime_pack_dir.display(),
 			dotnet_dir.display()
 		);
 	}
 
 	Ok(())
+}
+
+fn resolve_nuget_global_packages_dir() -> ze_core::Result<PathBuf> {
+	let output = Command::new("dotnet")
+		.args(["nuget", "locals", "global-packages", "--list"])
+		.output()
+		.map_err(|error| {
+			io::Error::new(
+				error.kind(),
+				format!("failed to run `dotnet nuget locals global-packages --list`: {error}"),
+			)
+		})?;
+	if !output.status.success() {
+		ze_core::bail!(
+			"`dotnet nuget locals global-packages --list` failed: {}",
+			String::from_utf8_lossy(&output.stderr)
+		);
+	}
+
+	let stdout = String::from_utf8_lossy(&output.stdout);
+	let path = stdout
+		.lines()
+		.find_map(|line| line.trim().strip_prefix("global-packages:"))
+		.ok_or_else(|| ze_core::anyhow!("unexpected `dotnet nuget locals global-packages --list` output: {stdout}"))?
+		.trim();
+
+	Ok(PathBuf::from(path))
+}
+
+fn single_subdirectory(dir: &Path) -> ze_core::Result<PathBuf> {
+	let mut subdirs = fs::read_dir(dir)?
+		.filter_map(Result::ok)
+		.map(|entry| entry.path())
+		.filter(|path| path.is_dir());
+
+	let first = subdirs
+		.next()
+		.ok_or_else(|| ze_core::anyhow!("expected exactly one subdirectory in {}, found none", dir.display()))?;
+	if subdirs.next().is_some() {
+		ze_core::bail!(
+			"expected exactly one subdirectory in {}, found more than one",
+			dir.display()
+		);
+	}
+
+	Ok(first)
 }
 
 fn parse_self_contained_runtime_version(publish_dir: &Path) -> ze_core::Result<Option<String>> {
@@ -681,8 +722,28 @@ fn validate_included_scene_primary_cameras(project: &Project) -> ze_core::Result
 		return Ok(());
 	}
 
+	// Camera switching isn't supported yet, so the runtime doesn't require a
+	// camera to be explicitly marked Primary -- it falls back to the first
+	// available camera (see `find_primary_camera_entity` in ze_renderer and
+	// `ensure_primary_runtime_camera` below). A scene only ends up here if it
+	// has *no* usable camera at all: every Camera is either tagged EditorOnly
+	// (stripped from the build by `filter_editor_only_entities`) or Inactive
+	// (skipped by the runtime's camera lookup regardless of `primary`). The
+	// main scene runs immediately on launch, so shipping it in that state
+	// means the Standalone build crashes on startup every time -- fail the
+	// build outright rather than shipping it.
+	if missing_scenes.iter().any(|scene| scene == &project.main_scene) {
+		ze_core::bail!(
+			"main scene `{}` has no usable camera; the Standalone build would report \"No usable camera found\" \
+			and exit immediately on launch. Add a Camera component that is not tagged EditorOnly (stripped from \
+			the build) or Inactive (skipped by the runtime's camera lookup) -- it does not need to be marked \
+			Primary, the build will pick it automatically.",
+			project.main_scene
+		);
+	}
+
 	ze_log::warn!(
-		"scenes included in build without a primary runtime camera: {}",
+		"scenes included in build without a usable camera: {}",
 		missing_scenes.join(", ")
 	);
 	Ok(())
@@ -966,6 +1027,13 @@ fn ensure_primary_runtime_camera(json_value: &mut serde_json::Value) -> Result<(
 	}
 
 	for entity in entities {
+		// Skip Inactive entities: the runtime's own camera lookup
+		// (`find_primary_camera_entity` in ze_renderer) never selects an
+		// Inactive camera even if `primary` is true, so promoting one here
+		// would just leave the scene with no *effective* primary camera again.
+		if entity_is_inactive(entity) {
+			continue;
+		}
 		if let Some(camera) = camera_component_mut(entity) {
 			camera["value"]["primary"] = serde_json::Value::Bool(true);
 			break;
@@ -975,6 +1043,10 @@ fn ensure_primary_runtime_camera(json_value: &mut serde_json::Value) -> Result<(
 	Ok(())
 }
 
+// Returns whether the scene has a usable camera at all -- `primary` is only
+// checked because `ensure_primary_runtime_camera` has already promoted the
+// first available non-EditorOnly, non-Inactive camera when nothing was
+// explicitly marked Primary, matching the runtime's own fallback.
 fn scene_has_primary_runtime_camera(json_value: &mut serde_json::Value) -> Result<bool, String> {
 	filter_editor_only_entities(json_value)?;
 	ensure_primary_runtime_camera(json_value)?;
@@ -998,7 +1070,31 @@ fn entity_is_editor_only(entity: &serde_json::Value) -> bool {
 	})
 }
 
+fn entity_is_inactive(entity: &serde_json::Value) -> bool {
+	let Some(components) = entity.get("components").and_then(serde_json::Value::as_array) else {
+		return false;
+	};
+
+	components.iter().any(|component| {
+		component
+			.get("component_type")
+			.and_then(serde_json::Value::as_str)
+			.is_some_and(|component_type| component_type == INACTIVE_COMPONENT_TYPE)
+	})
+}
+
+// A `primary: true` Camera only counts if the runtime's own lookup
+// (`find_primary_camera_entity` in ze_renderer) would actually pick it --
+// that function skips Inactive entities regardless of the `primary` flag, so
+// an Inactive "primary" camera must not satisfy this check either. Otherwise
+// `scene_has_primary_runtime_camera` (and the build-time validation built on
+// it) reports the scene as fine while the Standalone build still boots to
+// "No usable camera found" and exits.
 fn entity_has_primary_camera(entity: &serde_json::Value) -> bool {
+	if entity_is_inactive(entity) {
+		return false;
+	}
+
 	entity
 		.get("components")
 		.and_then(serde_json::Value::as_array)
@@ -1268,5 +1364,203 @@ mod tests {
 		assert_eq!(fs::read(&target)?, b"fresh runtime binary");
 		fs::remove_dir_all(test_dir)?;
 		Ok(())
+	}
+
+	fn write_minimal_project(dir: &Path, main_scene_entities: &serde_json::Value) -> Project {
+		let scenes_dir = dir.join("assets").join("scenes");
+		fs::create_dir_all(&scenes_dir).expect("failed to create scenes dir");
+
+		let scene = serde_json::json!({
+			"version": "0.1.0",
+			"name": "main",
+			"scene_type": "Scene",
+			"entities": main_scene_entities,
+		});
+		fs::write(
+			scenes_dir.join("main.zescene.json"),
+			serde_json::to_string_pretty(&scene).expect("failed to serialize scene"),
+		)
+		.expect("failed to write scene file");
+
+		let toml = dir.join("ZEProject.toml");
+		fs::write(
+			&toml,
+			r#"
+name = "Repro"
+main_scene = "main"
+scenes = ["main"]
+asset_dir = "assets"
+scripts_dll = "assets/bin/Repro.dll"
+
+[game]
+name = "Repro"
+version = "0.1.0"
+"#,
+		)
+		.expect("failed to write project file");
+
+		Project::load(&toml).expect("failed to load repro project")
+	}
+
+	// Regression test for a real Linux-standalone-only bug: a scene whose only
+	// Camera is tagged EditorOnly renders fine in the Editor (which never
+	// strips EditorOnly entities, and falls back to an EditorOnly primary
+	// camera when no game camera exists), but the Standalone build strips that
+	// entity via `filter_editor_only_entities` before the primary-camera
+	// promotion step runs, shipping a dist with zero cameras that crashes on
+	// launch. The main scene must be a hard build failure, not a warning.
+	#[test]
+	fn validate_included_scene_primary_cameras_fails_when_main_scene_camera_is_editor_only() {
+		let dir = std::env::temp_dir().join(format!("ze-build-validate-main-camera-{}", std::process::id()));
+		let _ = fs::remove_dir_all(&dir);
+		let project = write_minimal_project(
+			&dir,
+			&serde_json::json!([
+				{
+					"id": { "index": 1, "gen": 0 },
+					"components": [
+						{ "component_type": EDITOR_ONLY_COMPONENT_TYPE, "value": null },
+						{ "component_type": CAMERA_COMPONENT_TYPE, "value": { "primary": false } }
+					]
+				}
+			]),
+		);
+
+		let missing = scenes_without_primary_camera(&project).expect("scan should succeed");
+		assert_eq!(missing, vec!["main".to_string()]);
+
+		let error = validate_included_scene_primary_cameras(&project)
+			.expect_err("main scene without a runtime camera must fail the build");
+		assert!(format!("{error:?}").contains("main"));
+
+		fs::remove_dir_all(dir).ok();
+	}
+
+	// A non-main scene without a primary camera stays a warning: it isn't run
+	// on launch, and may legitimately be an in-progress or test-only scene.
+	#[test]
+	fn validate_included_scene_primary_cameras_warns_for_non_main_scene() {
+		let dir = std::env::temp_dir().join(format!("ze-build-validate-secondary-camera-{}", std::process::id()));
+		let _ = fs::remove_dir_all(&dir);
+		let mut project = write_minimal_project(
+			&dir,
+			&serde_json::json!([
+				{
+					"id": { "index": 1, "gen": 0 },
+					"components": [{ "component_type": CAMERA_COMPONENT_TYPE, "value": { "primary": true } }]
+				}
+			]),
+		);
+		project.scenes.push("empty".to_string());
+		let empty_scene = serde_json::to_string_pretty(&serde_json::json!({
+			"version": "0.1.0",
+			"name": "empty",
+			"scene_type": "Scene",
+			"entities": [],
+		}))
+		.expect("failed to serialize empty scene");
+		fs::write(project.asset_dir.join("scenes/empty.zescene.json"), empty_scene)
+			.expect("failed to write empty scene file");
+
+		validate_included_scene_primary_cameras(&project)
+			.expect("a non-main scene missing a camera should only warn, not fail the build");
+
+		fs::remove_dir_all(dir).ok();
+	}
+
+	// Regression test for a real bug: a camera can be `primary: true` and
+	// visibly checked as such in the Editor's Inspector, yet the Standalone
+	// build still boots to "No primary camera found" and exits. Root cause:
+	// the runtime's own camera lookup (`find_primary_camera_entity` in
+	// ze_renderer) skips any camera tagged Inactive regardless of `primary`,
+	// but `entity_has_primary_camera` here did not -- so if the scene's only
+	// primary camera is also Inactive (e.g. hidden in the outliner and
+	// forgotten), build validation saw a "valid" primary camera and shipped a
+	// dist that the runtime then rejected.
+	#[test]
+	fn primary_camera_validation_ignores_inactive_primary_camera() {
+		let mut scene = serde_json::json!({
+			"entities": [
+				{
+					"components": [
+						{ "component_type": INACTIVE_COMPONENT_TYPE, "value": null },
+						{ "component_type": CAMERA_COMPONENT_TYPE, "value": { "primary": true } }
+					]
+				}
+			]
+		});
+
+		let has_primary_camera =
+			scene_has_primary_runtime_camera(&mut scene).expect("primary camera validation should succeed");
+
+		assert!(
+			!has_primary_camera,
+			"an Inactive camera must not count as a usable primary camera, matching the runtime's own lookup"
+		);
+	}
+
+	// When an Inactive camera is marked primary but another, active camera
+	// exists, packaging must promote the active one instead of leaving the
+	// scene with an Inactive "primary" that the runtime will just skip again.
+	#[test]
+	fn ensure_primary_runtime_camera_promotes_active_camera_over_inactive_primary() {
+		let mut scene = serde_json::json!({
+			"entities": [
+				{
+					"components": [
+						{ "component_type": INACTIVE_COMPONENT_TYPE, "value": null },
+						{ "component_type": CAMERA_COMPONENT_TYPE, "value": { "primary": true } }
+					]
+				},
+				{
+					"components": [{ "component_type": CAMERA_COMPONENT_TYPE, "value": { "primary": false } }]
+				}
+			]
+		});
+
+		ensure_primary_runtime_camera(&mut scene).expect("promotion should succeed");
+		let entities = scene
+			.get("entities")
+			.and_then(serde_json::Value::as_array)
+			.expect("scene should have entities");
+
+		assert!(
+			!entity_has_primary_camera(&entities[0]),
+			"the Inactive camera must not be treated as primary"
+		);
+		assert!(
+			entity_has_primary_camera(&entities[1]),
+			"the active camera should have been promoted to primary"
+		);
+	}
+
+	// Same real bug as above, exercised at the level actually gated in
+	// `build_project_dist`: a project whose main scene's only camera is
+	// `primary: true` but Inactive must fail the build, not ship silently.
+	#[test]
+	fn validate_included_scene_primary_cameras_fails_when_main_scene_camera_is_inactive() {
+		let dir = std::env::temp_dir().join(format!("ze-build-validate-inactive-camera-{}", std::process::id()));
+		let _ = fs::remove_dir_all(&dir);
+		let project = write_minimal_project(
+			&dir,
+			&serde_json::json!([
+				{
+					"id": { "index": 1, "gen": 0 },
+					"components": [
+						{ "component_type": INACTIVE_COMPONENT_TYPE, "value": null },
+						{ "component_type": CAMERA_COMPONENT_TYPE, "value": { "primary": true } }
+					]
+				}
+			]),
+		);
+
+		let missing = scenes_without_primary_camera(&project).expect("scan should succeed");
+		assert_eq!(missing, vec!["main".to_string()]);
+
+		let error = validate_included_scene_primary_cameras(&project)
+			.expect_err("main scene whose only camera is Inactive must fail the build");
+		assert!(format!("{error:?}").contains("main"));
+
+		fs::remove_dir_all(dir).ok();
 	}
 }

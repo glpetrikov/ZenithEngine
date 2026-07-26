@@ -963,10 +963,35 @@ impl Renderer {
 			timestamp_writes: None,
 			multiview_mask: None,
 		});
-		let viewport_width = self.viewport_size.width.max(1);
-		let viewport_height = self.viewport_size.height.max(1);
-		render_pass.set_viewport(0.0, 0.0, viewport_width as f32, viewport_height as f32, 0.0, 1.0);
-		render_pass.set_scissor_rect(0, 0, viewport_width, viewport_height);
+		// Restrict drawing to the letterboxed/pillarboxed sub-rect the camera
+		// computed (see `RenderSystem::render_scene`), so the visible world area
+		// stays fixed across resolutions -- anything outside it is left at the
+		// clear color above, forming the bars. Falls back to the full render
+		// target when the camera didn't compute a rect (e.g. `CameraRenderData`
+		// built directly in a test, or the scripting fallback path).
+		let (viewport_x, viewport_y, viewport_width, viewport_height) =
+			if camera.viewport_size.x > 0.0 && camera.viewport_size.y > 0.0 {
+				(
+					camera.viewport_offset.x,
+					camera.viewport_offset.y,
+					camera.viewport_size.x,
+					camera.viewport_size.y,
+				)
+			} else {
+				(
+					0.0,
+					0.0,
+					self.viewport_size.width.max(1) as f32,
+					self.viewport_size.height.max(1) as f32,
+				)
+			};
+		render_pass.set_viewport(viewport_x, viewport_y, viewport_width, viewport_height, 0.0, 1.0);
+		render_pass.set_scissor_rect(
+			viewport_x as u32,
+			viewport_y as u32,
+			viewport_width as u32,
+			viewport_height as u32,
+		);
 		render_pass.set_pipeline(&self.pipeline.render_pipeline);
 		render_pass.set_bind_group(1, &projection_ubo.bind_group, &[]);
 

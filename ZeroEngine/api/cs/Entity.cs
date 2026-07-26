@@ -23,9 +23,13 @@ public readonly unsafe struct Entity : IEquatable<Entity>
 
     public uint Generation => (uint)(Id >> 32);
 
-    /// True when this handle refers to an actual entity (i.e. it is not the
-    /// `Null` sentinel).
-    public bool IsValid => Id != ulong.MaxValue;
+    /// True when this handle refers to an actual entity: not the `Null`
+    /// sentinel, and not a default-initialized (never-assigned) handle
+    /// either. `default(Entity)` has `Id == 0`, which the engine reserves so
+    /// it can never be a real, live entity's id -- unlike `Null` (`Id ==
+    /// ulong.MaxValue`), it isn't returned by any lookup API, so seeing it
+    /// means a script variable was never assigned.
+    public bool IsValid => Id != ulong.MaxValue && Id != 0;
 
     /// True when the entity is active and False when entity have Inactive component.
     public bool IsActive
@@ -142,34 +146,124 @@ public readonly unsafe struct Entity : IEquatable<Entity>
 
     /// Adds a default-constructed component of type `T` and returns a handle to
     /// it. Data-carrying components (sprites, cameras, UI widgets) are not
-    /// addable this way and are logged + skipped by the engine.
+    /// addable this way and are logged + skipped by the engine. When `T` is a
+    /// `ZEScript` subclass, this instead creates and tracks a live script
+    /// instance for this entity (firing `OnCreate`/`OnEnable`), mirroring what
+    /// the engine does for scene-declared scripts.
     public T AddComponent<T>()
-        where T : ZEComponent, new()
+        where T : class, new()
     {
-        var component = new T();
+        if (!IsValid)
+        {
+            throw new InvalidOperationException(
+                $"Cannot add {typeof(T).Name} to an invalid entity (Id={Id}).");
+        }
+
+        if (typeof(ZEScript).IsAssignableFrom(typeof(T)))
+        {
+            return (T)(object)ZEScript.AddInstance(Id, typeof(T));
+        }
+
+        if (!typeof(ZEComponent).IsAssignableFrom(typeof(T)))
+        {
+            throw new InvalidOperationException(
+                $"{typeof(T).Name} is neither a ZEComponent nor a ZEScript.");
+        }
+
+        var component = (ZEComponent)(object)new T();
         EngineAPI.Current->add_component(Id, (uint)component.ComponentType);
         component.Bind(Id);
-        return component;
+        return (T)(object)component;
     }
 
+    /// Removes component `T`. When `T` is a `ZEScript` subclass, this instead
+    /// tears down the tracked script instance for this entity (firing
+    /// `OnDisable`/`OnDestroy`).
     public void RemoveComponent<T>()
-        where T : ZEComponent, new()
+        where T : class, new()
     {
-        var component = new T();
+        if (!IsValid)
+        {
+            return;
+        }
+
+        if (typeof(ZEScript).IsAssignableFrom(typeof(T)))
+        {
+            ZEScript.RemoveInstance(Id, typeof(T));
+            return;
+        }
+
+        if (!typeof(ZEComponent).IsAssignableFrom(typeof(T)))
+        {
+            throw new InvalidOperationException(
+                $"{typeof(T).Name} is neither a ZEComponent nor a ZEScript.");
+        }
+
+        var component = (ZEComponent)(object)new T();
         EngineAPI.Current->remove_component(Id, (uint)component.ComponentType);
     }
 
+    /// True when this entity has component `T`. When `T` is a `ZEScript`
+    /// subclass, this checks for a tracked live script instance instead of a
+    /// native component.
     public bool HasComponent<T>()
-        where T : ZEComponent, new()
+        where T : class, new()
     {
-        var component = new T();
+        if (!IsValid)
+        {
+            return false;
+        }
+
+        if (typeof(ZEScript).IsAssignableFrom(typeof(T)))
+        {
+            return ZEScript.TryGetInstance(Id, typeof(T), out _);
+        }
+
+        if (!typeof(ZEComponent).IsAssignableFrom(typeof(T)))
+        {
+            throw new InvalidOperationException(
+                $"{typeof(T).Name} is neither a ZEComponent nor a ZEScript.");
+        }
+
+        var component = (ZEComponent)(object)new T();
         return EngineAPI.HasComponent(Id, component.ComponentType);
     }
 
+    /// True when this entity has a `Tag` component whose value equals `tag`.
+    public bool HasTag(string tag) =>
+        TryGetComponent<Tag>(out var component) && component.Value == tag;
+
+    /// Attempts to fetch component `T`. When `T` is a `ZEScript` subclass,
+    /// this returns the live script instance the engine already tracks for
+    /// this entity (not a copy) instead of a `ZEComponent` proxy.
     public bool TryGetComponent<T>(out T component)
-        where T : ZEComponent, new()
+        where T : class
     {
-        var candidate = new T();
+        if (!IsValid)
+        {
+            component = default!;
+            return false;
+        }
+
+        if (typeof(ZEScript).IsAssignableFrom(typeof(T)))
+        {
+            if (ZEScript.TryGetInstance(Id, typeof(T), out var script))
+            {
+                component = (T)(object)script!;
+                return true;
+            }
+
+            component = default!;
+            return false;
+        }
+
+        if (!typeof(ZEComponent).IsAssignableFrom(typeof(T)))
+        {
+            throw new InvalidOperationException(
+                $"{typeof(T).Name} is neither a ZEComponent nor a ZEScript.");
+        }
+
+        var candidate = (ZEComponent)Activator.CreateInstance(typeof(T))!;
         if (!EngineAPI.HasComponent(Id, candidate.ComponentType))
         {
             component = default!;
@@ -177,13 +271,14 @@ public readonly unsafe struct Entity : IEquatable<Entity>
         }
 
         candidate.Bind(Id);
-        component = candidate;
+        component = (T)(object)candidate;
         return true;
     }
 
-    /// Returns a handle to component `T`, throwing if the entity lacks it.
+    /// Returns a handle to component `T` (or the live script instance if `T`
+    /// is a `ZEScript` subclass), throwing if the entity lacks it.
     public T GetComponent<T>()
-        where T : ZEComponent, new()
+        where T : class
     {
         if (!TryGetComponent<T>(out var component))
         {

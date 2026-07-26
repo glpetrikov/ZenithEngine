@@ -535,10 +535,24 @@ const fn default_ui_reference_width() -> f32 { 1920.0 }
 
 const fn default_ui_reference_height() -> f32 { 1080.0 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GameData {
 	#[serde(default)]
 	pub tags: Vec<String>,
+	// Baked in at build time from `Project::main_scene` so the packaged
+	// standalone game (which runs without a `Project`/`ZEProject.toml`) still
+	// knows which scene to boot into. See `ze_build::build_project_dist`.
+	#[serde(default = "default_main_scene")]
+	pub main_scene: String,
+}
+
+impl Default for GameData {
+	fn default() -> Self {
+		Self {
+			tags: Vec::new(),
+			main_scene: default_main_scene(),
+		}
+	}
 }
 
 impl GameData {
@@ -567,6 +581,7 @@ impl GameData {
 					"Enemy".to_string(),
 					"StaticGeometry".to_string(),
 				],
+				main_scene: default_main_scene(),
 			};
 			let _ = data.save(path);
 			data

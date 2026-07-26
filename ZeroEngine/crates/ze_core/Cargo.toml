@@ -22,3 +22,6 @@ glam = { version = "0.32.1", features = [
 anyhow = "1.0.102"
 thiserror = "2.0.18"
 serde = { version = "1", features = ["derive"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"

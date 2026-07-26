@@ -103,8 +103,9 @@ internal sealed class CoroutineRunner
             }
 
             var frame = _stack.Peek();
+            bool freshlyStarted = !frame.Started;
 
-            if (!frame.Started)
+            if (freshlyStarted)
             {
                 frame.Started = true;
                 if (!Advance(frame))
@@ -123,6 +124,16 @@ internal sealed class CoroutineRunner
             {
                 _stack.Push(new Frame(nested));
                 continue;
+            }
+
+            if (freshlyStarted)
+            {
+                // This frame's first MoveNext() already ran above (to reach its
+                // first yield) -- that's this tick's one step. Resolving an
+                // instantly-ready yield (e.g. `yield return null`) here too would
+                // advance twice in one tick, so a fresh `yield return null` would
+                // never actually wait a frame. Defer it to the next Tick() call.
+                return;
             }
 
             if (!IsReady(current, isFixed))

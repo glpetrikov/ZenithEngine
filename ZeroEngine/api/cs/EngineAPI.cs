@@ -70,6 +70,8 @@ public unsafe struct EngineAPI
     public delegate* unmanaged[Cdecl]<float*, float*, void> get_mouse_world_position;
     public delegate* unmanaged[Cdecl]<int, void> set_cursor_visible;
     public delegate* unmanaged[Cdecl]<int, void> set_cursor_grab_mode;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int, int> get_name;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int, int> get_tag;
 
     private static EngineAPI* current;
     private static bool consoleRedirected;
@@ -84,6 +86,40 @@ public unsafe struct EngineAPI
     internal static bool HasComponent(ulong entity, ComponentType componentType)
     {
         return Current->has_component(entity, (uint)componentType);
+    }
+
+    internal static void AddComponent(ulong entity, ComponentType componentType)
+    {
+        Current->add_component(entity, (uint)componentType);
+    }
+
+    internal static void RemoveComponent(ulong entity, ComponentType componentType)
+    {
+        Current->remove_component(entity, (uint)componentType);
+    }
+
+    internal static string GetName(ulong entity) => ReadUtf8(entity, Current->get_name);
+
+    internal static string GetTag(ulong entity) => ReadUtf8(entity, Current->get_tag);
+
+    private static string ReadUtf8(ulong entity, delegate* unmanaged[Cdecl]<ulong, byte*, int, int> getter)
+    {
+        // First call sizes the string, second fills it -- see FindAllWithTag
+        // for the same convention over an array instead of a string.
+        int length = getter(entity, null, 0);
+        if (length <= 0)
+        {
+            return string.Empty;
+        }
+
+        var buffer = new byte[length];
+        int written;
+        fixed (byte* ptr = buffer)
+        {
+            written = getter(entity, ptr, length);
+        }
+
+        return Encoding.UTF8.GetString(buffer, 0, Math.Min(written, length));
     }
 
     internal static EngineAPI* Current

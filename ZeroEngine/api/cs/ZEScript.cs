@@ -42,10 +42,30 @@ public abstract class ZEScript
     /// A handle to this script's own entity.
     protected Entity Self => new(EntityId);
 
+    /// Returns a handle to component `T`, or -- when `T` is a `ZEScript`
+    /// subclass -- the live script instance the engine already tracks for
+    /// this entity. Throws if the entity has neither.
     public T GetComponent<T>()
-        where T : ZEComponent, new()
+        where T : class
     {
-        var component = new T();
+        if (typeof(ZEScript).IsAssignableFrom(typeof(T)))
+        {
+            if (!TryGetInstance(EntityId, typeof(T), out var script))
+            {
+                throw new InvalidOperationException(
+                    $"Entity {EntityIndex}.{EntityGeneration} does not have script {typeof(T).Name}.");
+            }
+
+            return (T)(object)script!;
+        }
+
+        if (!typeof(ZEComponent).IsAssignableFrom(typeof(T)))
+        {
+            throw new InvalidOperationException(
+                $"{typeof(T).Name} is neither a ZEComponent nor a ZEScript.");
+        }
+
+        var component = (ZEComponent)Activator.CreateInstance(typeof(T))!;
         component.Bind(EntityId);
 
         if (!EngineAPI.HasComponent(EntityId, component.ComponentType))
@@ -55,7 +75,74 @@ public abstract class ZEScript
         }
 
         _boundComponents.Add(component);
-        return component;
+        return (T)(object)component;
+    }
+
+    /// True when this script's entity has component `T`. When `T` is a
+    /// `ZEScript` subclass, this checks for a tracked live script instance
+    /// instead of a native component.
+    public bool HasComponent<T>()
+        where T : class, new()
+    {
+        if (typeof(ZEScript).IsAssignableFrom(typeof(T)))
+        {
+            return TryGetInstance(EntityId, typeof(T), out _);
+        }
+
+        if (!typeof(ZEComponent).IsAssignableFrom(typeof(T)))
+        {
+            throw new InvalidOperationException(
+                $"{typeof(T).Name} is neither a ZEComponent nor a ZEScript.");
+        }
+
+        var component = (ZEComponent)(object)new T();
+        return EngineAPI.HasComponent(EntityId, component.ComponentType);
+    }
+
+    /// Adds a default-constructed component of type `T` and returns a handle
+    /// to it. When `T` is a `ZEScript` subclass, this instead creates and
+    /// tracks a live script instance on this entity (firing
+    /// `OnCreate`/`OnEnable`).
+    public T AddComponent<T>()
+        where T : class, new()
+    {
+        if (typeof(ZEScript).IsAssignableFrom(typeof(T)))
+        {
+            return (T)(object)AddInstance(EntityId, typeof(T));
+        }
+
+        if (!typeof(ZEComponent).IsAssignableFrom(typeof(T)))
+        {
+            throw new InvalidOperationException(
+                $"{typeof(T).Name} is neither a ZEComponent nor a ZEScript.");
+        }
+
+        var component = (ZEComponent)(object)new T();
+        EngineAPI.AddComponent(EntityId, component.ComponentType);
+        component.Bind(EntityId);
+        return (T)(object)component;
+    }
+
+    /// Removes component `T`. When `T` is a `ZEScript` subclass, this instead
+    /// tears down the tracked script instance on this entity (firing
+    /// `OnDisable`/`OnDestroy`).
+    public void RemoveComponent<T>()
+        where T : class, new()
+    {
+        if (typeof(ZEScript).IsAssignableFrom(typeof(T)))
+        {
+            RemoveInstance(EntityId, typeof(T));
+            return;
+        }
+
+        if (!typeof(ZEComponent).IsAssignableFrom(typeof(T)))
+        {
+            throw new InvalidOperationException(
+                $"{typeof(T).Name} is neither a ZEComponent nor a ZEScript.");
+        }
+
+        var component = (ZEComponent)(object)new T();
+        EngineAPI.RemoveComponent(EntityId, component.ComponentType);
     }
 
     private void PollBoundComponents()
@@ -497,6 +584,75 @@ public abstract class ZEScript
 
         return instance;
     }
+
+    /// Finds the live script instance of type `scriptType` (or a subclass)
+    /// attached to `entityId`, if any. Scans `_instances` rather than
+    /// recomputing the classPath key so it also matches when `scriptType` is
+    /// a base class of the concrete attached script.
+    internal static bool TryGetInstance(ulong entityId, Type scriptType, out ZEScript? instance)
+    {
+        foreach (var candidate in _instances.Values)
+        {
+            if (candidate.EntityId == entityId && scriptType.IsInstanceOfType(candidate))
+            {
+                instance = candidate;
+                return true;
+            }
+        }
+
+        instance = null;
+        return false;
+    }
+
+    /// Creates and tracks a new live instance of `scriptType` on `entityId`,
+    /// mirroring the create/init sequence the engine runs for scene-declared
+    /// scripts (`OnCreate` then `OnEnable`). Returns the existing instance
+    /// instead of creating a duplicate if one is already tracked.
+    internal static ZEScript AddInstance(ulong entityId, Type scriptType)
+    {
+        if (TryGetInstance(entityId, scriptType, out var existing))
+        {
+            return existing!;
+        }
+
+        var key = InstanceKey(entityId, ScriptClassPath(scriptType));
+        var instance = (ZEScript)Activator.CreateInstance(scriptType)!;
+        instance.EntityId = entityId;
+        _instances[key] = instance;
+        instance.OnCreate();
+        instance.OnEnable();
+        return instance;
+    }
+
+    /// Tears down and stops tracking the live instance of `scriptType` on
+    /// `entityId`, if any, mirroring the engine's teardown sequence
+    /// (`OnDisable` then `OnDestroy`). No-op if no such instance is tracked.
+    internal static void RemoveInstance(ulong entityId, Type scriptType)
+    {
+        string? keyToRemove = null;
+        foreach (var (key, candidate) in _instances)
+        {
+            if (candidate.EntityId == entityId && scriptType.IsInstanceOfType(candidate))
+            {
+                keyToRemove = key;
+                break;
+            }
+        }
+
+        if (keyToRemove is null)
+        {
+            return;
+        }
+
+        var instance = _instances[keyToRemove];
+        _instances.Remove(keyToRemove);
+        instance.StopAllCoroutines();
+        instance.OnDisable();
+        instance.OnDestroy();
+    }
+
+    private static string ScriptClassPath(Type scriptType) =>
+        scriptType.FullName ?? scriptType.Name;
 
     private static void ReportException(string context, Exception exception)
     {

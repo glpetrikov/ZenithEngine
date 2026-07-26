@@ -7494,6 +7494,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "glam 0.32.1",
+ "libc",
  "serde",
  "thiserror 2.0.18",
 ]
@@ -7655,6 +7656,7 @@ dependencies = [
  "terminal_size",
  "winit",
  "ze_app",
+ "ze_core",
  "ze_ecs",
  "ze_log",
  "ze_project",

@@ -45,7 +45,9 @@ use ze_ecs::{
 };
 use ze_physics::PhysicsSystem;
 use ze_project::Project;
-use ze_renderer::{Camera, CameraProjection, CameraViewSystem, CompositeMode, RenderSystem, Renderer};
+use ze_renderer::{
+	Camera, CameraProjection, CameraViewSystem, CompositeMode, LateCameraViewSystem, RenderSystem, Renderer,
+};
 use ze_scripting_cs::{
 	CursorApiCommand, SHUTDOWN_REQUESTED, ScriptingCursorGrabMode, ScriptingSceneLoadCommand, ScriptingSystem,
 	drain_cursor_commands, drain_scripting_scene_load_commands,
@@ -132,6 +134,15 @@ impl EditorRenderFlow {
 	/// The viewport image's on-screen rect from the most recent frame, in
 	/// logical (egui) points. `None` before the first frame has rendered.
 	pub const fn viewport_screen_rect(&self) -> Option<egui::Rect> { self.viewport_screen_rect }
+
+	/// Whether the game should receive mouse input right now, as computed by
+	/// the viewport panel from the last rendered frame (hover/focus state,
+	/// overriding egui's own pointer-ownership claim when the pointer is over
+	/// the viewport). Unlike `egui_winit`'s per-event `consumed` flag -- which
+	/// treats the viewport as part of egui's UI area and so reports mouse
+	/// button events there as consumed -- this reflects whether the click
+	/// should reach the game.
+	pub const fn viewport_wants_game_input(&self) -> bool { self.viewport_wants_game_input }
 
 	pub const fn mark_scene_loaded(&mut self) { self.save_status = SaveStatus::saved(); }
 
@@ -809,10 +820,8 @@ impl ApplicationHandler for EditorApp {
 			return;
 		};
 
-		let mut egui_consumed = false;
 		if let Some(egui_state) = &mut self.egui_state {
 			let response = egui_state.on_window_event(&window, &event);
-			egui_consumed = response.consumed;
 			if response.repaint {
 				window.request_redraw();
 			}
@@ -821,7 +830,11 @@ impl ApplicationHandler for EditorApp {
 			.editor_flow
 			.as_ref()
 			.is_some_and(EditorRenderFlow::game_input_active);
-		if should_forward_game_input(&event, game_input_active, egui_consumed) {
+		let viewport_wants_game_input = self
+			.editor_flow
+			.as_ref()
+			.is_some_and(EditorRenderFlow::viewport_wants_game_input);
+		if should_forward_game_input(&event, game_input_active, viewport_wants_game_input) {
 			forward_game_input(&event);
 		}
 
@@ -1644,20 +1657,25 @@ fn apply_editor_cursor_commands(window: &Window, game_running: bool) {
 	}
 	for command in commands {
 		match command {
-			CursorApiCommand::SetVisible(visible) => window.set_cursor_visible(visible),
-			CursorApiCommand::SetGrabMode(mode) => match mode {
-				ScriptingCursorGrabMode::None => {
-					let _ = window.set_cursor_grab(winit::window::CursorGrabMode::None);
-				}
-				ScriptingCursorGrabMode::Confined => {
-					let _ = window.set_cursor_grab(winit::window::CursorGrabMode::Confined);
-				}
-				ScriptingCursorGrabMode::Locked => {
-					let _ = window
+			CursorApiCommand::SetVisible(visible) => {
+				ze_log::debug!("[cursor] set_cursor_visible({visible})");
+				window.set_cursor_visible(visible);
+			}
+			CursorApiCommand::SetGrabMode(mode) => {
+				ze_log::debug!("[cursor] applying grab mode {mode:?}");
+				let result = match mode {
+					ScriptingCursorGrabMode::None => window.set_cursor_grab(winit::window::CursorGrabMode::None),
+					ScriptingCursorGrabMode::Confined => {
+						window.set_cursor_grab(winit::window::CursorGrabMode::Confined)
+					}
+					ScriptingCursorGrabMode::Locked => window
 						.set_cursor_grab(winit::window::CursorGrabMode::Locked)
-						.or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Confined));
+						.or_else(|_| window.set_cursor_grab(winit::window::CursorGrabMode::Confined)),
+				};
+				if let Err(error) = result {
+					ze_log::warn!("[cursor] set_cursor_grab({mode:?}) failed: {error:?}");
 				}
-			},
+			}
 		}
 	}
 }
@@ -1711,6 +1729,13 @@ fn update_editor_scene_before_render(
 			if let Err(error) = scene.update_system::<AnimationSystem>(dt) {
 				ze_log::error!("failed to update animation system: {error:?}");
 			}
+		}
+
+		// Re-refresh ActiveCameraView after simulation has moved things this
+		// tick, so UISystem's WorldSpace projection isn't one tick behind --
+		// see LateCameraViewSystem's doc comment for why that lag matters.
+		if let Err(error) = scene.update_system::<LateCameraViewSystem>(dt) {
+			ze_log::error!("failed to update late camera view system: {error:?}");
 		}
 
 		asset_reload
@@ -2056,6 +2081,8 @@ fn save_editor_scene(scene: &Scene, directory: &PathBuf, file_name: &str) -> ze_
 }
 
 fn main() {
+	ze_core::ensure_large_main_thread_stack();
+
 	let event_loop = match EventLoop::new() {
 		Ok(event_loop) => event_loop,
 		Err(error) => {
@@ -2135,7 +2162,11 @@ fn forward_game_input(event: &WindowEvent) -> bool {
 	}
 }
 
-const fn should_forward_game_input(event: &WindowEvent, game_input_active: bool, egui_consumed: bool) -> bool {
+const fn should_forward_game_input(
+	event: &WindowEvent,
+	game_input_active: bool,
+	viewport_wants_game_input: bool,
+) -> bool {
 	if !game_input_active {
 		return false;
 	}
@@ -2144,7 +2175,7 @@ const fn should_forward_game_input(event: &WindowEvent, game_input_active: bool,
 		return true;
 	}
 
-	!egui_consumed
+	viewport_wants_game_input
 }
 
 #[cfg(test)]

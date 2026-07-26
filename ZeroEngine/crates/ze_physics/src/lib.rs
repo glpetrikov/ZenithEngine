@@ -10,7 +10,7 @@ use ze_ecs::{
 	RigidBodyType, Scene, System, Transform,
 };
 use ze_scripting_cs::{
-	RaycastHit2D, SceneProviderGuard, ScriptingApiCommand, ScriptingRuntimeHandle, clear_raycast_provider,
+	RaycastHit2D, SceneProviderGuard, ScriptingApiCommand, ScriptingRuntimeHandle, clear_raycast_provider_if,
 	drain_scripting_api_commands, refresh_scripting_api_velocity_cache, set_raycast_provider,
 };
 
@@ -465,6 +465,21 @@ impl System for PhysicsSystem {
 		let fixed_dt = settings.physics_timestep.max(f32::EPSILON);
 		self.sync_scene_bodies(scene);
 
+		if self.scripting.is_some() {
+			// Registered once per tick (not per fixed-step, and never cleared
+			// here) so `Physics.Raycast`/`GetHoveredEntity` also work from a
+			// script's regular `OnUpdate` -- not just `OnFixedUpdate`, where a
+			// step happens to have just run. Safe because `raycast` only ever
+			// borrows `&self.world` (read-only queries against the broad-phase
+			// snapshot left by the most recent `step()`), `self.world`'s address
+			// is stable for this `PhysicsSystem`'s whole lifetime (see the
+			// safety comment on `RaycastQueryFn`), and `Drop` below closes the
+			// one real hazard -- the registration outliving `self.world`.
+			unsafe {
+				set_raycast_provider((&raw const self.world).cast::<()>(), raycast_via_context);
+			}
+		}
+
 		self.accumulator += dt.max(0.0);
 		let steps = (self.accumulator / fixed_dt) as usize;
 		for _ in 0..steps {
@@ -480,16 +495,7 @@ impl System for PhysicsSystem {
 			if let Some(scripting) = self.scripting.clone() {
 				refresh_scripting_api_velocity_cache(self.world.body_velocities());
 
-				// SAFETY: `&self.world` stays valid for the duration of this call frame, and
-				// the provider is always cleared before returning (even on error), so no
-				// dangling pointer can outlive it -- e.g. across a later
-				// `PhysicsSystem::reset()`.
-				unsafe {
-					set_raycast_provider((&raw const self.world).cast::<()>(), raycast_via_context);
-				}
-				let fixed_update_result = scripting.fixed_update(scene, fixed_dt);
-				clear_raycast_provider();
-				fixed_update_result?;
+				scripting.fixed_update(scene, fixed_dt)?;
 
 				self.apply_scripting_api_commands();
 				{
@@ -509,6 +515,16 @@ impl System for PhysicsSystem {
 	}
 
 	fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+}
+
+impl Drop for PhysicsSystem {
+	fn drop(&mut self) {
+		// Only clears the registration if it's still this instance's -- a
+		// different, newer `PhysicsSystem` (e.g. a just-activated scene's) may
+		// already have registered its own by the time this one is torn down,
+		// and must not have that registration clobbered.
+		clear_raycast_provider_if((&raw const self.world).cast::<()>());
+	}
 }
 
 impl PhysicsSystem {
