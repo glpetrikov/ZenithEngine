@@ -2,18 +2,18 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build ZeroEngine",
+            "label": "Build ZenithEngine",
             "type": "shell",
-            "command": "cargo build -p ZeroEngine",
+            "command": "cargo build",
             "group": {
                 "kind": "build",
                 "isDefault": true
             }
         },
         {
-            "label": "Run ZeroEngine",
+            "label": "Run ZenithEngine",
             "type": "shell",
-            "command": "cargo run -p ZeroEngine",
+            "command": "cargo run",
             "group": "test"
         }
     ]

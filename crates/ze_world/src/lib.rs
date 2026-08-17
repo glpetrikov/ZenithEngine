@@ -10,7 +10,7 @@ use ze_registry::ComponentRegistry;
 use ze_types::ecs::WorldType;
 
 pub const WORLD_VERSION: &str = "0.1.0";
-pub const WORLD_EXTENSION: &str = "zero";
+pub const WORLD_EXTENSION: &str = "zenith";
 
 #[derive(Resource, Clone, Copy)]
 pub struct Time {

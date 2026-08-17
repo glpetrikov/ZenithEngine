@@ -5,7 +5,7 @@ import sys
 
 TARGETS = [
     {
-        "name": "ZeroEngine",
+        "name": "ZenithEngine",
         "manifest_path": "Cargo.toml",
         "output_path": "NOTICE",
     },

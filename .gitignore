@@ -1,4 +1,4 @@
-# ZeroEngine gitignore
+# ZenithEngine gitignore
 
 target
 Logs
@@ -6,7 +6,4 @@ Logs
 # temp
 old
 
-trace.json
-.idea
-ZeroEngine.zip
 .claude/settings.local.json

@@ -4,12 +4,10 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug ZeroEngine",
+            "name": "Debug ZenithEngine",
             "cargo": {
                 "args": [
                     "build",
-                    "-p",
-                    "ZeroEngine"
                 ]
             },
             "args": []

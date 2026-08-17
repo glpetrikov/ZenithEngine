@@ -29,7 +29,7 @@ fn main() -> ze_error::ZPubResult<()> {
 
 		let _ = world.save(Path::new("Sandbox"), "Test");
 	}
-	let world: World = World::from_path("Sandbox/Test.zero").expect(":(");
+	let world: World = World::from_path("Sandbox/Test.zenith").expect(":(");
 	println!("{:?}", world.registry().registered_types().collect::<String>());
 
 	// Force an error through the eyre path to see wrap_err/downcast working.

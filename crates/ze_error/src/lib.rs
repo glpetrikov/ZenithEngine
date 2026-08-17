@@ -6,9 +6,9 @@ pub use color_eyre::install;
 pub use eyre::{Report, WrapErr, bail, ensure, eyre};
 pub use thiserror::Error;
 
-/// `ZeroEngine` Errors
+/// `ZenithEngine` Errors
 #[derive(Debug, Error)]
-pub enum ZeroError {
+pub enum ZenithError {
 	#[error("I/O error: {0}")]
 	Io(#[from] std::io::Error),
 	#[error("{0}")]
@@ -16,7 +16,7 @@ pub enum ZeroError {
 }
 
 // Public API boundary: documented, matchable variants.
-pub type ZPubResult<T> = std::result::Result<T, ZeroError>;
+pub type ZPubResult<T> = std::result::Result<T, ZenithError>;
 
 // Internal use: free-form propagation with .wrap_err() context.
 pub type ZResult<T> = eyre::Result<T>;
@@ -29,8 +29,8 @@ impl<T> IntoPubResult<T> for ZResult<T> {
 	fn into_pub_result(self) -> ZPubResult<T> {
 		self.map_err(|report| {
 			report
-				.downcast::<ZeroError>()
-				.unwrap_or_else(|report| ZeroError::Other(report.to_string()))
+				.downcast::<ZenithError>()
+				.unwrap_or_else(|report| ZenithError::Other(report.to_string()))
 		})
 	}
 }

@@ -1,10 +1,5 @@
 [workspace]
-members = [
-    "bins/ze_editor",
-    "bins/ze_runtime",
-    "cli/*",
-    "crates/*"
-]
+members = ["bins/ze_editor", "bins/ze_runtime", "cli/*", "crates/*"]
 default-members = ["bins/ze_runtime"]
 resolver = "3"
 
@@ -13,8 +8,8 @@ edition = "2024"
 license = "Apache-2.0 OR BlueOak-1.0.0"
 authors = ["Gleb Petrikov"]
 version = "0.1.0"
-repository = "https://github.com/glpetrikov/ZeroEngine"
-keywords = ["game-engine", "zero-engine"]
+repository = "https://github.com/glpetrikov/ZenithEngine"
+keywords = ["game-engine", "zenith-engine"]
 categories = ["game-engines"]
 
 [profile.dev]

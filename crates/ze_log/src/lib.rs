@@ -22,7 +22,7 @@ fn init_inner(logs_dir: impl AsRef<Path>, rotation: Rotation, max_files: usize) 
 
 	let file_appender = tracing_appender::rolling::Builder::new()
 		.rotation(rotation)
-		.filename_prefix("zeroengine")
+		.filename_prefix("zenithengine")
 		.filename_suffix("log")
 		.max_log_files(max_files)
 		.build(logs_dir)?;
