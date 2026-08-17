@@ -3,21 +3,18 @@ use std::path::Path;
 pub use tracing::{
 	debug, debug_span, error, error_span, info, info_span, instrument, trace, trace_span, warn, warn_span,
 };
-// Re-exported so callers configure rotation without adding
-// tracing-appender as a direct dependency themselves.
 pub use tracing_appender::rolling::Rotation;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
-use ze_error::{ZPubResult, ZResult, into_pub_result};
+use ze_error::{IntoPubResult, WrapErr, ZPubResult, ZResult};
 
-/// Must stay alive for the process lifetime -- dropping it flushes and
-/// stops the non-blocking file writer thread.
 pub struct LogGuard {
 	_file_guard: tracing_appender::non_blocking::WorkerGuard,
 }
 
-/// Public API boundary: matchable ZeroError, per the internal/public split.
 pub fn init(logs_dir: impl AsRef<Path>, rotation: Rotation, max_files: usize) -> ZPubResult<LogGuard> {
-	into_pub_result(init_inner(logs_dir, rotation, max_files))
+	init_inner(logs_dir, rotation, max_files)
+		.wrap_err("ze_log initialization error")
+		.into_pub_result()
 }
 
 fn init_inner(logs_dir: impl AsRef<Path>, rotation: Rotation, max_files: usize) -> ZResult<LogGuard> {

@@ -11,8 +11,15 @@ categories.workspace = true
 
 [dependencies]
 ze_error = { version = "0.1.0", path = "../../crates/ze_error" }
-ze_log = { version = "0.1.0", path = "../../crates/ze_log", features = ["profiling"] }
-tracing = "0.1"
+ze_log = { version = "0.1.0", path = "../../crates/ze_log", features = [
+    "profiling",
+] }
+ze_types = { version = "0.1.0", path = "../../crates/ze_types" }
+ze_components = { version = "0.1.0", path = "../../crates/ze_components" }
+tracing = "0.1.30"
+
+ze_world = { version = "0.1.0", path = "../../crates/ze_world" }
+
 
 [lints]
 workspace = true

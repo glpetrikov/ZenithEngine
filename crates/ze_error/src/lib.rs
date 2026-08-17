@@ -6,7 +6,7 @@ pub use color_eyre::install;
 pub use eyre::{Report, WrapErr, bail, ensure, eyre};
 pub use thiserror::Error;
 
-/// ZeroEngine Errors
+/// `ZeroEngine` Errors
 #[derive(Debug, Error)]
 pub enum ZeroError {
 	#[error("I/O error: {0}")]
@@ -21,14 +21,16 @@ pub type ZPubResult<T> = std::result::Result<T, ZeroError>;
 // Internal use: free-form propagation with .wrap_err() context.
 pub type ZResult<T> = eyre::Result<T>;
 
-// For crossing the internal ZResult -> public ZPubResult boundary.
-// If the Report actually wraps a ZeroError somewhere up the chain,
-// downcast recovers it; otherwise fall back to a generic variant.
-/// Converts eyre::Report to ZPubResult
-pub fn into_pub_result<T>(result: ZResult<T>) -> ZPubResult<T> {
-	result.map_err(|report| {
-		report
-			.downcast::<ZeroError>()
-			.unwrap_or_else(|report| ZeroError::Other(report.to_string()))
-	})
+pub trait IntoPubResult<T> {
+	fn into_pub_result(self) -> ZPubResult<T>;
+}
+
+impl<T> IntoPubResult<T> for ZResult<T> {
+	fn into_pub_result(self) -> ZPubResult<T> {
+		self.map_err(|report| {
+			report
+				.downcast::<ZeroError>()
+				.unwrap_or_else(|report| ZeroError::Other(report.to_string()))
+		})
+	}
 }

@@ -1,0 +1,16 @@
+[package]
+name = "ze_entity_id"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+bevy_ecs = { version = "0.19", features = ["multi_threaded", "trace", "serialize"] }
+serde = { version = "1", features = ["derive"] }
+
+[lints]
+workspace = true

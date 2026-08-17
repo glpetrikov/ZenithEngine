@@ -1,12 +1,36 @@
+use std::path::Path;
+
+use ze_components::Transform;
+use ze_error::{IntoPubResult, WrapErr};
+#[allow(clippy::wildcard_imports)]
 use ze_log::*;
+use ze_world::World;
 
 #[instrument]
 fn main() -> ze_error::ZPubResult<()> {
-	ze_error::into_pub_result(ze_error::install())?;
+	ze_error::install().into_pub_result()?;
 	let _log_guard = ze_log::init("Logs", ze_log::Rotation::MINUTELY, 10)?;
 
 	info!("runtime starting up");
 	warn!(reason = "test warning", "something to look at");
+
+	{
+		let mut world: World = World::new("Test");
+		println!(
+			"entity count before creation entity: {}",
+			world.world().iter_entities().count()
+		);
+		let entity = world.create_entity("TestEntity");
+
+		let _ = world.add_component(entity, Transform::default()).wrap_err("");
+		world.get_component_mut::<Transform>(entity).expect(":(").position = ze_types::Vec3::new(10.0, 10.0, 12.0);
+
+		println!("entity count before save: {}", world.world().iter_entities().count());
+
+		let _ = world.save(Path::new("Sandbox"), "Test");
+	}
+	let world: World = World::from_path("Sandbox/Test.zero").expect(":(");
+	println!("{:?}", world.registry().registered_types().collect::<String>());
 
 	// Force an error through the eyre path to see wrap_err/downcast working.
 	std::thread::spawn(|| {
@@ -16,7 +40,8 @@ fn main() -> ze_error::ZPubResult<()> {
 	});
 
 	info!("runtime shutting down");
-	panic!()
+
+	panic!("Fatal Error")
 }
 #[instrument]
 fn try_something() -> ze_error::ZResult<()> {
