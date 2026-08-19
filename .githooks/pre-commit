@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -e
+
+repo_root=$(git rev-parse --show-toplevel)
+
+if [ -f "$HOME/.cargo/env" ]; then
+    source "$HOME/.cargo/env"
+fi
+
+python3 "$repo_root/scripts/check.py"
