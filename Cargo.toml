@@ -1,6 +1,6 @@
 [workspace]
-members = ["bins/ze_editor", "bins/ze_runtime", "cli/*", "crates/*"]
-default-members = ["bins/ze_runtime"]
+members = ["bins/zenith_editor", "bins/zenith_runtime", "cli/*", "crates/*"]
+default-members = ["bins/zenith_runtime"]
 resolver = "3"
 
 [workspace.package]

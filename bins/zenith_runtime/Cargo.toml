@@ -1,0 +1,25 @@
+# bins/runtime/Cargo.toml
+[package]
+name = "zenith_runtime"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+zenith_error = { version = "0.1.0", path = "../../crates/zenith_error" }
+zenith_log = { version = "0.1.0", path = "../../crates/zenith_log", features = [
+    "profiling",
+] }
+zenith_types = { version = "0.1.0", path = "../../crates/zenith_types" }
+zenith_components = { version = "0.1.0", path = "../../crates/zenith_components" }
+tracing = "0.1.30"
+
+zenith_world = { version = "0.1.0", path = "../../crates/zenith_world" }
+
+
+[lints]
+workspace = true

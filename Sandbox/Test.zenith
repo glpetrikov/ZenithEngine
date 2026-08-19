@@ -6,11 +6,11 @@ Entities:
   Components: []
 - Id: 1:0
   Components:
-  - ComponentType: ze.name
+  - ComponentType: zenith_engine.name
     ComponentVersion: 1.0.0
     Value:
       Name: TestEntity
-  - ComponentType: ze.transform.v1
+  - ComponentType: zenith_engine.transform.v1
     ComponentVersion: 1.1.0
     Value:
       Orientation:

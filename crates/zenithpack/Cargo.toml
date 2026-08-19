@@ -1,0 +1,17 @@
+[package]
+name = "zenithpack"
+readme = "Readme.md"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+tempfile = "3.27.0"
+sysinfo = "0.39.6"
+ruzstd = "0.8.1"
+tar = "0.4"

@@ -10,9 +10,9 @@ TARGETS = [
         "output_path": "NOTICE",
     },
     {
-        "name": "zepack CLI",
-        "manifest_path": "cli/zepack/Cargo.toml",
-        "output_path": "cli/zepack/NOTICE",
+        "name": "zenithpack CLI",
+        "manifest_path": "cli/zenithpack/Cargo.toml",
+        "output_path": "cli/zenithpack/NOTICE",
     },
 ]
 

@@ -1,0 +1,27 @@
+[package]
+name = "zenith_world"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+bevy_ecs = { version = "0.19", features = [
+    "multi_threaded",
+    "trace",
+    "serialize",
+] }
+zenith_registry = { version = "0.1.0", path = "../zenith_registry" }
+zenith_components = { version = "0.1.0", path = "../zenith_components" }
+zenith_types = { version = "0.1.0", path = "../zenith_types" }
+zenith_error = { version = "0.1.0", path = "../zenith_error" }
+zenith_entity_id = { version = "0.1.0", path = "../zenith_entity_id" }
+serde-saphyr = "1.0.1"
+tracing = "0.1"
+
+
+[lints]
+workspace = true

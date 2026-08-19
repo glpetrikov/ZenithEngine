@@ -2085,21 +2085,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "ze_components"
+name = "zenith_components"
 version = "0.1.0"
 dependencies = [
  "bevy_ecs",
  "glam 0.33.3",
  "serde",
- "ze_entity_id",
+ "zenith_entity_id",
 ]
 
 [[package]]
-name = "ze_editor"
+name = "zenith_editor"
 version = "0.1.0"
 
 [[package]]
-name = "ze_entity_id"
+name = "zenith_entity_id"
 version = "0.1.0"
 dependencies = [
  "bevy_ecs",
@@ -2107,7 +2107,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ze_error"
+name = "zenith_error"
 version = "0.1.0"
 dependencies = [
  "color-eyre",
@@ -2116,7 +2116,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ze_log"
+name = "zenith_log"
 version = "0.1.0"
 dependencies = [
  "tracing",
@@ -2124,35 +2124,35 @@ dependencies = [
  "tracing-error",
  "tracing-subscriber",
  "tracing-tracy",
- "ze_error",
+ "zenith_error",
 ]
 
 [[package]]
-name = "ze_registry"
+name = "zenith_registry"
 version = "0.1.0"
 dependencies = [
  "bevy_ecs",
  "serde-saphyr",
  "serde_json",
  "tracing",
- "ze_entity_id",
- "ze_types",
+ "zenith_entity_id",
+ "zenith_types",
 ]
 
 [[package]]
-name = "ze_runtime"
+name = "zenith_runtime"
 version = "0.1.0"
 dependencies = [
  "tracing",
- "ze_components",
- "ze_error",
- "ze_log",
- "ze_types",
- "ze_world",
+ "zenith_components",
+ "zenith_error",
+ "zenith_log",
+ "zenith_types",
+ "zenith_world",
 ]
 
 [[package]]
-name = "ze_types"
+name = "zenith_types"
 version = "0.1.0"
 dependencies = [
  "bevy_ecs",
@@ -2161,25 +2161,25 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
- "ze_entity_id",
+ "zenith_entity_id",
 ]
 
 [[package]]
-name = "ze_world"
+name = "zenith_world"
 version = "0.1.0"
 dependencies = [
  "bevy_ecs",
  "serde-saphyr",
  "tracing",
- "ze_components",
- "ze_entity_id",
- "ze_error",
- "ze_registry",
- "ze_types",
+ "zenith_components",
+ "zenith_entity_id",
+ "zenith_error",
+ "zenith_registry",
+ "zenith_types",
 ]
 
 [[package]]
-name = "zepack"
+name = "zenithpack"
 version = "0.1.0"
 dependencies = [
  "ruzstd",
@@ -2189,10 +2189,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "zepack_cli"
+name = "zenithpack_cli"
 version = "0.1.0"
 dependencies = [
- "zepack",
+ "zenithpack",
 ]
 
 [[package]]
