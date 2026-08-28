@@ -1,0 +1,14 @@
+{
+    "recommendations": [
+        "chouzz.vscode-better-align",
+        "aaron-bond.better-comments",
+        "fill-labs.dependi",
+        "usernamehw.errorlens",
+        "tamasfe.even-better-toml",
+        "pkief.material-icon-theme",
+        "christian-kohler.path-intellisense",
+        "rust-lang.rust-analyzer",
+        "wgsl-analyzer.wgsl-analyzer",
+        "vadimcn.vscode-lldb",
+    ]
+}

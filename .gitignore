@@ -1,0 +1,12 @@
+# ZeroEngine gitignore
+
+target
+Logs
+
+# temp
+old
+
+trace.json
+.idea
+ZeroEngine.zip
+.claude/settings.local.json

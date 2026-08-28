@@ -1,0 +1,30 @@
+ZeroEngine
+
+Copyright 2026 Gleb Petrikov
+
+ZeroEngine is an open-source game engine licensed under
+Apache-2.0 OR BlueOak-1.0.0.
+https://github.com/glpetrikov/ZeroEngine
+
+This file contains third-party software notices and licenses
+required by dependencies used in ZeroEngine.
+
+----------------------------------------
+
+Name: JetBrains Mono
+License: OFL-1.1
+Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+
+{{#each licenses}}
+{{#each used_by}}
+Name: {{crate.name}}
+Version: {{crate.version}}
+License: {{../name}}
+{{#if crate.copyright}}
+Copyright: {{crate.copyright}}
+{{/if}}
+
+{{/each}}
+{{/each}}
+
+----------------------------------------

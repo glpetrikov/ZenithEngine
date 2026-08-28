@@ -1,0 +1,20 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build ZeroEngine",
+            "type": "shell",
+            "command": "cargo build -p ZeroEngine",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Run ZeroEngine",
+            "type": "shell",
+            "command": "cargo run -p ZeroEngine",
+            "group": "test"
+        }
+    ]
+}

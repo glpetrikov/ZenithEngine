@@ -1,0 +1,19 @@
+name = "Sandbox"
+main_scene = "main"
+scenes = ["NewScene", "NoMainCameraSceneTest", "OtherScene", "TestScene", "main"]
+asset_dir = "assets"
+scripts_dll = "assets/bin/Sandbox.dll"
+
+[physics]
+gravity = [0.0, -9.81, 0.0]
+timestep = 0.014285714
+solver_iterations = 8
+enable_debug_draw = false
+
+[game]
+name = "Sandbox"
+version = "0.1.0"
+
+[ui]
+reference_width = 1920.0
+reference_height = 1080.0

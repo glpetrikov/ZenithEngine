@@ -1,0 +1,20 @@
+[package]
+name = "zepack_cli"
+readme = "Readme.md"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zepack"
+path = "src/main.rs"
+
+[dependencies]
+zepack = { version = "0.1.0", path = "../../crates/zepack" }

@@ -1,0 +1,17 @@
+[package]
+name = "ze_error"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+thiserror = "2.0.19"
+eyre = "0.6"
+color-eyre = "0.6"
+
+[lints]
+workspace = true
