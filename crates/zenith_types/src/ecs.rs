@@ -7,6 +7,7 @@ pub enum WorldType {
 	#[default]
 	World,
 	Prefab,
+	Template,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,7 +17,7 @@ pub struct SaveWorld {
 
 	pub world_type: WorldType,
 
-	pub version: String,
+	pub version: u32,
 
 	pub entities: Vec<SavedEntity>,
 }

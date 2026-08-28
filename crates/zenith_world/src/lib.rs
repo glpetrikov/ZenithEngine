@@ -1,15 +1,15 @@
-pub mod world_io;
+pub mod world_snapshot;
 
 use bevy_ecs::{
 	component::Component, entity::Entity, resource::Resource, schedule::Schedule, world::World as BevyWorld,
 };
 use tracing::instrument;
-use zenith_components::{ExcludeFromBuild, IsActive, Name, Transform};
+use zenith_components::Name;
 use zenith_error::{IntoPubResult, WrapErr, ZPubResult};
 use zenith_registry::ComponentRegistry;
 use zenith_types::ecs::WorldType;
 
-pub const WORLD_VERSION: &str = "0.1.0";
+pub const WORLD_VERSION: u32 = 1;
 pub const WORLD_EXTENSION: &str = "zenith";
 
 #[derive(Resource, Clone, Copy)]
@@ -31,7 +31,7 @@ impl World {
 	#[instrument]
 	pub fn new(name: &str) -> Self {
 		let mut registry = ComponentRegistry::new();
-		Self::register_defaults(&mut registry);
+		ComponentRegistry::register_defaults(&mut registry);
 		Self::from_registry(name, registry)
 	}
 
@@ -47,50 +47,6 @@ impl World {
 			registry,
 			schedule: Schedule::default(),
 		}
-	}
-
-	#[instrument(skip(registry))]
-	pub fn register_defaults(registry: &mut ComponentRegistry) {
-		registry.register::<Name>(
-			"zenith_engine.name",
-			zenith_types::Version {
-				major: 1,
-				minor: 0,
-				patch: 0,
-				pre: zenith_types::Prerelease::EMPTY,
-				build: zenith_types::BuildMetadata::EMPTY,
-			},
-		);
-		registry.register::<IsActive>(
-			"zenith_engine.is_active",
-			zenith_types::Version {
-				major: 1,
-				minor: 0,
-				patch: 0,
-				pre: zenith_types::Prerelease::EMPTY,
-				build: zenith_types::BuildMetadata::EMPTY,
-			},
-		);
-		registry.register::<ExcludeFromBuild>(
-			"zenith_engine.exclude_from_build",
-			zenith_types::Version {
-				major: 1,
-				minor: 0,
-				patch: 0,
-				pre: zenith_types::Prerelease::EMPTY,
-				build: zenith_types::BuildMetadata::EMPTY,
-			},
-		);
-		registry.register::<Transform>(
-			"zenith_engine.transform.v1",
-			zenith_types::Version {
-				major: 1,
-				minor: 1,
-				patch: 0,
-				pre: zenith_types::Prerelease::EMPTY,
-				build: zenith_types::BuildMetadata::EMPTY,
-			},
-		);
 	}
 }
 

@@ -1,0 +1,19 @@
+[package]
+name = "zenith_project_trait"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+zenith_world = { version = "0.1.0", path = "../zenith_world" }
+zenith_error = { version = "0.1.0", path = "../zenith_error" }
+zenith_types = { version = "0.1.0", path = "../zenith_types" }
+zenith_registry = { version = "0.1.0", path = "../zenith_registry" }
+
+
+[lints]
+workspace = true

@@ -4,6 +4,9 @@ use zenith_components::Transform;
 use zenith_error::{IntoPubResult, WrapErr};
 #[allow(clippy::wildcard_imports)]
 use zenith_log::*;
+use zenith_project::Project;
+use zenith_project_trait::ProjectTrait;
+use zenith_types::paths::WorldPath;
 use zenith_world::World;
 
 #[instrument]
@@ -14,6 +17,12 @@ fn main() -> zenith_error::ZPubResult<()> {
 	info!("runtime starting up");
 	warn!(reason = "test warning", "something to look at");
 
+	let project = if Path::new("Sandbox/Test").exists() {
+		Project::open(Path::new("Sandbox/Test"), "Test")?
+	} else {
+		Project::create(Path::new("Sandbox"), "Test")?
+	};
+
 	{
 		let mut world: World = World::new("Test");
 		println!(
@@ -23,13 +32,15 @@ fn main() -> zenith_error::ZPubResult<()> {
 		let entity = world.create_entity("TestEntity");
 
 		let _ = world.add_component(entity, Transform::default()).wrap_err("");
-		world.get_component_mut::<Transform>(entity).expect(":(").position = zenith_types::Vec3::new(10.0, 10.0, 12.0);
+		if let Some(mut transform) = world.get_component_mut::<Transform>(entity) {
+			transform.position = zenith_types::Vec3::new(10.0, 10.0, 12.0);
+		}
 
 		println!("entity count before save: {}", world.world().iter_entities().count());
 
-		let _ = world.save(Path::new("Sandbox"), "Test");
+		project.save_world(&WorldPath::new("Worlds/Test.zenith")?, &mut world)?;
 	}
-	let world: World = World::from_path("Sandbox/Test.zenith").expect(":(");
+	let world: World = project.load_world(&WorldPath::new("Worlds/Test.zenith")?)?;
 	println!("{:?}", world.registry().registered_types().collect::<String>());
 
 	// Force an error through the eyre path to see wrap_err/downcast working.

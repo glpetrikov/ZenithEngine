@@ -44,11 +44,12 @@ perf = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 
-unwrap_used = "warn"
+unwrap_used = "deny"
+expect_used = "deny"
 missing_assert_message = "warn"
 float_cmp_const = "warn"
 fn_to_numeric_cast_any = "warn"
-todo = "warn"
+todo = "deny"
 
 cast_possible_truncation = "allow"
 cast_precision_loss = "allow"

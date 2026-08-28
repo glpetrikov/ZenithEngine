@@ -16,9 +16,11 @@ bevy_ecs = { version = "0.19", features = [
 ] }
 serde-saphyr = "1.0.1"
 zenith_types = { version = "0.1.0", path = "../zenith_types" }
+zenith_error = { version = "0.1.0", path = "../zenith_error" }
 zenith_entity_id = { version = "0.1.0", path = "../zenith_entity_id" }
 serde_json = "1.0.151" # for component types and their parsing by serde_saphyr
 tracing = "0.1"
+zenith_components = { version = "0.1.0", path = "../zenith_components" }
 
 [lints]
 workspace = true

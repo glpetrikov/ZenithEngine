@@ -19,6 +19,8 @@ zenith_components = { version = "0.1.0", path = "../../crates/zenith_components"
 tracing = "0.1.30"
 
 zenith_world = { version = "0.1.0", path = "../../crates/zenith_world" }
+zenith_project = { version = "0.1.0", path = "../../crates/zenith_project" }
+zenith_project_trait = { version = "0.1.0", path = "../../crates/zenith_project_trait" }
 
 
 [lints]

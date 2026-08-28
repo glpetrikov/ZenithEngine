@@ -1,10 +1,10 @@
 Name: Test
 WorldType: World
-Version: 0.1.0
+Version: 1
 Entities:
-- Id: 0:0
+- Id: 0
   Components: []
-- Id: 1:0
+- Id: 1
   Components:
   - ComponentType: zenith_engine.name
     ComponentVersion: 1.0.0

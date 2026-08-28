@@ -1,0 +1,5 @@
+[project]
+name = "Test"
+project_version = "0.1.0"
+engine_version = "^0.1.0"
+version = 1

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 // Re-exported so binaries (editor, runtime, cli) call zenith_error::install()
 // once at startup instead of adding color-eyre as a direct dependency
 // themselves. Library crates should never call this -- it's a global
@@ -9,8 +11,50 @@ pub use thiserror::Error;
 /// `ZenithEngine` Errors
 #[derive(Debug, Error)]
 pub enum ZenithError {
+	// === Project Errors ===
+	#[error("Unsupported project version")]
+	UnsupportedProjectVersion,
+	#[error("Invalid project: {0}")]
+	InvalidProject(String),
+	#[error("Invalid project path: {0}")]
+	InvalidProjectPath(PathBuf),
+	#[error("Bad project name: {0}")]
+	BadProjectName(String),
+	#[error("Path escapes root: {0}")]
+	PathEscapesRoot(PathBuf),
+
+	// === World Errors ===
+	#[error("Invalid world path: {0}")]
+	InvalidWorldPath(PathBuf),
+	#[error("Invalid world: {0}")]
+	InvalidWorld(String),
+
+	// === ECS Errors ===
+	#[error("failed to load component while restoring snapshot: {0}")]
+	ComponentLoadFailed(String),
+	#[error("unknown component type: {0}")]
+	UnknownComponentType(String),
+
+	// === Errors From Other Crates Or Std ===
 	#[error("I/O error: {0}")]
 	Io(#[from] std::io::Error),
+
+	#[error("Semver error: {0}")]
+	Semver(#[from] semver::Error),
+
+	#[error("Toml deserialization error: {0}")]
+	TomlDe(#[from] toml::de::Error),
+	#[error("Toml serialization error: {0}")]
+	TomlSer(#[from] toml::ser::Error),
+
+	#[error("JSON error: {0}")]
+	Json(#[from] serde_json::Error),
+
+	#[error("YAML error: {0}")]
+	YAML(#[from] serde_saphyr::Error),
+	#[error("YAML Serialization error: {0}")]
+	YAMLSerialization(#[from] serde_saphyr::SerializeError),
+
 	#[error("{0}")]
 	Other(String),
 }

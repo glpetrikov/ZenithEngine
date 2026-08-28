@@ -3,13 +3,15 @@ use std::collections::BTreeMap;
 use bevy_ecs::{component, entity::Entity, world};
 use serde_json::Value;
 use tracing::instrument;
+use zenith_components::{ExcludeFromBuild, IsActive, Name, Transform};
+use zenith_error::{ZPubResult, ZenithError};
 use zenith_types::{
 	Deserialize, Serialize,
 	ecs::{SavedComponent, SavedEntity},
 };
 
 type SaveComponentFn = Box<dyn Fn(Entity, &world::World) -> Option<Value>>;
-type LoadComponentFn = Box<dyn Fn(Entity, &mut world::World, Value) -> Result<(), Box<dyn std::error::Error>>>;
+type LoadComponentFn = Box<dyn Fn(Entity, &mut world::World, Value) -> ZPubResult<()>>;
 
 pub struct ComponentRegistry {
 	components: BTreeMap<String, ComponentRegistration>,
@@ -53,6 +55,50 @@ impl ComponentRegistry {
 		self.register_inner::<T>(component_type.into(), component_version, Some(display_name.into()));
 	}
 
+	#[instrument(skip(registry))]
+	pub fn register_defaults(registry: &mut Self) {
+		registry.register::<Name>(
+			"zenith_engine.name",
+			zenith_types::Version {
+				major: 1,
+				minor: 0,
+				patch: 0,
+				pre: zenith_types::Prerelease::EMPTY,
+				build: zenith_types::BuildMetadata::EMPTY,
+			},
+		);
+		registry.register::<IsActive>(
+			"zenith_engine.is_active",
+			zenith_types::Version {
+				major: 1,
+				minor: 0,
+				patch: 0,
+				pre: zenith_types::Prerelease::EMPTY,
+				build: zenith_types::BuildMetadata::EMPTY,
+			},
+		);
+		registry.register::<ExcludeFromBuild>(
+			"zenith_engine.exclude_from_build",
+			zenith_types::Version {
+				major: 1,
+				minor: 0,
+				patch: 0,
+				pre: zenith_types::Prerelease::EMPTY,
+				build: zenith_types::BuildMetadata::EMPTY,
+			},
+		);
+		registry.register::<Transform>(
+			"zenith_engine.transform.v1",
+			zenith_types::Version {
+				major: 1,
+				minor: 1,
+				patch: 0,
+				pre: zenith_types::Prerelease::EMPTY,
+				build: zenith_types::BuildMetadata::EMPTY,
+			},
+		);
+	}
+
 	#[instrument(skip(self))]
 	fn register_inner<T>(
 		&mut self,
@@ -69,7 +115,7 @@ impl ComponentRegistry {
 		});
 
 		let load: LoadComponentFn = Box::new(
-			|entity: Entity, world: &mut world::World, value: Value| -> Result<(), Box<dyn std::error::Error>> {
+			|entity: Entity, world: &mut world::World, value: Value| -> ZPubResult<()> {
 				let component: T = serde_json::from_value(value)?;
 				world.entity_mut(entity).insert(component);
 				Ok(())
@@ -135,11 +181,11 @@ impl ComponentRegistry {
 		entity: Entity,
 		world: &mut world::World,
 		component: SavedComponent,
-	) -> Result<(), Box<dyn std::error::Error>> {
+	) -> ZPubResult<()> {
 		let registration = self
 			.components
 			.get(&component.component_type)
-			.ok_or_else(|| format!("unknown component type: {}", component.component_type))?;
+			.ok_or(ZenithError::UnknownComponentType(component.component_type))?;
 
 		(registration.load)(entity, world, component.value)
 	}

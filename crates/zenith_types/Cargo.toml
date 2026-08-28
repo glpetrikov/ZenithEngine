@@ -15,6 +15,7 @@ bevy_ecs = { version = "0.19", features = [
     "serialize",
 ] }
 zenith_entity_id = { version = "0.1.0", path = "../zenith_entity_id" }
+zenith_error = { version = "0.1.0", path = "../zenith_error" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 glam = { version = "0.33.3", default-features = false, features = [

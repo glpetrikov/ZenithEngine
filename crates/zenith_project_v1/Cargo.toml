@@ -1,0 +1,22 @@
+[package]
+name = "zenith_project_v1"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+zenith_world = { version = "0.1.0", path = "../zenith_world" }
+zenith_error = { version = "0.1.0", path = "../zenith_error" }
+zenith_types = { version = "0.1.0", path = "../zenith_types" }
+zenith_project_trait = { version = "0.1.0", path = "../zenith_project_trait" }
+toml = "1.1.4"
+zenith_registry = { version = "0.1.0", path = "../zenith_registry" }
+serde-saphyr = "1.0.1"
+
+
+[lints]
+workspace = true
