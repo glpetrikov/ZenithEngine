@@ -11,8 +11,8 @@ TARGETS = [
     },
     {
         "name": "zenithpack CLI",
-        "manifest_path": "cli/zenithpack/Cargo.toml",
-        "output_path": "cli/zenithpack/NOTICE",
+        "manifest_path": "cli/zenithpack_cli/Cargo.toml",
+        "output_path": "cli/zenithpack_cli/NOTICE",
     },
 ]
 

@@ -15,6 +15,26 @@ Name: JetBrains Mono
 License: OFL-1.1
 Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
 
+Name: linux-raw-sys
+Version: 0.12.1
+License: Apache License 2.0
+
+Name: rustix
+Version: 1.1.4
+License: Apache License 2.0
+
+Name: wasip2
+Version: 1.0.3+wasi-0.2.9
+License: Apache License 2.0
+
+Name: wit-bindgen
+Version: 0.51.0
+License: Apache License 2.0
+
+Name: wit-bindgen
+Version: 0.57.1
+License: Apache License 2.0
+
 Name: windows-collections
 Version: 0.3.2
 License: Apache License 2.0
@@ -131,11 +151,11 @@ Name: getrandom
 Version: 0.4.2
 License: Apache License 2.0
 
-Name: zepack_cli
+Name: zenithpack_cli
 Version: 0.1.0
 License: Apache License 2.0
 
-Name: zepack
+Name: zenithpack
 Version: 0.1.0
 License: Apache License 2.0
 

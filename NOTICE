@@ -31,6 +31,26 @@ Name: nohash-hasher
 Version: 0.2.0
 License: Apache License 2.0
 
+Name: linux-raw-sys
+Version: 0.12.1
+License: Apache License 2.0
+
+Name: rustix
+Version: 1.1.4
+License: Apache License 2.0
+
+Name: wasip2
+Version: 1.0.3+wasi-0.2.9
+License: Apache License 2.0
+
+Name: wit-bindgen
+Version: 0.51.0
+License: Apache License 2.0
+
+Name: wit-bindgen
+Version: 0.57.1
+License: Apache License 2.0
+
 Name: windows-collections
 Version: 0.3.2
 License: Apache License 2.0
@@ -135,6 +155,14 @@ Name: anstyle
 Version: 1.0.14
 License: Apache License 2.0
 
+Name: serde_spanned
+Version: 1.1.1
+License: Apache License 2.0
+
+Name: toml
+Version: 1.1.4+spec-1.1.0
+License: Apache License 2.0
+
 Name: toml_datetime
 Version: 1.1.1+spec-1.1.0
 License: Apache License 2.0
@@ -145,6 +173,10 @@ License: Apache License 2.0
 
 Name: toml_parser
 Version: 1.1.3+spec-1.1.0
+License: Apache License 2.0
+
+Name: toml_writer
+Version: 1.1.2+spec-1.1.0
 License: Apache License 2.0
 
 Name: generator
@@ -475,47 +507,59 @@ Name: bytemuck_derive
 Version: 1.12.0
 License: Apache License 2.0
 
-Name: ze_editor
+Name: zenith_editor
 Version: 0.1.0
 License: Apache License 2.0
 
-Name: ze_runtime
+Name: zenith_runtime
 Version: 0.1.0
 License: Apache License 2.0
 
-Name: zepack_cli
+Name: zenithpack_cli
 Version: 0.1.0
 License: Apache License 2.0
 
-Name: ze_components
+Name: zenith_components
 Version: 0.1.0
 License: Apache License 2.0
 
-Name: ze_entity_id
+Name: zenith_entity_id
 Version: 0.1.0
 License: Apache License 2.0
 
-Name: ze_error
+Name: zenith_error
 Version: 0.1.0
 License: Apache License 2.0
 
-Name: ze_log
+Name: zenith_log
 Version: 0.1.0
 License: Apache License 2.0
 
-Name: ze_registry
+Name: zenith_project
 Version: 0.1.0
 License: Apache License 2.0
 
-Name: ze_types
+Name: zenith_project_trait
 Version: 0.1.0
 License: Apache License 2.0
 
-Name: ze_world
+Name: zenith_project_v1
 Version: 0.1.0
 License: Apache License 2.0
 
-Name: zepack
+Name: zenith_registry
+Version: 0.1.0
+License: Apache License 2.0
+
+Name: zenith_types
+Version: 0.1.0
+License: Apache License 2.0
+
+Name: zenith_world
+Version: 0.1.0
+License: Apache License 2.0
+
+Name: zenithpack
 Version: 0.1.0
 License: Apache License 2.0
 
@@ -731,6 +775,10 @@ Name: encoding_rs
 Version: 0.8.35
 License: BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
 
+Name: encoding_rs
+Version: 0.8.35
+License: BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
+
 Name: tracy-client-sys
 Version: 0.28.0
 License: BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
@@ -813,6 +861,10 @@ License: MIT License
 
 Name: spin
 Version: 0.10.1
+License: MIT License
+
+Name: tracing-core
+Version: 0.1.36
 License: MIT License
 
 Name: byteorder
