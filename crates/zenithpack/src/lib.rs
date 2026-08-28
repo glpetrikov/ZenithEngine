@@ -159,9 +159,7 @@ impl SmartZenithpack {
 	}
 
 	pub fn contains(&self, path: &str) -> bool {
-		normalize_archive_path(path)
-			.ok()
-			.is_some_and(|path| self.archive.index.contains(&path))
+		normalize_archive_path(path).is_ok_and(|path| self.archive.index.contains(&path))
 	}
 
 	pub fn read_file(&self, path: &str) -> Result<Vec<u8>> {
