@@ -37,16 +37,22 @@ cargo run
 ## Roadmap
 
 - [x] Base Project System
-- [ ] Window, Input & Base WGPU Rendering
-- [ ] Advanced WGPU Rendering
-- [ ] Project Building
 - [ ] Editor Based on dear-imgui-rs
+- [ ] CLI
+- [ ] Base WGPU Rendering (scene renderer for the viewport)
+- [ ] Input (action maps — shared, needed for editor Play mode too)
+- [ ] Window & Input for zenith_runtime (standalone binary)
 - [ ] WASM Scripting
+- [ ] Advanced WGPU Rendering(Render Graph, Scriptable Rendering, etc)
 - [ ] Physics
 - [ ] Game UI
 - [ ] Audio
+- [ ] Project Building & zenith_runtime refactor
 - [ ] ZenithEngine Hub
+- [ ] Editor coworking
 - [ ] 0.1 Release
+- [ ] Multithreading & Job System(Rendering, Physics, Asset loading threads for example)
+- [ ] Build-in Multiplayer
 
 ## Supported Platforms
 ![Windows 11](https://img.shields.io/badge/Windows%2011-0078D4?style=flat-square&logo=windows11&logoColor=white)
