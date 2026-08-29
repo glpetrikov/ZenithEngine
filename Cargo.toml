@@ -1,6 +1,6 @@
 [workspace]
 members = ["bins/zenith_editor", "bins/zenith_runtime", "cli/*", "crates/*"]
-default-members = ["bins/zenith_runtime"]
+default-members = ["bins/zenith_editor"]
 resolver = "3"
 
 [workspace.package]

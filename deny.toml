@@ -3,7 +3,12 @@
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
-ignore = []
+ignore = [
+    # ttf-parser is unmaintained; pulled in transitively via winit -> sctk-adwaita
+    # (Wayland client-side decoration text rendering). No safe upgrade exists yet;
+    # revisit once winit/sctk-adwaita migrate off ab_glyph/ttf-parser.
+    "RUSTSEC-2026-0192",
+]
 
 # licenses: allow-list approach is safer than deny-list for a growing dependency tree
 [licenses]

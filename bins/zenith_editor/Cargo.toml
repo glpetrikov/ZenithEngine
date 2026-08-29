@@ -9,6 +9,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+dear-app = "0.17.0"
 
 [lints]
 workspace = true
