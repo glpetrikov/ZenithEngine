@@ -12,7 +12,7 @@ categories.workspace = true
 dear-app = "0.18.0"
 zenith_error = { version = "0.1.0", path = "../../crates/zenith_error" }
 zenith_log = { version = "0.1.0", path = "../../crates/zenith_log" }
-zenith_package = { version = "0.1.0", path = "../../crates/zenith_package" }
+# zenith_package = { version = "0.1.0", path = "../../crates/zenith_package" }
 
 [lints]
 workspace = true
