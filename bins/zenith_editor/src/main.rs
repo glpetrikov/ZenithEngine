@@ -8,6 +8,7 @@ use dear_app::{
 	wgpu::PresentMode,
 };
 use theme::zenith_theme;
+use zenith_error::{IntoZResult, ZInternalResult, eyre};
 
 // TODO: write manual window creation, wgpu rendering, etc. instead of using the
 // dear-app
@@ -15,10 +16,13 @@ use theme::zenith_theme;
 struct EditorApp {
 	clicks: u32,
 	color_rgba: [f32; 4],
+	_log_guard: zenith_log::LogGuard,
 }
 
 impl Application for EditorApp {
 	fn configure_imgui(&mut self, context: &mut InitContext<'_>) -> Result<(), RunError> {
+		zenith_log::info!("ImGui Configuring Started!");
+
 		let ctx = context.imgui();
 		zenith_theme().apply_to_context(ctx);
 
@@ -27,6 +31,12 @@ impl Application for EditorApp {
 			ctx.font_atlas()
 				.add_font(&[FontSource::ttf_data_with_size(font_data, 18.0)]);
 		}
+
+		std::thread::spawn(|| {
+			panic!("404, Cannot Load Theme!");
+		});
+
+		zenith_log::info!("ImGui Configuring ended!");
 
 		Ok(())
 	}
@@ -82,10 +92,17 @@ impl Application for EditorApp {
 	}
 }
 
-fn main() -> Result<(), RunError> {
+fn main() -> ZInternalResult<()> {
+	zenith_error::install().into_zresult()?;
+	#[cfg(target_os = "linux")]
+	let log_guard = zenith_log::init("~/.local/share/ZenithEngine/Logs", zenith_log::Rotation::MINUTELY, 10)?;
+	#[cfg(target_os = "windows")]
+	let log_guard = zenith_log::init("%LOCALAPPDATA%/ZenithEngine/Logs", zenith_log::Rotation::MINUTELY, 10)?;
+
 	let app = EditorApp {
 		clicks: 0,
 		color_rgba: [1.0, 1.0, 1.0, 1.0],
+		_log_guard: log_guard,
 	};
 
 	run(
@@ -101,4 +118,5 @@ fn main() -> Result<(), RunError> {
 		},
 		app,
 	)
+	.map_err(|e| eyre!("cannot run editor: {e}"))
 }
