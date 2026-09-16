@@ -129,7 +129,19 @@ Version: 1.0.1
 License: Apache License 2.0
 
 Name: encoding_rs
-Version: 0.8.35
+Version: 0.8.41
+License: Apache License 2.0
+
+Name: multiversion-macros
+Version: 0.9.0
+License: Apache License 2.0
+
+Name: multiversion
+Version: 0.9.0
+License: Apache License 2.0
+
+Name: multiversion_no_op
+Version: 1.0.0
 License: Apache License 2.0
 
 Name: nohash-hasher
@@ -169,11 +181,7 @@ Version: 1.1.4
 License: Apache License 2.0
 
 Name: wasip2
-Version: 1.0.3+wasi-0.2.9
-License: Apache License 2.0
-
-Name: wit-bindgen
-Version: 0.51.0
+Version: 1.0.4+wasi-0.2.12
 License: Apache License 2.0
 
 Name: wit-bindgen
@@ -272,12 +280,16 @@ Name: windows_x86_64_msvc
 Version: 0.52.6
 License: Apache License 2.0
 
+Name: csscolorparser
+Version: 0.8.4
+License: Apache License 2.0
+
 Name: zerocopy-derive
-Version: 0.8.56
+Version: 0.8.57
 License: Apache License 2.0
 
 Name: zerocopy
-Version: 0.8.56
+Version: 0.8.57
 License: Apache License 2.0
 
 Name: web-time
@@ -333,7 +345,7 @@ Version: 1.1.1
 License: Apache License 2.0
 
 Name: toml
-Version: 1.1.4+spec-1.1.0
+Version: 1.1.6+spec-1.1.0
 License: Apache License 2.0
 
 Name: toml_datetime
@@ -341,7 +353,7 @@ Version: 1.1.1+spec-1.1.0
 License: Apache License 2.0
 
 Name: toml_edit
-Version: 0.25.13+spec-1.1.0
+Version: 0.25.15+spec-1.1.0
 License: Apache License 2.0
 
 Name: toml_parser
@@ -357,27 +369,27 @@ Version: 0.8.9
 License: Apache License 2.0
 
 Name: futures-channel
-Version: 0.3.33
+Version: 0.3.34
 License: Apache License 2.0
 
 Name: futures-core
-Version: 0.3.33
+Version: 0.3.34
 License: Apache License 2.0
 
 Name: futures-io
-Version: 0.3.33
+Version: 0.3.34
 License: Apache License 2.0
 
 Name: futures-task
-Version: 0.3.33
+Version: 0.3.34
 License: Apache License 2.0
 
 Name: futures-util
-Version: 0.3.33
+Version: 0.3.34
 License: Apache License 2.0
 
 Name: glam
-Version: 0.33.3
+Version: 0.33.7
 License: Apache License 2.0
 
 Name: gpu-allocator
@@ -386,6 +398,10 @@ License: Apache License 2.0
 
 Name: memmap2
 Version: 0.9.11
+License: Apache License 2.0
+
+Name: core_detect
+Version: 1.0.0
 License: Apache License 2.0
 
 Name: addr2line
@@ -425,7 +441,7 @@ Version: 0.3.76
 License: Apache License 2.0
 
 Name: base64
-Version: 0.22.1
+Version: 0.23.1
 License: Apache License 2.0
 
 Name: bitflags
@@ -433,7 +449,7 @@ Version: 1.3.2
 License: Apache License 2.0
 
 Name: bitflags
-Version: 2.11.1
+Version: 2.13.2
 License: Apache License 2.0
 
 Name: bumpalo
@@ -441,7 +457,7 @@ Version: 3.20.3
 License: Apache License 2.0
 
 Name: cc
-Version: 1.2.62
+Version: 1.4.6
 License: Apache License 2.0
 
 Name: cfg-if
@@ -477,15 +493,15 @@ Version: 0.23.2
 License: Apache License 2.0
 
 Name: crossbeam-channel
-Version: 0.5.16
+Version: 0.5.17
 License: Apache License 2.0
 
 Name: crossbeam-queue
-Version: 0.3.13
+Version: 0.3.14
 License: Apache License 2.0
 
 Name: crossbeam-utils
-Version: 0.8.21
+Version: 0.8.23
 License: Apache License 2.0
 
 Name: encoding_rs_io
@@ -505,11 +521,11 @@ Version: 0.5.4
 License: Apache License 2.0
 
 Name: event-listener
-Version: 5.4.1
+Version: 5.4.2
 License: Apache License 2.0
 
 Name: eyre
-Version: 0.6.12
+Version: 0.6.14
 License: Apache License 2.0
 
 Name: fastrand
@@ -521,7 +537,7 @@ Version: 0.2.29
 License: Apache License 2.0
 
 Name: find-msvc-tools
-Version: 0.1.9
+Version: 0.1.12
 License: Apache License 2.0
 
 Name: fixedbitset
@@ -557,11 +573,11 @@ Version: 0.9.3
 License: Apache License 2.0
 
 Name: hermit-abi
-Version: 0.5.2
+Version: 0.5.3
 License: Apache License 2.0
 
 Name: indexmap
-Version: 2.14.0
+Version: 2.14.2
 License: Apache License 2.0
 
 Name: jobserver
@@ -569,7 +585,7 @@ Version: 0.1.35
 License: Apache License 2.0
 
 Name: js-sys
-Version: 0.3.104
+Version: 0.3.105
 License: Apache License 2.0
 
 Name: khronos-egl
@@ -593,7 +609,7 @@ Version: 0.4.14
 License: Apache License 2.0
 
 Name: log
-Version: 0.4.29
+Version: 0.4.34
 License: Apache License 2.0
 
 Name: num-traits
@@ -641,11 +657,11 @@ Version: 1.0.1
 License: Apache License 2.0
 
 Name: regex-automata
-Version: 0.4.14
+Version: 0.4.18
 License: Apache License 2.0
 
 Name: regex-syntax
-Version: 0.8.10
+Version: 0.8.11
 License: Apache License 2.0
 
 Name: renderdoc-sys
@@ -685,7 +701,7 @@ Version: 1.2.0
 License: Apache License 2.0
 
 Name: smallvec
-Version: 1.15.1
+Version: 1.16.1
 License: Apache License 2.0
 
 Name: smol_str
@@ -709,7 +725,7 @@ Version: 3.27.0
 License: Apache License 2.0
 
 Name: thread_local
-Version: 1.1.9
+Version: 1.1.10
 License: Apache License 2.0
 
 Name: ttf-parser
@@ -729,7 +745,7 @@ Version: 0.2.6
 License: Apache License 2.0
 
 Name: uuid
-Version: 1.24.0
+Version: 1.26.1
 License: Apache License 2.0
 
 Name: version_check
@@ -737,39 +753,35 @@ Version: 0.9.5
 License: Apache License 2.0
 
 Name: wasip2
-Version: 1.0.3+wasi-0.2.9
+Version: 1.0.4+wasi-0.2.12
 License: Apache License 2.0
 
 Name: wasm-bindgen-futures
-Version: 0.4.77
+Version: 0.4.78
 License: Apache License 2.0
 
 Name: wasm-bindgen-macro-support
-Version: 0.2.127
+Version: 0.2.128
 License: Apache License 2.0
 
 Name: wasm-bindgen-macro
-Version: 0.2.127
+Version: 0.2.128
 License: Apache License 2.0
 
 Name: wasm-bindgen-shared
-Version: 0.2.127
+Version: 0.2.128
 License: Apache License 2.0
 
 Name: wasm-bindgen
-Version: 0.2.127
+Version: 0.2.128
 License: Apache License 2.0
 
 Name: web-sys
-Version: 0.3.104
+Version: 0.3.105
 License: Apache License 2.0
 
 Name: web-task
 Version: 1.1.3
-License: Apache License 2.0
-
-Name: wit-bindgen
-Version: 0.51.0
 License: Apache License 2.0
 
 Name: wit-bindgen
@@ -800,12 +812,16 @@ Name: presser
 Version: 0.3.1
 License: Apache License 2.0
 
+Name: spdx
+Version: 0.13.5
+License: Apache License 2.0
+
 Name: getrandom
 Version: 0.3.4
 License: Apache License 2.0
 
 Name: getrandom
-Version: 0.4.2
+Version: 0.4.3
 License: Apache License 2.0
 
 Name: adler2
@@ -841,7 +857,7 @@ Version: 1.25.2
 License: Apache License 2.0
 
 Name: bytemuck_derive
-Version: 1.12.0
+Version: 1.12.1
 License: Apache License 2.0
 
 Name: zenith_editor
@@ -872,6 +888,10 @@ Name: zenith_log
 Version: 0.1.0
 License: Apache License 2.0
 
+Name: zenith_package
+Version: 0.1.0
+License: Apache License 2.0
+
 Name: zenith_project
 Version: 0.1.0
 License: Apache License 2.0
@@ -885,6 +905,10 @@ Version: 0.1.0
 License: Apache License 2.0
 
 Name: zenith_registry
+Version: 0.1.0
+License: Apache License 2.0
+
+Name: zenith_theme
 Version: 0.1.0
 License: Apache License 2.0
 
@@ -925,67 +949,67 @@ Version: 0.5.1
 License: Apache License 2.0
 
 Name: bevy_ecs
-Version: 0.19.0
+Version: 0.19.1
 License: Apache License 2.0
 
 Name: bevy_ecs_macro_logic
-Version: 0.19.0
+Version: 0.19.1
 License: Apache License 2.0
 
 Name: bevy_ecs_macros
-Version: 0.19.0
+Version: 0.19.1
 License: Apache License 2.0
 
 Name: bevy_macro_utils
-Version: 0.19.0
+Version: 0.19.1
 License: Apache License 2.0
 
 Name: bevy_platform
-Version: 0.19.0
+Version: 0.19.1
 License: Apache License 2.0
 
 Name: bevy_ptr
-Version: 0.19.0
+Version: 0.19.1
 License: Apache License 2.0
 
 Name: bevy_reflect
-Version: 0.19.0
+Version: 0.19.1
 License: Apache License 2.0
 
 Name: bevy_reflect_derive
-Version: 0.19.0
+Version: 0.19.1
 License: Apache License 2.0
 
 Name: bevy_tasks
-Version: 0.19.0
+Version: 0.19.1
 License: Apache License 2.0
 
 Name: bevy_utils
-Version: 0.19.0
+Version: 0.19.1
 License: Apache License 2.0
 
 Name: dear-app
-Version: 0.17.0
+Version: 0.18.0
 License: Apache License 2.0
 
 Name: dear-imgui-build-support
-Version: 0.17.0
+Version: 0.18.0
 License: Apache License 2.0
 
 Name: dear-imgui-rs
-Version: 0.17.0
+Version: 0.18.0
 License: Apache License 2.0
 
 Name: dear-imgui-sys
-Version: 0.17.0
+Version: 0.18.0
 License: Apache License 2.0
 
 Name: dear-imgui-wgpu
-Version: 0.17.0
+Version: 0.18.0
 License: Apache License 2.0
 
 Name: dear-imgui-winit
-Version: 0.17.0
+Version: 0.18.0
 License: Apache License 2.0
 
 Name: disqualified
@@ -1005,7 +1029,7 @@ Version: 0.14.0
 License: Apache License 2.0
 
 Name: granit-parser
-Version: 1.0.1
+Version: 1.2.1
 License: Apache License 2.0
 
 Name: half
@@ -1037,7 +1061,7 @@ Version: 3.1.0
 License: Apache License 2.0
 
 Name: libc
-Version: 0.2.186
+Version: 0.2.189
 License: Apache License 2.0
 
 Name: litrs
@@ -1069,7 +1093,7 @@ Version: 0.9.0
 License: Apache License 2.0
 
 Name: num-conv
-Version: 0.2.1
+Version: 0.2.2
 License: Apache License 2.0
 
 Name: num_enum
@@ -1121,15 +1145,15 @@ Version: 1.1.13
 License: Apache License 2.0
 
 Name: portable-atomic-util
-Version: 0.2.7
+Version: 0.2.8
 License: Apache License 2.0
 
 Name: portable-atomic
-Version: 1.14.0
+Version: 1.15.0
 License: Apache License 2.0
 
 Name: proc-macro2
-Version: 1.0.106
+Version: 1.0.107
 License: Apache License 2.0
 
 Name: profiling
@@ -1137,7 +1161,7 @@ Version: 1.0.18
 License: Apache License 2.0
 
 Name: quote
-Version: 1.0.45
+Version: 1.0.47
 License: Apache License 2.0
 
 Name: r-efi
@@ -1157,7 +1181,7 @@ Version: 0.6.2
 License: Apache License 2.0
 
 Name: rustversion
-Version: 1.0.22
+Version: 1.0.23
 License: Apache License 2.0
 
 Name: semver
@@ -1165,19 +1189,19 @@ Version: 1.0.28
 License: Apache License 2.0
 
 Name: serde-saphyr
-Version: 1.0.1
+Version: 1.2.0
 License: Apache License 2.0
 
 Name: serde
-Version: 1.0.228
+Version: 1.0.229
 License: Apache License 2.0
 
 Name: serde_core
-Version: 1.0.228
+Version: 1.0.229
 License: Apache License 2.0
 
 Name: serde_derive
-Version: 1.0.228
+Version: 1.0.229
 License: Apache License 2.0
 
 Name: serde_json
@@ -1185,11 +1209,15 @@ Version: 1.0.151
 License: Apache License 2.0
 
 Name: shlex
-Version: 1.3.0
+Version: 2.0.1
 License: Apache License 2.0
 
 Name: simdutf8
 Version: 0.1.5
+License: Apache License 2.0
+
+Name: siphasher
+Version: 1.0.3
 License: Apache License 2.0
 
 Name: spirv
@@ -1197,11 +1225,11 @@ Version: 0.4.0+sdk-1.4.341.0
 License: Apache License 2.0
 
 Name: syn
-Version: 2.0.117
+Version: 2.0.119
 License: Apache License 2.0
 
 Name: syn
-Version: 3.0.3
+Version: 3.0.5
 License: Apache License 2.0
 
 Name: thiserror-impl
@@ -1209,7 +1237,7 @@ Version: 1.0.69
 License: Apache License 2.0
 
 Name: thiserror-impl
-Version: 2.0.19
+Version: 2.0.20
 License: Apache License 2.0
 
 Name: thiserror
@@ -1217,31 +1245,35 @@ Version: 1.0.69
 License: Apache License 2.0
 
 Name: thiserror
-Version: 2.0.19
+Version: 2.0.20
 License: Apache License 2.0
 
 Name: time-core
-Version: 0.1.8
+Version: 0.1.9
 License: Apache License 2.0
 
 Name: time
-Version: 0.3.47
+Version: 0.3.55
 License: Apache License 2.0
 
 Name: tracing-tracy
-Version: 0.11.4
+Version: 0.12.0
 License: Apache License 2.0
 
 Name: tracy-client-sys
-Version: 0.28.0
+Version: 0.30.0
 License: Apache License 2.0
 
 Name: tracy-client
-Version: 0.18.4
+Version: 0.19.0
 License: Apache License 2.0
 
 Name: typeid
 Version: 1.0.3
+License: Apache License 2.0
+
+Name: uncased
+Version: 0.9.10
 License: Apache License 2.0
 
 Name: unicode-ident
@@ -1250,10 +1282,6 @@ License: Apache License 2.0
 
 Name: variadics_please
 Version: 1.1.0
-License: Apache License 2.0
-
-Name: wasip3
-Version: 0.4.0+wasi-0.3.0-rc-2026-01-06
 License: Apache License 2.0
 
 Name: wgpu-core-deps-apple
@@ -1300,12 +1328,16 @@ Name: nonmax
 Version: 0.5.5
 License: Apache License 2.0
 
+Name: spdx
+Version: 0.13.5
+License: Apache License 2.0
+
 Name: arrayref
 Version: 0.3.9
 License: BSD 2-Clause &quot;Simplified&quot; License
 
 Name: encoding_rs
-Version: 0.8.35
+Version: 0.8.41
 License: BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
 
 Name: tiny-skia-path
@@ -1317,11 +1349,11 @@ Version: 0.11.4
 License: BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
 
 Name: encoding_rs
-Version: 0.8.35
+Version: 0.8.41
 License: BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
 
 Name: tracy-client-sys
-Version: 0.28.0
+Version: 0.30.0
 License: BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
 
 Name: libloading
@@ -1381,7 +1413,7 @@ Version: 0.5.18
 License: MIT License
 
 Name: redox_syscall
-Version: 0.9.3
+Version: 0.9.4
 License: MIT License
 
 Name: bytes
@@ -1461,11 +1493,11 @@ Version: 0.5.9
 License: MIT License
 
 Name: ruzstd
-Version: 0.8.3
+Version: 0.9.0
 License: MIT License
 
 Name: owo-colors
-Version: 4.3.0
+Version: 4.4.0
 License: MIT License
 
 Name: cfg_aliases
@@ -1485,7 +1517,7 @@ Version: 0.10.1
 License: MIT License
 
 Name: libredox
-Version: 0.1.21
+Version: 0.1.24
 License: MIT License
 
 Name: convert_case
@@ -1553,7 +1585,7 @@ Version: 2.21.0
 License: MIT License
 
 Name: zmij
-Version: 1.0.21
+Version: 1.0.23
 License: MIT License
 
 Name: winnow
@@ -1572,12 +1604,28 @@ Name: xml-rs
 Version: 0.8.29
 License: MIT License
 
+Name: phf
+Version: 0.13.1
+License: MIT License
+
+Name: phf_generator
+Version: 0.13.1
+License: MIT License
+
+Name: phf_macros
+Version: 0.13.1
+License: MIT License
+
+Name: phf_shared
+Version: 0.13.1
+License: MIT License
+
 Name: byteorder
 Version: 1.5.0
 License: MIT License
 
 Name: memchr
-Version: 2.8.0
+Version: 2.8.3
 License: MIT License
 
 Name: walkdir
@@ -1589,7 +1637,7 @@ Version: 0.39.6
 License: MIT License
 
 Name: twox-hash
-Version: 2.1.2
+Version: 2.1.4
 License: MIT License
 
 Name: combine

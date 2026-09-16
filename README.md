@@ -46,11 +46,12 @@ cargo run
 - [ ] Advanced WGPU Rendering(Render Graph, Scriptable Rendering, etc)
 - [ ] Physics
 - [ ] Game UI
+- [ ] Project Building & zenith_runtime rewrite for builded-project running
 - [ ] Audio
-- [ ] Project Building & zenith_runtime refactor
 - [ ] ZenithEngine Hub
 - [ ] Editor coworking
 - [ ] 0.1 Release
+- [ ] Rewrite editor from dear-app to "bored metal"(dear-imgui-rs, wgpu)
 - [ ] Multithreading & Job System(Rendering, Physics, Asset loading threads for example)
 - [ ] Build-in Multiplayer
 
