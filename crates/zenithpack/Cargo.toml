@@ -13,5 +13,5 @@ workspace = true
 [dependencies]
 tempfile = "3.27.0"
 sysinfo = "0.39.6"
-ruzstd = "0.8.1"
+ruzstd = "0.9.0"
 tar = "0.4"
