@@ -1,8 +1,5 @@
 * text=auto eol=lf
 
-*.bat text eol=crlf
-*.ps1 text eol=crlf
-
 # Images / textures
 *.png filter=lfs diff=lfs merge=lfs -text
 *.jpg filter=lfs diff=lfs merge=lfs -text
