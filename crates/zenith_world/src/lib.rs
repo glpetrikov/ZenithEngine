@@ -5,7 +5,7 @@ use bevy_ecs::{
 };
 use tracing::instrument;
 use zenith_components::Name;
-use zenith_error::{IntoPubResult, WrapErr, ZPubResult};
+use zenith_error::{IntoZResult, WrapErr, ZResult};
 use zenith_registry::ComponentRegistry;
 use zenith_types::ecs::WorldType;
 
@@ -71,12 +71,16 @@ impl World {
 	#[instrument(skip(self))]
 	pub fn create_entity(&mut self, name: &str) -> Entity { self.world.spawn(Name { name: name.to_string() }).id() }
 
+	/// Destroys an entity and all of its components.
+	///
+	/// # Errors
+	/// This function will return an error if the entity does not exist.
 	#[instrument(skip(self))]
-	pub fn destroy_entity(&mut self, entity: Entity) -> ZPubResult<()> {
+	pub fn destroy_entity(&mut self, entity: Entity) -> ZResult<()> {
 		self.world
 			.get_entity_mut(entity)
 			.wrap_err_with(|| format!("cannot destroy entity {entity:?}: it doesn't exist"))
-			.into_pub_result()?
+			.into_zresult()?
 			.despawn();
 		Ok(())
 	}
@@ -104,34 +108,46 @@ impl World {
 		Some(new_entity)
 	}
 
+	/// Adds a component to an entity.
+	///
+	/// # Errors
+	/// This function will return an error if the entity does not exist.
 	#[instrument(skip(self, component))]
-	pub fn add_component<T>(&mut self, entity: Entity, component: T) -> ZPubResult<()>
+	pub fn add_component<T>(&mut self, entity: Entity, component: T) -> ZResult<()>
 	where
 		T: Component,
 	{
 		self.world
 			.get_entity_mut(entity)
 			.wrap_err_with(|| format!("cannot add component to {entity:?}: it doesn't exist"))
-			.into_pub_result()?
+			.into_zresult()?
 			.insert(component);
 		Ok(())
 	}
 
+	/// Removes a component from an entity.
+	///
+	/// # Errors
+	/// This function will return an error if the entity does not exist.
 	#[instrument(skip(self))]
-	pub fn remove_component<T>(&mut self, entity: Entity) -> ZPubResult<()>
+	pub fn remove_component<T>(&mut self, entity: Entity) -> ZResult<()>
 	where
 		T: Component,
 	{
 		self.world
 			.get_entity_mut(entity)
 			.wrap_err_with(|| format!("cannot remove component from {entity:?}: it doesn't exist"))
-			.into_pub_result()?
+			.into_zresult()?
 			.remove::<T>();
 		Ok(())
 	}
 
+	/// Removes a component from an entity and returns it, if it exists.
+	///
+	/// # Errors
+	/// This function will return an error if the entity does not exist.
 	#[instrument(skip(self))]
-	pub fn take_component<T>(&mut self, entity: Entity) -> ZPubResult<Option<T>>
+	pub fn take_component<T>(&mut self, entity: Entity) -> ZResult<Option<T>>
 	where
 		T: Component,
 	{
@@ -139,7 +155,7 @@ impl World {
 			.world
 			.get_entity_mut(entity)
 			.wrap_err_with(|| format!("cannot take component from {entity:?}: it doesn't exist"))
-			.into_pub_result()?
+			.into_zresult()?
 			.take::<T>())
 	}
 

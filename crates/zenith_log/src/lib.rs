@@ -5,19 +5,25 @@ pub use tracing::{
 };
 pub use tracing_appender::rolling::Rotation;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
-use zenith_error::{IntoPubResult, WrapErr, ZPubResult, ZResult};
+use zenith_error::{IntoZResult, WrapErr, ZInternalResult, ZResult};
 
 pub struct LogGuard {
 	_file_guard: tracing_appender::non_blocking::WorkerGuard,
 }
 
-pub fn init(logs_dir: impl AsRef<Path>, rotation: Rotation, max_files: usize) -> ZPubResult<LogGuard> {
+/// Initializes the logger with the given log directory, rotation policy, and
+/// maximum number of log files.
+///
+/// # Errors
+/// This function will return an error if the log directory cannot be created or
+/// if there is an error initializing the logger.
+pub fn init(logs_dir: impl AsRef<Path>, rotation: Rotation, max_files: usize) -> ZResult<LogGuard> {
 	init_inner(logs_dir, rotation, max_files)
-		.wrap_err("zenith_log initialization error")
-		.into_pub_result()
+		.wrap_err("Cannot initilize logger")
+		.into_zresult()
 }
 
-fn init_inner(logs_dir: impl AsRef<Path>, rotation: Rotation, max_files: usize) -> ZResult<LogGuard> {
+fn init_inner(logs_dir: impl AsRef<Path>, rotation: Rotation, max_files: usize) -> ZInternalResult<LogGuard> {
 	std::fs::create_dir_all(&logs_dir)?;
 
 	let file_appender = tracing_appender::rolling::Builder::new()

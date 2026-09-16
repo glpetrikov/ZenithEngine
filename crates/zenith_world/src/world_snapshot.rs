@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use bevy_ecs::entity::Entity;
 use tracing::instrument;
 use zenith_entity_id::ZenithEntityId;
-use zenith_error::{ZPubResult, ZenithError};
+use zenith_error::{ZResult, ZenithError};
 use zenith_types::ecs::SaveWorld;
 
 use crate::{WORLD_VERSION, World};
@@ -25,8 +25,14 @@ impl World {
 		}
 	}
 
+	/// restores the world from a snapshot, replacing all existing entities and
+	/// components.
+	///
+	/// # Errors
+	/// This function will return an error if the snapshot is invalid or if
+	/// there is an error
 	#[instrument(skip(self, snapshot))]
-	pub fn restore_snapshot(&mut self, snapshot: SaveWorld) -> ZPubResult<()> {
+	pub fn restore_snapshot(&mut self, snapshot: SaveWorld) -> ZResult<()> {
 		self.display_name = if snapshot.name.is_empty() {
 			self.name.clone()
 		} else {

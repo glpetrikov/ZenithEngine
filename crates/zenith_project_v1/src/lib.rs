@@ -4,7 +4,7 @@ use std::{
 	path::{Path, PathBuf},
 };
 
-use zenith_error::{ZPubResult, ZenithError};
+use zenith_error::{ZResult, ZenithError};
 use zenith_project_trait::ProjectTrait;
 use zenith_registry::ComponentRegistry;
 use zenith_types::{
@@ -25,7 +25,7 @@ impl ProjectTrait for ProjectV1 {
 	fn name(&self) -> &str { &self.name }
 	fn engine_version(&self) -> &zenith_types::VersionReq { &self.engine_version }
 
-	fn open(path: &Path, name: &str) -> ZPubResult<Self> {
+	fn open(path: &Path, name: &str) -> ZResult<Self> {
 		let mut zenith_project_file = File::open(path.join(format!("{name}.{ZENITH_PROJECT_EXTENSION}")))?;
 		let mut buf = String::new();
 		zenith_project_file.read_to_string(&mut buf)?;
@@ -48,7 +48,7 @@ impl ProjectTrait for ProjectV1 {
 			engine_version: zenith_project.project.engine_version,
 		})
 	}
-	fn create(path: &Path, name: &str) -> ZPubResult<Self> {
+	fn create(path: &Path, name: &str) -> ZResult<Self> {
 		// === Checking existence of project directory ===
 		if !std::fs::exists(path)? {
 			return Err(ZenithError::InvalidProjectPath(path.to_path_buf()));
@@ -100,7 +100,7 @@ impl ProjectTrait for ProjectV1 {
 		})
 	}
 
-	fn load_world(&self, path: &WorldPath) -> ZPubResult<World> {
+	fn load_world(&self, path: &WorldPath) -> ZResult<World> {
 		let mut registry = ComponentRegistry::new();
 		ComponentRegistry::register_defaults(&mut registry);
 		Self::load_world_with_registry(self, path, registry)
@@ -109,7 +109,7 @@ impl ProjectTrait for ProjectV1 {
 		&self,
 		path: &WorldPath,
 		registry: zenith_registry::ComponentRegistry,
-	) -> ZPubResult<World> {
+	) -> ZResult<World> {
 		let yaml_string = std::fs::read_to_string(self.path.join("Assets").join(path.as_path()))?;
 		let save_file: SaveWorld = serde_saphyr::from_str(&yaml_string)?;
 		let name = path
@@ -124,7 +124,7 @@ impl ProjectTrait for ProjectV1 {
 		world.restore_snapshot(save_file)?;
 		Ok(world)
 	}
-	fn save_world(&self, path: &WorldPath, world: &mut World) -> ZPubResult<()> {
+	fn save_world(&self, path: &WorldPath, world: &mut World) -> ZResult<()> {
 		let destination = self.path.join("Assets").join(path.as_path());
 		if let Some(parent) = destination.parent() {
 			std::fs::create_dir_all(parent)?;
@@ -135,7 +135,7 @@ impl ProjectTrait for ProjectV1 {
 
 		Ok(())
 	}
-	fn copy_world(&self, path: &WorldPath, new_path: &WorldPath) -> ZPubResult<()> {
+	fn copy_world(&self, path: &WorldPath, new_path: &WorldPath) -> ZResult<()> {
 		let destination = self.path.join("Assets").join(new_path.as_path());
 		if let Some(parent) = destination.parent() {
 			std::fs::create_dir_all(parent)?;
@@ -144,18 +144,19 @@ impl ProjectTrait for ProjectV1 {
 		Ok(())
 	}
 
-	fn move_world(&self, path: &WorldPath, new_path: &WorldPath) -> ZPubResult<()> {
+	fn move_world(&self, path: &WorldPath, new_path: &WorldPath) -> ZResult<()> {
 		let destination = self.path.join("Assets").join(new_path.as_path());
 		if let Some(parent) = destination.parent() {
 			std::fs::create_dir_all(parent)?;
 		}
-		std::fs::rename(self.path.join("Assets").join(path.as_path()), destination)?;
+		std::fs::copy(self.path.join("Assets").join(path.as_path()), destination)?;
+		std::fs::remove_file(self.path.join("Assets").join(path.as_path()))?;
 		Ok(())
 	}
-	fn has_world(&self, path: &WorldPath) -> ZPubResult<bool> {
+	fn has_world(&self, path: &WorldPath) -> ZResult<bool> {
 		Ok(std::fs::exists(self.path.join("Assets").join(path.as_path()))?)
 	}
-	fn delete_world(&self, path: &WorldPath) -> ZPubResult<()> {
+	fn delete_world(&self, path: &WorldPath) -> ZResult<()> {
 		let source = self.path.join("Assets").join(path.as_path());
 		let destination = self.path.join("Trash").join(path.as_path());
 
@@ -166,7 +167,7 @@ impl ProjectTrait for ProjectV1 {
 		std::fs::rename(source, destination)?;
 		Ok(())
 	}
-	fn list_worlds(&self) -> Vec<ZPubResult<WorldPath>> {
+	fn list_worlds(&self) -> Vec<ZResult<WorldPath>> {
 		zenith_types::walk_files(&self.path.join("Assets").join("Worlds"))
 			.into_iter()
 			.map(|entry| {

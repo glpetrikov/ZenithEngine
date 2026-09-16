@@ -3,7 +3,7 @@ use std::{
 	path::{Component, Path, PathBuf},
 };
 
-use zenith_error::{ZPubResult, ZenithError};
+use zenith_error::{ZResult, ZenithError};
 
 /// A path to a world file, relative to `project_root/Assets`.
 ///
@@ -19,7 +19,10 @@ impl WorldPath {
 	///
 	/// Fails if `path` doesn't start with `Worlds/`, or contains a `..`
 	/// component that could let it escape the project.
-	pub fn new(path: impl AsRef<Path>) -> ZPubResult<Self> {
+	///
+	/// # Errors
+	/// This function will return an error if the input path is invalid.
+	pub fn new(path: impl AsRef<Path>) -> ZResult<Self> {
 		let path = path.as_ref();
 
 		// Checked as an explicit component, not a string prefix — a string

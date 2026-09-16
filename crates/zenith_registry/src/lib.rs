@@ -4,14 +4,14 @@ use bevy_ecs::{component, entity::Entity, world};
 use serde_json::Value;
 use tracing::instrument;
 use zenith_components::{ExcludeFromBuild, IsActive, Name, Transform};
-use zenith_error::{ZPubResult, ZenithError};
+use zenith_error::{ZResult, ZenithError};
 use zenith_types::{
 	Deserialize, Serialize,
 	ecs::{SavedComponent, SavedEntity},
 };
 
 type SaveComponentFn = Box<dyn Fn(Entity, &world::World) -> Option<Value>>;
-type LoadComponentFn = Box<dyn Fn(Entity, &mut world::World, Value) -> ZPubResult<()>>;
+type LoadComponentFn = Box<dyn Fn(Entity, &mut world::World, Value) -> ZResult<()>>;
 
 pub struct ComponentRegistry {
 	components: BTreeMap<String, ComponentRegistration>,
@@ -115,7 +115,7 @@ impl ComponentRegistry {
 		});
 
 		let load: LoadComponentFn = Box::new(
-			|entity: Entity, world: &mut world::World, value: Value| -> ZPubResult<()> {
+			|entity: Entity, world: &mut world::World, value: Value| -> ZResult<()> {
 				let component: T = serde_json::from_value(value)?;
 				world.entity_mut(entity).insert(component);
 				Ok(())
@@ -175,13 +175,15 @@ impl ComponentRegistry {
 		}
 	}
 
+	/// Loads a component from a saved component into the world for the given
+	/// entity.
+	///
+	/// # Errors
+	/// This function will return an error if the component type is not
+	/// registered or if there is an error loading the component into the
+	/// world.
 	#[instrument(skip(self, world, component), fields(component_type = %component.component_type))]
-	pub fn load_component(
-		&self,
-		entity: Entity,
-		world: &mut world::World,
-		component: SavedComponent,
-	) -> ZPubResult<()> {
+	pub fn load_component(&self, entity: Entity, world: &mut world::World, component: SavedComponent) -> ZResult<()> {
 		let registration = self
 			.components
 			.get(&component.component_type)

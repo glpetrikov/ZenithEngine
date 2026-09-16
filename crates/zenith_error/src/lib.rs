@@ -60,17 +60,23 @@ pub enum ZenithError {
 }
 
 // Public API boundary: documented, matchable variants.
-pub type ZPubResult<T> = std::result::Result<T, ZenithError>;
+pub type ZResult<T> = std::result::Result<T, ZenithError>;
 
 // Internal use: free-form propagation with .wrap_err() context.
-pub type ZResult<T> = eyre::Result<T>;
+pub type ZInternalResult<T> = eyre::Result<T>;
 
-pub trait IntoPubResult<T> {
-	fn into_pub_result(self) -> ZPubResult<T>;
+pub trait IntoZResult<T> {
+	/// Converts an internal `ZInternalResult<T>` into a public `ZResult<T>`.
+	///
+	/// # Errors
+	/// Returns `Err` whenever the wrapped internal result is `Err`; the
+	/// internal error is mapped into `ZenithError` so callers outside the
+	/// crate never see internal-only error variants.
+	fn into_zresult(self) -> ZResult<T>;
 }
 
-impl<T> IntoPubResult<T> for ZResult<T> {
-	fn into_pub_result(self) -> ZPubResult<T> {
+impl<T> IntoZResult<T> for ZInternalResult<T> {
+	fn into_zresult(self) -> ZResult<T> {
 		self.map_err(|report| {
 			report
 				.downcast::<ZenithError>()

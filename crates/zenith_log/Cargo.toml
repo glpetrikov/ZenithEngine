@@ -17,7 +17,7 @@ tracing-error = "0.2"
 
 # Tracy client adds runtime overhead even when idle, so it stays out
 # of default builds; enabled explicitly for profiling sessions.
-tracing-tracy = { version = "0.11", optional = true }
+tracing-tracy = { version = "0.12", optional = true }
 
 [features]
 profiling = ["dep:tracing-tracy"]

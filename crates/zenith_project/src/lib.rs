@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use zenith_error::{ZPubResult, ZenithError};
+use zenith_error::{ZResult, ZenithError};
 use zenith_project_trait::ProjectTrait;
 use zenith_project_v1::ProjectV1;
 use zenith_registry::ComponentRegistry;
@@ -27,7 +27,7 @@ impl ProjectTrait for Project {
 		}
 	}
 
-	fn open(path: &Path, name: &str) -> ZPubResult<Self> {
+	fn open(path: &Path, name: &str) -> ZResult<Self> {
 		if !std::fs::exists(path)? {
 			return Err(ZenithError::InvalidProjectPath(path.to_path_buf()));
 		}
@@ -47,48 +47,48 @@ impl ProjectTrait for Project {
 			))
 		}
 	}
-	fn create(path: &Path, name: &str) -> ZPubResult<Self> {
+	fn create(path: &Path, name: &str) -> ZResult<Self> {
 		ProjectV1::create(path, name).map(|p| Self {
 			state: ProjectVersion::V1(p),
 		})
 	}
 
-	fn load_world(&self, path: &WorldPath) -> ZPubResult<World> {
+	fn load_world(&self, path: &WorldPath) -> ZResult<World> {
 		match &self.state {
 			ProjectVersion::V1(p) => p.load_world(path),
 		}
 	}
-	fn load_world_with_registry(&self, path: &WorldPath, registry: ComponentRegistry) -> ZPubResult<World> {
+	fn load_world_with_registry(&self, path: &WorldPath, registry: ComponentRegistry) -> ZResult<World> {
 		match &self.state {
 			ProjectVersion::V1(p) => p.load_world_with_registry(path, registry),
 		}
 	}
-	fn save_world(&self, path: &WorldPath, world: &mut World) -> ZPubResult<()> {
+	fn save_world(&self, path: &WorldPath, world: &mut World) -> ZResult<()> {
 		match &self.state {
 			ProjectVersion::V1(p) => p.save_world(path, world),
 		}
 	}
-	fn copy_world(&self, path: &WorldPath, new_path: &WorldPath) -> ZPubResult<()> {
+	fn copy_world(&self, path: &WorldPath, new_path: &WorldPath) -> ZResult<()> {
 		match &self.state {
 			ProjectVersion::V1(p) => p.copy_world(path, new_path),
 		}
 	}
-	fn move_world(&self, path: &WorldPath, new_path: &WorldPath) -> ZPubResult<()> {
+	fn move_world(&self, path: &WorldPath, new_path: &WorldPath) -> ZResult<()> {
 		match &self.state {
 			ProjectVersion::V1(p) => p.move_world(path, new_path),
 		}
 	}
-	fn has_world(&self, path: &WorldPath) -> ZPubResult<bool> {
+	fn has_world(&self, path: &WorldPath) -> ZResult<bool> {
 		match &self.state {
 			ProjectVersion::V1(p) => p.has_world(path),
 		}
 	}
-	fn delete_world(&self, path: &WorldPath) -> ZPubResult<()> {
+	fn delete_world(&self, path: &WorldPath) -> ZResult<()> {
 		match &self.state {
 			ProjectVersion::V1(p) => p.delete_world(path),
 		}
 	}
-	fn list_worlds(&self) -> Vec<ZPubResult<WorldPath>> {
+	fn list_worlds(&self) -> Vec<ZResult<WorldPath>> {
 		match &self.state {
 			ProjectVersion::V1(p) => p.list_worlds(),
 		}

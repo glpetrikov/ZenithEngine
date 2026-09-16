@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use zenith_error::ZPubResult;
+use zenith_error::ZResult;
 use zenith_registry::ComponentRegistry;
 use zenith_types::paths::WorldPath;
 use zenith_world::World;
@@ -21,7 +21,11 @@ pub trait ProjectTrait {
 	/// are recreated automatically if missing — this covers a project whose
 	/// structure was manually edited/pruned after creation, not the
 	/// manifest/marker files themselves, which are never silently regenerated.
-	fn open(path: &Path, name: &str) -> ZPubResult<Self>
+	///
+	/// # Errors
+	/// Returns `Err` if `path` is missing either the version marker file or
+	/// the manifest, or if the manifest exists but fails to parse.
+	fn open(path: &Path, name: &str) -> ZResult<Self>
 	where
 		Self: Sized;
 	/// Creates a new project named `name` inside `path`.
@@ -33,26 +37,60 @@ pub trait ProjectTrait {
 	/// unless the code creating it explicitly reports `AlreadyExists`. Fails
 	/// with `BadProjectName` if `name` doesn't pass validation (see
 	/// `is_valid_project_name`).
-	fn create(path: &Path, name: &str) -> ZPubResult<Self>
+	///
+	/// # Errors
+	/// Returns [`ZenithError::InvalidProjectPath`] if `path.join(name)`
+	/// already exists, and [`ZenithError::BadProjectName`] if `name` fails
+	/// validation.
+	fn create(path: &Path, name: &str) -> ZResult<Self>
 	where
 		Self: Sized;
 
 	/// Loads the world at `path`.
-	fn load_world(&self, path: &WorldPath) -> ZPubResult<World>;
+	///
+	/// # Errors
+	/// Returns `Err` if no world exists at `path`, or if the file exists but
+	/// fails to deserialize.
+	fn load_world(&self, path: &WorldPath) -> ZResult<World>;
 	/// Loads the world at `path` with the given registry.
-	fn load_world_with_registry(&self, path: &WorldPath, registry: ComponentRegistry) -> ZPubResult<World>;
+	///
+	/// # Errors
+	/// Returns `Err` under the same conditions as [`Self::load_world`], plus
+	/// if the world references a component type not present in `registry`.
+	fn load_world_with_registry(&self, path: &WorldPath, registry: ComponentRegistry) -> ZResult<World>;
 	/// Saves `world` to `path`, overwriting any existing file there.
-	fn save_world(&self, path: &WorldPath, world: &mut World) -> ZPubResult<()>;
+	///
+	/// # Errors
+	/// Returns `Err` if `world` fails to serialize, or if writing to `path`
+	/// fails (e.g. permissions, disk space).
+	fn save_world(&self, path: &WorldPath, world: &mut World) -> ZResult<()>;
 	// TODO: add atomic_save_world
 	/// Copies the world at `path` to `new_path`, leaving the original in place.
-	fn copy_world(&self, path: &WorldPath, new_path: &WorldPath) -> ZPubResult<()>;
+	///
+	/// # Errors
+	/// Returns `Err` if no world exists at `path`, or if the copy fails
+	/// (e.g. `new_path`'s parent directory is missing, or I/O fails).
+	fn copy_world(&self, path: &WorldPath, new_path: &WorldPath) -> ZResult<()>;
 	/// Moves (and can rename) the world at `path` to `new_path`.
-	fn move_world(&self, path: &WorldPath, new_path: &WorldPath) -> ZPubResult<()>;
+	///
+	/// # Errors
+	/// Returns `Err` under the same conditions as [`Self::copy_world`], or if
+	/// the move/rename itself fails partway through.
+	fn move_world(&self, path: &WorldPath, new_path: &WorldPath) -> ZResult<()>;
 	/// Returns whether a world exists at `path`.
-	fn has_world(&self, path: &WorldPath) -> ZPubResult<bool>;
+	///
+	/// # Errors
+	/// Returns `Err` if the existence check itself fails (e.g. I/O or
+	/// permission errors) — as distinct from `Ok(false)` for a world that
+	/// simply isn't there.
+	fn has_world(&self, path: &WorldPath) -> ZResult<bool>;
 	/// Moves the world at `path` to the trash.
-	fn delete_world(&self, path: &WorldPath) -> ZPubResult<()>;
+	///
+	/// # Errors
+	/// Returns `Err` if no world exists at `path`, or if it cannot be moved
+	/// to the trash (e.g. I/O failure).
+	fn delete_world(&self, path: &WorldPath) -> ZResult<()>;
 	/// Lists every world in the project. See [`WorldPath`] for entry
 	/// fallibility notes.
-	fn list_worlds(&self) -> Vec<ZPubResult<WorldPath>>;
+	fn list_worlds(&self) -> Vec<ZResult<WorldPath>>;
 }

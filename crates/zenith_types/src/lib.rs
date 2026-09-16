@@ -4,6 +4,9 @@ pub mod paths;
 pub mod project;
 pub mod settings;
 
+// TODO: remove zenith_types and make separate mini crates instead of one huge
+// zenith_types crate
+
 pub use glam::{
 	BVec4, Quat, Vec2, Vec3,
 	bool::{BVec2, BVec3},
@@ -27,18 +30,18 @@ use std::{
 	path::{Path, PathBuf},
 };
 
-use zenith_error::{ZPubResult, ZenithError};
+use zenith_error::{ZResult, ZenithError};
 
 /// Recursively walks `root` and returns the paths of every file found
 /// underneath it, relative to `root` — e.g. `Levels/Level2.zenith`,
 /// not `root/Levels/Level2.zenith`.
-pub fn walk_files(root: &Path) -> Vec<ZPubResult<PathBuf>> {
-	let mut result: Vec<ZPubResult<PathBuf>> = Vec::new();
+pub fn walk_files(root: &Path) -> Vec<ZResult<PathBuf>> {
+	let mut result: Vec<ZResult<PathBuf>> = Vec::new();
 	walk_files_into(root, root, &mut result);
 	result
 }
 
-fn walk_files_into(root: &Path, dir: &Path, out: &mut Vec<ZPubResult<PathBuf>>) {
+fn walk_files_into(root: &Path, dir: &Path, out: &mut Vec<ZResult<PathBuf>>) {
 	// read_dir itself can fail (e.g. dir doesn't exist or isn't readable) —
 	// pushed as an error entry instead of propagated, so a failure at any
 	// depth (including the root) is reported through `out`, not silently
