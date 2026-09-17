@@ -1012,6 +1012,14 @@ Name: dear-imgui-winit
 Version: 0.18.0
 License: Apache License 2.0
 
+Name: dirs-sys
+Version: 0.5.0
+License: Apache License 2.0
+
+Name: dirs
+Version: 7.0.0
+License: Apache License 2.0
+
 Name: disqualified
 Version: 1.0.0
 License: Apache License 2.0
@@ -1664,6 +1672,10 @@ Name: winapi-util
 Version: 0.1.11
 License: MIT License
 
+Name: redox_users
+Version: 0.5.3
+License: MIT License
+
 Name: xkbcommon-dl
 Version: 0.4.2
 License: MIT License
@@ -1679,6 +1691,10 @@ License: MIT License
 Name: quick-xml
 Version: 0.41.0
 License: MIT License
+
+Name: option-ext
+Version: 0.2.0
+License: Mozilla Public License 2.0
 
 Name: unicode-ident
 Version: 1.0.24
