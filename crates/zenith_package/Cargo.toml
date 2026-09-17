@@ -1,0 +1,18 @@
+[package]
+name = "zenith_package"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+csscolorparser = { version = "0.8.4", features = ["serde"] }
+semver = { version = "1.0.28", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+spdx = "0.13.5"
+
+[lints]
+workspace = true

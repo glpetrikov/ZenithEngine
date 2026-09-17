@@ -23,6 +23,10 @@ pub enum ZenithError {
 	#[error("Path escapes root: {0}")]
 	PathEscapesRoot(PathBuf),
 
+	// === Package Errors ===
+	#[error("unknown palette reference '{0}' in colors.{1}")]
+	UnknownPaletteReference(String, String),
+
 	// === World Errors ===
 	#[error("Invalid world path: {0}")]
 	InvalidWorldPath(PathBuf),

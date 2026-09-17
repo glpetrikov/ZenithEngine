@@ -94,10 +94,12 @@ impl Application for EditorApp {
 
 fn main() -> ZInternalResult<()> {
 	zenith_error::install().into_zresult()?;
-	#[cfg(target_os = "linux")]
-	let log_guard = zenith_log::init("~/.local/share/ZenithEngine/Logs", zenith_log::Rotation::MINUTELY, 10)?;
-	#[cfg(target_os = "windows")]
-	let log_guard = zenith_log::init("%LOCALAPPDATA%/ZenithEngine/Logs", zenith_log::Rotation::MINUTELY, 10)?;
+	let log_dir = dirs::data_local_dir()
+		.ok_or_else(|| eyre!("could not determine local data directory"))?
+		.join("ZenithEngine")
+		.join("Logs");
+
+	let log_guard = zenith_log::init(log_dir, zenith_log::Rotation::MINUTELY, 10)?;
 
 	let app = EditorApp {
 		clicks: 0,
