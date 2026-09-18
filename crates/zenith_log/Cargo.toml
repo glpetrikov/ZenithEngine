@@ -9,18 +9,18 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-zenith_error = { version = "0.1.0", path = "../zenith_error" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-appender = "0.2"
 tracing-error = "0.2"
-
-# Tracy client adds runtime overhead even when idle, so it stays out
-# of default builds; enabled explicitly for profiling sessions.
+tracing-log = "0.2"
+zenith_error = { version = "0.1.0", path = "../zenith_error" }
 tracing-tracy = { version = "0.12", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tracing-appender = "0.2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tracing-web = "0.1"
 
 [features]
 profiling = ["dep:tracing-tracy"]
-
-[lints]
-workspace = true

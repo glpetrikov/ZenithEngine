@@ -4,10 +4,16 @@ ZenithEngine is a modern GameEngine written in Rust with ECS.
 <details>
 <summary>Table of Contents</summary>
 
-- [Getting Started](#getting-started)
-- [Roadmap](#roadmap)
-- [Supported Platforms](#supported-platforms)
-- [License](#license)
+- [ZenithEngine](#zenithengine)
+  - [Getting Started](#getting-started)
+    - [Editor](#editor)
+    - [Runtime](#runtime)
+      - [Native](#native)
+      - [WASM](#wasm)
+        - [How to Install Node.js \& npm](#how-to-install-nodejs--npm)
+  - [Roadmap](#roadmap)
+  - [Supported Platforms](#supported-platforms)
+  - [License](#license)
 
 </details>
 
@@ -26,12 +32,51 @@ ZenithEngine is a modern GameEngine written in Rust with ECS.
 
 ## Getting Started
 
+### Editor
+
 Requires [Rust](https://rustup.rs).
 
 ```bash
 git clone https://github.com/glpetrikov/ZenithEngine
 cd ZenithEngine
 cargo run
+```
+
+### Runtime
+
+Requires [Rust](https://rustup.rs).
+
+#### Native
+```bash
+git clone https://github.com/glpetrikov/ZenithEngine
+cd ZenithEngine
+cargo run -p zenith_runtime
+```
+
+#### WASM
+
+Requires [npm](https://nodejs.org/en/download/current).
+
+##### How to Install Node.js & npm
+
+You can also install Node.js and npm using your package manager.
+
+Alternatively, open the link above, scroll down a little, and select your OS and architecture.
+
+Choose either the **Installer** or the **Standalone Binary**:
+
+* **Installer:** Run the downloaded installer and follow the instructions.
+* **Standalone Binary:** Extract the downloaded archive, move it in your favorite place on your drive, and add it to your `PATH`.
+
+Then run the runtime:
+
+```bash
+git clone https://github.com/glpetrikov/ZenithEngine
+cd ZenithEngine
+cargo install wasm-pack
+cd bins/zenith_runtime
+wasm-pack build --target web
+npx serve .
 ```
 
 ## Roadmap

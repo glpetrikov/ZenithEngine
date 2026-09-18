@@ -16,6 +16,7 @@ use zenith_error::{IntoZResult, ZInternalResult, eyre};
 struct EditorApp {
 	clicks: u32,
 	color_rgba: [f32; 4],
+	first_frame: bool,
 	_log_guard: zenith_log::LogGuard,
 }
 
@@ -43,6 +44,19 @@ impl Application for EditorApp {
 	fn frame(&mut self, context: &mut FrameContext<'_>) -> Result<(), RunError> {
 		let ui = context.ui();
 		let viewport = ui.main_viewport();
+
+		if self.first_frame {
+			ui.open_popup("Welcome");
+			self.first_frame = false;
+		}
+
+		if let Some(_token) = ui.begin_modal_popup("Welcome") {
+			ui.text("Welcome to Zenith Editor!");
+			ui.spacing();
+			if ui.button("OK") {
+				ui.close_current_popup();
+			}
+		}
 
 		toolbar::draw_toolbar(ui);
 
@@ -103,6 +117,7 @@ fn main() -> ZInternalResult<()> {
 
 	let app = EditorApp {
 		clicks: 0,
+		first_frame: true,
 		color_rgba: [1.0, 1.0, 1.0, 1.0],
 		_log_guard: log_guard,
 	};

@@ -108,201 +108,103 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 ----------------------------------------
 
-Name: linux-raw-sys
-Version: 0.12.1
-License: Apache License 2.0
+linux-raw-sys with version 0.12.1 under Apache License 2.0.
 
-Name: rustix
-Version: 1.1.4
-License: Apache License 2.0
+rustix with version 1.1.4 under Apache License 2.0.
 
-Name: windows-collections
-Version: 0.3.2
-License: Apache License 2.0
+windows-collections with version 0.3.2 under Apache License 2.0.
 
-Name: windows-core
-Version: 0.62.2
-License: Apache License 2.0
+windows-core with version 0.62.2 under Apache License 2.0.
 
-Name: windows-future
-Version: 0.3.2
-License: Apache License 2.0
+windows-future with version 0.3.2 under Apache License 2.0.
 
-Name: windows-implement
-Version: 0.60.2
-License: Apache License 2.0
+windows-implement with version 0.60.2 under Apache License 2.0.
 
-Name: windows-interface
-Version: 0.59.3
-License: Apache License 2.0
+windows-interface with version 0.59.3 under Apache License 2.0.
 
-Name: windows-link
-Version: 0.2.1
-License: Apache License 2.0
+windows-link with version 0.2.1 under Apache License 2.0.
 
-Name: windows-numerics
-Version: 0.3.1
-License: Apache License 2.0
+windows-numerics with version 0.3.1 under Apache License 2.0.
 
-Name: windows-result
-Version: 0.4.1
-License: Apache License 2.0
+windows-result with version 0.4.1 under Apache License 2.0.
 
-Name: windows-strings
-Version: 0.5.1
-License: Apache License 2.0
+windows-strings with version 0.5.1 under Apache License 2.0.
 
-Name: windows-sys
-Version: 0.61.2
-License: Apache License 2.0
+windows-sys with version 0.61.2 under Apache License 2.0.
 
-Name: windows-threading
-Version: 0.2.1
-License: Apache License 2.0
+windows-threading with version 0.2.1 under Apache License 2.0.
 
-Name: windows
-Version: 0.62.2
-License: Apache License 2.0
+windows with version 0.62.2 under Apache License 2.0.
 
-Name: ntapi
-Version: 0.4.3
-License: Apache License 2.0
+ntapi with version 0.4.3 under Apache License 2.0.
 
-Name: winapi
-Version: 0.3.9
-License: Apache License 2.0
+winapi with version 0.3.9 under Apache License 2.0.
 
-Name: bitflags
-Version: 2.13.2
-License: Apache License 2.0
+bitflags with version 2.13.2 under Apache License 2.0.
 
-Name: cfg-if
-Version: 1.0.4
-License: Apache License 2.0
+cfg-if with version 1.0.4 under Apache License 2.0.
 
-Name: errno
-Version: 0.3.14
-License: Apache License 2.0
+errno with version 0.3.14 under Apache License 2.0.
 
-Name: fastrand
-Version: 2.5.0
-License: Apache License 2.0
+fastrand with version 2.5.0 under Apache License 2.0.
 
-Name: filetime
-Version: 0.2.29
-License: Apache License 2.0
+filetime with version 0.2.29 under Apache License 2.0.
 
-Name: linux-raw-sys
-Version: 0.12.1
-License: Apache License 2.0
+linux-raw-sys with version 0.12.1 under Apache License 2.0.
 
-Name: once_cell
-Version: 1.21.4
-License: Apache License 2.0
+once_cell with version 1.21.4 under Apache License 2.0.
 
-Name: rustix
-Version: 1.1.4
-License: Apache License 2.0
+rustix with version 1.1.4 under Apache License 2.0.
 
-Name: tar
-Version: 0.4.46
-License: Apache License 2.0
+tar with version 0.4.46 under Apache License 2.0.
 
-Name: tempfile
-Version: 3.27.0
-License: Apache License 2.0
+tempfile with version 3.27.0 under Apache License 2.0.
 
-Name: xattr
-Version: 1.6.1
-License: Apache License 2.0
+xattr with version 1.6.1 under Apache License 2.0.
 
-Name: getrandom
-Version: 0.4.3
-License: Apache License 2.0
+getrandom with version 0.4.3 under Apache License 2.0.
 
-Name: zenithpack_cli
-Version: 0.1.0
-License: Apache License 2.0
+zenithpack_cli with version 0.1.0 under Apache License 2.0.
 
-Name: zenithpack
-Version: 0.1.0
-License: Apache License 2.0
+zenithpack with version 0.1.0 under Apache License 2.0.
 
-Name: libc
-Version: 0.2.189
-License: Apache License 2.0
+libc with version 0.2.189 under Apache License 2.0.
 
-Name: objc2-core-foundation
-Version: 0.3.2
-License: Apache License 2.0
+objc2-core-foundation with version 0.3.2 under Apache License 2.0.
 
-Name: objc2-io-kit
-Version: 0.3.2
-License: Apache License 2.0
+objc2-io-kit with version 0.3.2 under Apache License 2.0.
 
-Name: objc2-open-directory
-Version: 0.3.2
-License: Apache License 2.0
+objc2-open-directory with version 0.3.2 under Apache License 2.0.
 
-Name: proc-macro2
-Version: 1.0.107
-License: Apache License 2.0
+proc-macro2 with version 1.0.107 under Apache License 2.0.
 
-Name: quote
-Version: 1.0.47
-License: Apache License 2.0
+quote with version 1.0.47 under Apache License 2.0.
 
-Name: r-efi
-Version: 6.0.0
-License: Apache License 2.0
+r-efi with version 6.0.0 under Apache License 2.0.
 
-Name: syn
-Version: 2.0.119
-License: Apache License 2.0
+syn with version 2.0.119 under Apache License 2.0.
 
-Name: unicode-ident
-Version: 1.0.24
-License: Apache License 2.0
+unicode-ident with version 1.0.24 under Apache License 2.0.
 
-Name: winapi-i686-pc-windows-gnu
-Version: 0.4.0
-License: Apache License 2.0
+winapi-i686-pc-windows-gnu with version 0.4.0 under Apache License 2.0.
 
-Name: winapi-x86_64-pc-windows-gnu
-Version: 0.4.0
-License: Apache License 2.0
+winapi-x86_64-pc-windows-gnu with version 0.4.0 under Apache License 2.0.
 
-Name: ruzstd
-Version: 0.9.0
-License: MIT License
+ruzstd with version 0.9.0 under MIT License.
 
-Name: objc2-encode
-Version: 4.1.0
-License: MIT License
+objc2-encode with version 4.1.0 under MIT License.
 
-Name: objc2-foundation
-Version: 0.3.2
-License: MIT License
+objc2-foundation with version 0.3.2 under MIT License.
 
-Name: objc2
-Version: 0.6.4
-License: MIT License
+objc2 with version 0.6.4 under MIT License.
 
-Name: memchr
-Version: 2.8.3
-License: MIT License
+memchr with version 2.8.3 under MIT License.
 
-Name: sysinfo
-Version: 0.39.6
-License: MIT License
+sysinfo with version 0.39.6 under MIT License.
 
-Name: twox-hash
-Version: 2.1.4
-License: MIT License
+twox-hash with version 2.1.4 under MIT License.
 
-Name: unicode-ident
-Version: 1.0.24
-License: Unicode License v3
+unicode-ident with version 1.0.24 under Unicode License v3.
 
 
 ----------------------------------------

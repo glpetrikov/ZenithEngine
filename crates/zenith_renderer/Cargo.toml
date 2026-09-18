@@ -1,0 +1,16 @@
+[package]
+name = "zenith_renderer"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+wgpu = "30.0.1"
+zenith_error = { version = "0.1.0", path = "../zenith_error" }
+
+[lints]
+workspace = true

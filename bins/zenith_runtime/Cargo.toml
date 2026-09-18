@@ -9,19 +9,35 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
-[dependencies]
-zenith_error = { version = "0.1.0", path = "../../crates/zenith_error" }
-zenith_log = { version = "0.1.0", path = "../../crates/zenith_log", features = [
-    "profiling",
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+console_log = "1.0"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Window",
+    "Element",
+    "HtmlElement",
+    "HtmlCanvasElement",
+    "Node",
 ] }
-zenith_types = { version = "0.1.0", path = "../../crates/zenith_types" }
-zenith_components = { version = "0.1.0", path = "../../crates/zenith_components" }
-tracing = "0.1.30"
 
-zenith_world = { version = "0.1.0", path = "../../crates/zenith_world" }
-zenith_project = { version = "0.1.0", path = "../../crates/zenith_project" }
-zenith_project_trait = { version = "0.1.0", path = "../../crates/zenith_project_trait" }
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O", "--all-features"]
 
+[dependencies]
+wgpu = { version = "30.0.1", features = ["webgl"] }
+winit = { version = "0.30", features = ["android-native-activity"] }
+pollster = "1.0.1"
+dirs = "7.0.0"
+console_error_panic_hook = "0.1.6"
+
+zenith_error = { version = "0.1.0", path = "../../crates/zenith_error" }
+zenith_log = { version = "0.1.0", path = "../../crates/zenith_log" }
 
 [lints]
 workspace = true

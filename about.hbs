@@ -110,12 +110,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 {{#each licenses}}
 {{#each used_by}}
-Name: {{crate.name}}
-Version: {{crate.version}}
-License: {{../name}}
-{{#if crate.copyright}}
-Copyright: {{crate.copyright}}
-{{/if}}
+{{crate.name}} with version {{crate.version}} under {{../name}}{{#if crate.copyright}} with copyright
+{{crate.copyright}} {{/if}}.
 
 {{/each}}
 {{/each}}
