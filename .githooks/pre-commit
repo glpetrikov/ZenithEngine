@@ -7,5 +7,5 @@ if [ -f "$HOME/.cargo/env" ]; then
     source "$HOME/.cargo/env"
 fi
 
-python3 "$repo_root/scripts/update_notice.py"
+python3 "$repo_root/scripts/gen_notice.py"
 python3 "$repo_root/scripts/check.py"

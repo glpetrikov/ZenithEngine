@@ -4,24 +4,79 @@
 <head>
     <meta charset="UTF-8" />
     <style>
-        * {
+        html,
+        body {
             margin: 0;
             padding: 0;
-            background: #304030;
+            width: 100%;
+            height: 100%;
+            background: #303030;
         }
 
         canvas {
-            width: 100%;
-            height: 100vh;
+            margin: 12px;
+            width: calc(100% - 24px);
+            height: calc(100% - 24px);
+            border-radius: 16px;
+        }
+
+        /* TODO: change green and theme to dark-blue default zenith engine theme */
+
+        dialog {
+            border: 1px solid #606060;
+            border-radius: 8px;
+            padding: 24px;
+            background: #262626;
+            color: #E7E7E7;
+            box-shadow: 0 12px 40px rgb(0 0 0 / 40%);
+        }
+
+        dialog::backdrop {
+            background: rgb(0 0 0 / 55%);
+        }
+
+        dialog h2 {
+            margin-bottom: 12px;
+        }
+
+        dialog p {
+            margin-bottom: 20px;
+            color: #BDBDBD;
+        }
+
+        dialog button {
+            padding: 8px 16px;
+            border: 0;
+            border-radius: 5px;
+            background: #3AA152;
+            color: #FFFFFF;
+            cursor: pointer;
+        }
+
+        dialog button:hover {
+            background: #43AB5A;
         }
     </style>
 </head>
 
 <body>
     <canvas id="zenith-canvas"></canvas>
+    <dialog id="no-webgpu">
+        <h2>WebGPU is not available :(</h2>
+        <p>Zenith Engine needs a browser with WebGPU support.</p>
+        <button onclick="this.closest('dialog').close()">OK</button>
+    </dialog>
+
     <script type="module">
-        import init from "./pkg/zenith_runtime.js";
-        init();
+        if (!navigator.gpu) {
+            document.getElementById("no-webgpu").showModal();
+        } else {
+            // Temp!!
+            // document.getElementById("no-webgpu").showModal();
+
+            const { default: init } = await import("./pkg/zenith_runtime.js");
+            await init();
+        }
     </script>
 </body>
 

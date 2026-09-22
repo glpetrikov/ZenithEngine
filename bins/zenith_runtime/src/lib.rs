@@ -12,9 +12,11 @@ use winit::{
 	window::Window,
 };
 use zenith_error::{ZInternalResult, ZResult};
+use zenith_renderer::{types::PowerMode, viewport::Viewport};
 
 pub struct State {
-	pub window: Arc<Window>,
+	viewport: Viewport,
+	window: Arc<Window>,
 }
 
 impl State {
@@ -23,11 +25,31 @@ impl State {
 	/// # Errors
 	/// add in future.
 	#[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
-	pub async fn new(window: Arc<Window>) -> ZResult<Self> { Ok(Self { window }) }
+	pub async fn new(window: Arc<Window>) -> ZResult<Self> {
+		let viewport = Viewport::new(
+			"ZenithEngineRenderer",
+			window.inner_size().width,
+			window.inner_size().height,
+			window.clone(),
+			PowerMode::HighPerformance,
+			false,
+		)
+		.await?;
 
-	pub const fn resize(&mut self, _width: u32, _height: u32) {}
+		Ok(Self { viewport, window })
+	}
 
-	pub fn render(&mut self) { self.window.request_redraw(); }
+	pub fn resize(&mut self, width: u32, height: u32) { self.viewport.resize(width, height) }
+
+	/// ## Render clear color
+	///
+	/// ## Errors
+	/// Return Error if Device lost.
+	pub fn render(&mut self) -> ZResult<()> {
+		self.window.request_redraw();
+		self.viewport.render("Render Encoder", "Render Pass")?;
+		Ok(())
+	}
 }
 
 // wasm_bindgen(start) expands into top-level items assuming module scope;
@@ -93,7 +115,24 @@ impl App {
 impl ApplicationHandler<State> for App {
 	fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 		#[allow(unused_mut)]
-		let mut window_attributes = Window::default_attributes();
+		let mut window_attributes = Window::default_attributes()
+			.with_title("Zenith Engine")
+			.with_min_inner_size(winit::dpi::LogicalSize::new(320.0, 240.0))
+			.with_visible(true)
+			.with_transparent(true);
+
+		#[cfg(not(target_arch = "wasm32"))]
+		{
+			window_attributes = window_attributes.with_inner_size(winit::dpi::LogicalSize::new(1280.0, 720.0));
+		}
+
+		#[cfg(target_os = "windows")]
+		{
+			use winit::platform::windows::{Color, WindowAttributesExtWindows};
+			window_attributes = window_attributes
+				.with_title_text_color(Color::from_rgb(84, 160, 255))
+				.with_title_background_color(Some(Color::from_rgb(77, 77, 77)));
+		}
 
 		#[cfg(target_arch = "wasm32")]
 		{
@@ -106,7 +145,10 @@ impl ApplicationHandler<State> for App {
 			let document = window.document().unwrap_throw();
 			let canvas = document.get_element_by_id(CANVAS_ID).unwrap_throw();
 			let html_canvas_element = canvas.unchecked_into();
-			window_attributes = window_attributes.with_canvas(Some(html_canvas_element));
+
+			window_attributes = window_attributes
+				.with_canvas(Some(html_canvas_element))
+				.with_prevent_default(false);
 		}
 
 		let window = Arc::new(match event_loop.create_window(window_attributes) {
@@ -165,7 +207,9 @@ impl ApplicationHandler<State> for App {
 			WindowEvent::CloseRequested => event_loop.exit(),
 			WindowEvent::Resized(size) => state.resize(size.width, size.height),
 			WindowEvent::RedrawRequested => {
-				state.render();
+				if let Err(e) = state.render() {
+					zenith_log::error!("Cannot render: {e}");
+				}
 			}
 			WindowEvent::KeyboardInput {
 				event: KeyEvent {

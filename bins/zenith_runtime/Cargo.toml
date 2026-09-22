@@ -9,6 +9,10 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[[bin]]
+name = "zenith"
+path = "src/main.rs"
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
@@ -25,12 +29,12 @@ web-sys = { version = "0.3", features = [
     "HtmlCanvasElement",
     "Node",
 ] }
+wgpu = { version = "30.0.1", features = ["webgl"] }
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ["-O", "--all-features"]
 
 [dependencies]
-wgpu = { version = "30.0.1", features = ["webgl"] }
 winit = { version = "0.30", features = ["android-native-activity"] }
 pollster = "1.0.1"
 dirs = "7.0.0"
@@ -38,6 +42,9 @@ console_error_panic_hook = "0.1.6"
 
 zenith_error = { version = "0.1.0", path = "../../crates/zenith_error" }
 zenith_log = { version = "0.1.0", path = "../../crates/zenith_log" }
+
+zenith_renderer = { version = "0.1.0", path = "../../crates/zenith_renderer" }
+
 
 [lints]
 workspace = true

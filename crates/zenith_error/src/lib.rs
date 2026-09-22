@@ -39,6 +39,18 @@ pub enum ZenithError {
 	#[error("unknown component type: {0}")]
 	UnknownComponentType(String),
 
+	// === Render Errors ===
+	#[error("SurfaceCreationFailed: {0}")]
+	SurfaceCreationFailed(String),
+	#[error("NoSuitableSurfaceFormat: {0}")]
+	NoSuitableSurfaceFormat(String),
+	#[error("RequestAdapterError: {0}")]
+	RequestAdapterError(String),
+	#[error("RequestDeviceError: {0}")]
+	RequestDeviceError(String),
+	#[error("LostDevice: {0}")]
+	LostDevice(String),
+
 	// === Errors From Other Crates Or Std ===
 	#[error("I/O error: {0}")]
 	Io(#[from] std::io::Error),
