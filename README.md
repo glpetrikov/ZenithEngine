@@ -21,7 +21,7 @@ ZenithEngine is a modern GameEngine written in Rust with ECS.
 > The engine and API are unstable and may include breaking changes.
 
 ![Status](https://img.shields.io/badge/status-alpha-orange?style=for-the-badge)
-[![CI](https://img.shields.io/github/actions/workflow/status/glpetrikov/ZenithEngine/ci.yml?branch=develop&style=for-the-badge)](https://github.com/glpetrikov/ZenithEngine/actions?query=branch%3Adevelop)
+[![CI](https://img.shields.io/github/actions/workflow/status/glpetrikov/ZenithEngine/check.yml?branch=develop&style=for-the-badge)](https://github.com/glpetrikov/ZenithEngine/actions?query=branch%3Adevelop)
 
 ---
 

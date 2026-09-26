@@ -1,4 +1,5 @@
 use zenith_error::ZInternalResult;
+#[cfg(not(target_arch = "wasm32"))]
 use zenith_log::LogGuard;
 use zenith_runtime::run;
 
