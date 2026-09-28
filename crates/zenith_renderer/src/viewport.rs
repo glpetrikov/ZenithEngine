@@ -4,9 +4,14 @@ use std::time::Instant;
 
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
+use wgpu::util::DeviceExt;
 use zenith_error::{ZResult, ZenithError};
 
-use crate::{pick_surface_format, render_pass::RenderPass, types::PowerMode};
+use crate::{
+	pick_surface_format,
+	render_pass::RenderPass,
+	types::{PowerMode, VERTICES},
+};
 
 pub struct Viewport {
 	window: Arc<winit::window::Window>,
@@ -19,6 +24,10 @@ pub struct Viewport {
 	is_surface_configured: bool,
 
 	render_pass: RenderPass,
+
+	vertex_buffer: wgpu::Buffer,
+
+	num_vertices: u32,
 
 	base_title: String,
 	frame_count: u32,
@@ -77,8 +86,6 @@ impl Viewport {
 		let wanted = wgpu::Features::all_webgpu_mask();
 		let missing = wanted - adapter.features();
 		if !missing.is_empty() {
-			// Logged instead of failing so the first bug report shows exactly
-			// which feature is absent.
 			zenith_log::info!("adapter lacks features: {missing:?}");
 		}
 		let required_features = wanted & adapter.features();
@@ -125,6 +132,12 @@ impl Viewport {
 
 		let render_pass = RenderPass::new("Render Pass", &device, &surface_caps)?;
 
+		let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+			label: Some(format!("{label} Vertex Buffer").as_str()),
+			contents: bytemuck::cast_slice(VERTICES),
+			usage: wgpu::BufferUsages::VERTEX,
+		});
+
 		Ok(Self {
 			window: window.clone(),
 
@@ -137,6 +150,10 @@ impl Viewport {
 			is_surface_configured: true,
 
 			render_pass,
+
+			vertex_buffer,
+
+			num_vertices: VERTICES.len() as u32,
 
 			base_title: "Zenith Engine".to_string(),
 			fps_timer: Instant::now(),
@@ -213,7 +230,9 @@ impl Viewport {
 			});
 
 			render_pass.set_pipeline(&self.render_pass.pipeline);
-			render_pass.draw(0..3, 0..1);
+
+			render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+			render_pass.draw(0..self.num_vertices, 0..1);
 		}
 
 		self.queue.submit(std::iter::once(encoder.finish()));

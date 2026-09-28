@@ -9,6 +9,14 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+glam = { version = "0.33.3", default-features = false, features = [
+    "std",
+    "float-types",
+    "fast-math",
+    "bytemuck",
+    "serde",
+] }
+winit = "0.30.13"
 wgpu = { version = "30.0.1", features = ["webgl"] }
 zenith_error = { version = "0.1.0", path = "../zenith_error" }
 zenith_log = { version = "0.1.0", path = "../zenith_log" }
@@ -18,8 +26,7 @@ bevy_ecs = { version = "0.19", features = [
     "trace",
     "serialize",
 ] }
-glam = { version = "0.33.8", features = ["serde"] }
-winit = "0.30.13"
+bytemuck = "1.25.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-time = "1.1.0"

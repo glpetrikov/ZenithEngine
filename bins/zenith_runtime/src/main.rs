@@ -7,6 +7,7 @@ fn main() -> ZInternalResult<()> {
 	zenith_error::install()?;
 
 	#[allow(unused)]
+	#[cfg(not(target_arch = "wasm32"))]
 	let log_guard: LogGuard;
 	#[cfg(not(target_arch = "wasm32"))]
 	{

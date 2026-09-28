@@ -1,6 +1,6 @@
 use zenith_error::{ZResult, ZenithError};
 
-use crate::{pick_surface_format, render_target::RenderTargetHandle};
+use crate::{pick_surface_format, render_target::RenderTargetHandle, types::Vertex};
 
 pub struct RenderPass {
 	// TODO: add color for future imnodes render graph editor
@@ -18,12 +18,12 @@ impl RenderPass {
 	/// return error if cannot find supported surface format.
 	pub fn new(name: &str, device: &wgpu::Device, surface_capability: &wgpu::SurfaceCapabilities) -> ZResult<Self> {
 		let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-			label: Some(name),
+			label: Some(format!("{name} Shader Module").as_str()),
 			source: wgpu::ShaderSource::Wgsl(include_str!("triangle.wgsl").into()),
 		});
 
 		let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-			label: Some(name),
+			label: Some(format!("{name} Pipeline Layout").as_str()),
 			bind_group_layouts: &[],
 			immediate_size: 0,
 		});
@@ -32,12 +32,12 @@ impl RenderPass {
 			.ok_or_else(|| ZenithError::NoSuitableSurfaceFormat("no supported surface format".into()))?;
 
 		let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-			label: Some(name),
+			label: Some(format!("{name} Pipeline").as_str()),
 			layout: Some(&render_pipeline_layout),
 			vertex: wgpu::VertexState {
 				module: &shader,
 				entry_point: Some("vs_main"),
-				buffers: &[],
+				buffers: &[Some(Vertex::desc())],
 				compilation_options: wgpu::PipelineCompilationOptions::default(),
 			},
 			fragment: Some(wgpu::FragmentState {
