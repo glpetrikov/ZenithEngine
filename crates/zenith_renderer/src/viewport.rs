@@ -84,6 +84,12 @@ impl Viewport {
 			Err(e) => return Err(ZenithError::RequestAdapterError(e.to_string())),
 		};
 
+		let info = adapter.get_info();
+		zenith_log::info!("GPU: {} ({:?})", info.name, info.device_type);
+		zenith_log::info!("Backend: {:?}", info.backend);
+		zenith_log::info!("Driver: {} {}", info.driver, info.driver_info);
+		zenith_log::info!("Vendor: {:#x}, device: {:#x}", info.vendor, info.device);
+
 		let wanted = wgpu::Features::all_webgpu_mask();
 		let missing = wanted - adapter.features();
 		if !missing.is_empty() {
