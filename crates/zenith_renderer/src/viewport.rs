@@ -10,7 +10,7 @@ use zenith_error::{ZResult, ZenithError};
 use crate::{
 	pick_surface_format,
 	render_pass::RenderPass,
-	types::{PowerMode, VERTICES},
+	types::{INDICES, PowerMode, VERTICES},
 };
 
 pub struct Viewport {
@@ -26,8 +26,9 @@ pub struct Viewport {
 	render_pass: RenderPass,
 
 	vertex_buffer: wgpu::Buffer,
+	index_buffer: wgpu::Buffer,
 
-	num_vertices: u32,
+	num_indices: u32,
 
 	base_title: String,
 	frame_count: u32,
@@ -138,6 +139,14 @@ impl Viewport {
 			usage: wgpu::BufferUsages::VERTEX,
 		});
 
+		let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+			label: Some("Index Buffer"),
+			contents: bytemuck::cast_slice(INDICES),
+			usage: wgpu::BufferUsages::INDEX,
+		});
+
+		let num_indices = INDICES.len() as u32;
+
 		Ok(Self {
 			window: window.clone(),
 
@@ -152,8 +161,9 @@ impl Viewport {
 			render_pass,
 
 			vertex_buffer,
+			index_buffer,
 
-			num_vertices: VERTICES.len() as u32,
+			num_indices,
 
 			base_title: "Zenith Engine".to_string(),
 			fps_timer: Instant::now(),
@@ -230,9 +240,9 @@ impl Viewport {
 			});
 
 			render_pass.set_pipeline(&self.render_pass.pipeline);
-
 			render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-			render_pass.draw(0..self.num_vertices, 0..1);
+			render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16); // 1.
+			render_pass.draw_indexed(0..self.num_indices, 0, 0..1); // 2.
 		}
 
 		self.queue.submit(std::iter::once(encoder.finish()));
