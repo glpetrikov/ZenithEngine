@@ -31,7 +31,7 @@ impl State {
 			window.inner_size().width,
 			window.inner_size().height,
 			window.clone(),
-			PowerMode::HighPerformance,
+			PowerMode::Performance,
 			false,
 		)
 		.await?;

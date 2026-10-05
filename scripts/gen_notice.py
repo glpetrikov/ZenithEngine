@@ -8,7 +8,7 @@ TARGETS = [
         "name": "ZenithEngine",
         "manifest_path": "Cargo.toml",
         "output_path": "NOTICE",
-    }
+    },
     # {
     #     "name": "zenithpack CLI",
     #     "manifest_path": "cli/zenithpack_cli/Cargo.toml",

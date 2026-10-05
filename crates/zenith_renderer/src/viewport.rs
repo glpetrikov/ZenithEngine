@@ -71,8 +71,8 @@ impl Viewport {
 		let adapter = match instance
 			.request_adapter(&wgpu::RequestAdapterOptions {
 				power_preference: match power_mode {
-					PowerMode::LowPerformance => wgpu::PowerPreference::LowPower,
-					PowerMode::HighPerformance => wgpu::PowerPreference::HighPerformance,
+					PowerMode::Economy => wgpu::PowerPreference::LowPower,
+					PowerMode::Performance => wgpu::PowerPreference::HighPerformance,
 				},
 				compatible_surface: Some(&surface),
 				force_fallback_adapter: fallback_to_cpu,

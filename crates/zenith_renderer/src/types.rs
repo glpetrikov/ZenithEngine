@@ -8,8 +8,8 @@ pub struct Camera {
 }
 
 pub enum PowerMode {
-	LowPerformance,
-	HighPerformance,
+	Economy,
+	Performance,
 }
 
 pub struct SurfaceFormats {
