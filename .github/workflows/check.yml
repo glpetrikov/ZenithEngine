@@ -87,8 +87,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Install Rust stable (wasm32 target)
-        run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+      - name: Install toolchain and wasm32 target
+        run: |
+          rustup toolchain install --profile minimal
+          rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/develop' }}
