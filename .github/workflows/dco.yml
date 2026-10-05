@@ -1,0 +1,65 @@
+name: DCO
+
+on:
+    pull_request:
+
+permissions:
+    contents: read
+
+jobs:
+    dco:
+        name: Signed-off-by check
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+                  ref: ${{ github.event.pull_request.head.sha }}
+
+            - name: Check that every commit is signed off
+              env:
+                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+              run: |
+                  set -euo pipefail
+
+                  failed=0
+                  checked=0
+
+                  for sha in $(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA"); do
+                    author_name=$(git log -1 --format='%an' "$sha")
+                    author_email=$(git log -1 --format='%ae' "$sha")
+                    committer_name=$(git log -1 --format='%cn' "$sha")
+                    committer_email=$(git log -1 --format='%ce' "$sha")
+                    subject=$(git log -1 --format='%s' "$sha")
+
+                    # Commits made by GitHub bots (for example Dependabot) are exempt.
+                    case "$author_email" in
+                      *"[bot]@users.noreply.github.com")
+                        echo "skip  ${sha:0:10} bot commit: $subject"
+                        continue
+                        ;;
+                    esac
+
+                    checked=$((checked + 1))
+
+                    signoffs=$(git log -1 --format=%B "$sha" | tr -d '\r' | grep -i '^Signed-off-by:' || true)
+
+                    if printf '%s\n' "$signoffs" | grep -qixF "Signed-off-by: $author_name <$author_email>" \
+                      || printf '%s\n' "$signoffs" | grep -qixF "Signed-off-by: $committer_name <$committer_email>"; then
+                      echo "ok    ${sha:0:10} $subject"
+                    else
+                      echo "::error::Commit ${sha:0:10} (\"$subject\") has no matching Signed-off-by line. Expected: Signed-off-by: $author_name <$author_email>"
+                      failed=1
+                    fi
+                  done
+
+                  if [ "$failed" -ne 0 ]; then
+                    echo
+                    echo "Some commits are missing a sign-off. See the DCO section in CONTRIBUTING.md."
+                    echo "Fix the last commit:    git commit --amend -s --no-edit"
+                    echo "Fix several commits:    git rebase --signoff <base> && git push --force-with-lease"
+                    exit 1
+                  fi
+
+                  echo "All $checked commit(s) are signed off."
