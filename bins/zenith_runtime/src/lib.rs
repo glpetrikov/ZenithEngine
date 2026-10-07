@@ -39,9 +39,11 @@ impl State {
 		Ok(Self { viewport, window })
 	}
 
-	pub fn resize(&mut self, width: u32, height: u32) { self.viewport.resize(width, height) }
+	pub fn resize(&mut self, width: u32, height: u32) {
+		self.viewport.resize(width, height);
+	}
 
-	/// ## Render clear color
+	/// ## Main Render function
 	///
 	/// ## Errors
 	/// Return Error if Device lost.
@@ -96,12 +98,16 @@ pub struct App {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl App {
-	pub const fn new() -> Self { Self { state: None } }
+	pub const fn new() -> Self {
+		Self { state: None }
+	}
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Default for App {
-	fn default() -> Self { Self::new() }
+	fn default() -> Self {
+		Self::new()
+	}
 }
 
 #[cfg(target_arch = "wasm32")]

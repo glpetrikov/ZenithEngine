@@ -51,14 +51,26 @@ impl World {
 }
 
 impl World {
-	pub const fn world(&self) -> &BevyWorld { &self.world }
-	pub const fn world_mut(&mut self) -> &mut BevyWorld { &mut self.world }
-	pub const fn registry(&self) -> &ComponentRegistry { &self.registry }
-	pub const fn registry_mut(&mut self) -> &mut ComponentRegistry { &mut self.registry }
-	pub const fn schedule_mut(&mut self) -> &mut Schedule { &mut self.schedule }
+	pub const fn world(&self) -> &BevyWorld {
+		&self.world
+	}
+	pub const fn world_mut(&mut self) -> &mut BevyWorld {
+		&mut self.world
+	}
+	pub const fn registry(&self) -> &ComponentRegistry {
+		&self.registry
+	}
+	pub const fn registry_mut(&mut self) -> &mut ComponentRegistry {
+		&mut self.registry
+	}
+	pub const fn schedule_mut(&mut self) -> &mut Schedule {
+		&mut self.schedule
+	}
 
 	#[instrument(skip(self))]
-	pub fn clear_world(&mut self) { self.world = BevyWorld::new(); }
+	pub fn clear_world(&mut self) {
+		self.world = BevyWorld::new();
+	}
 
 	#[instrument(skip(self))]
 	pub fn update_systems(&mut self, dt: f32) {
@@ -69,7 +81,9 @@ impl World {
 
 impl World {
 	#[instrument(skip(self))]
-	pub fn create_entity(&mut self, name: &str) -> Entity { self.world.spawn(Name { name: name.to_string() }).id() }
+	pub fn create_entity(&mut self, name: &str) -> Entity {
+		self.world.spawn(Name { name: name.to_string() }).id()
+	}
 
 	/// Destroys an entity and all of its components.
 	///
@@ -86,7 +100,9 @@ impl World {
 	}
 
 	#[instrument(skip(self))]
-	pub fn entity_exists(&self, entity: Entity) -> bool { self.world.entities().contains(entity) }
+	pub fn entity_exists(&self, entity: Entity) -> bool {
+		self.world.entities().contains(entity)
+	}
 
 	#[instrument(skip(self))]
 	pub fn clone_entity(&mut self, template: Entity) -> Option<Entity> {

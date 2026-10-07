@@ -56,7 +56,7 @@ The WASM runtime needs Node.js and npm as well. See the README for the full step
 Before submitting, make sure all of these pass:
 
 ```sh
-cargo fmt --all
+cargo +nightly fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
@@ -104,18 +104,18 @@ Guidelines:
 - One logical change per commit. Do not mix a refactor with a bug fix.
 - A short area prefix is fine when it helps: `renderer: Fix swapchain resize crash`.
 
-The usual starting verbs:
+Start with a capital letter and one of the words listed below (or another verb that fits), and do not end with a period.
 
 - `Add`: a new feature, file, test, or dependency
 - `Fix`: a bug fix
 - `Refactor`: restructure code without changing behavior
-- `Improve`: make something better without a clear bug or new feature (performance, errors, ergonomics)
-- `Update`: change existing behavior, content, or a dependency version
-- `Remove`: delete code, features, or files
+- `Improve`: make something better without a clear bug or new feature (performance, error messages, ergonomics)
+- `Update`: change existing behavior or content
+- `Remove`: delete code, features, files, or dependencies
 - `Rename`, `Move`: change names or locations only
-- `Document`: documentation and comments only
+- `Docs`: documentation and comments only
 - `Test`: add or change tests only
-- `Bump`: raise a version number
+- `Bump`: raise the version of anything: a dependency, the Rust toolchain, a GitHub Action, or the engine itself (for example "Bump wgpu to 30.0.1")
 - `Revert`: undo a previous commit, with its hash in the body
 
 ## Style

@@ -19,5 +19,7 @@ impl FrameResources {
 		handle
 	}
 
-	pub fn get(&self, handle: RenderTargetHandle) -> &RenderTarget { &self.targets[handle.0 as usize] }
+	pub fn get(&self, handle: RenderTargetHandle) -> &RenderTarget {
+		&self.targets[handle.0 as usize]
+	}
 }

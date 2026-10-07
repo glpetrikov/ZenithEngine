@@ -42,5 +42,7 @@ impl WorldPath {
 		Ok(Self(path.to_path_buf()))
 	}
 
-	pub fn as_path(&self) -> &Path { &self.0 }
+	pub fn as_path(&self) -> &Path {
+		&self.0
+	}
 }

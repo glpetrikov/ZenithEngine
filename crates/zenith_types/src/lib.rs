@@ -15,8 +15,12 @@ pub use semver::{BuildMetadata, Comparator, Error, Prerelease, Version, VersionR
 pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 // for serde
-pub const fn default_true() -> bool { true }
-pub const fn default_false() -> bool { false }
+pub const fn default_true() -> bool {
+	true
+}
+pub const fn default_false() -> bool {
+	false
+}
 
 pub const ZENITH_PROJECT_EXTENSION: &str = "zenithproject";
 pub const ZENITH_VERSION: &str = env!("CARGO_PKG_VERSION"); // "0.1.0";

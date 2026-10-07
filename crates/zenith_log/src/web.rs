@@ -6,7 +6,9 @@ use zenith_error::{IntoZResult, WrapErr, ZInternalResult, ZResult};
 ///
 /// # Errors
 /// Currently infallible, but returns `ZResult` to match `init`'s signature.
-pub fn init_web() -> ZResult<()> { init_web_inner().wrap_err("Cannot initilize logger").into_zresult() }
+pub fn init_web() -> ZResult<()> {
+	init_web_inner().wrap_err("Cannot initilize logger").into_zresult()
+}
 
 fn init_web_inner() -> ZInternalResult<()> {
 	let fmt_layer = tracing_subscriber::fmt::layer()

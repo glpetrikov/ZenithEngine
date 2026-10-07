@@ -22,8 +22,12 @@ pub struct ProjectV1 {
 }
 
 impl ProjectTrait for ProjectV1 {
-	fn name(&self) -> &str { &self.name }
-	fn engine_version(&self) -> &zenith_types::VersionReq { &self.engine_version }
+	fn name(&self) -> &str {
+		&self.name
+	}
+	fn engine_version(&self) -> &zenith_types::VersionReq {
+		&self.engine_version
+	}
 
 	fn open(path: &Path, name: &str) -> ZResult<Self> {
 		let mut zenith_project_file = File::open(path.join(format!("{name}.{ZENITH_PROJECT_EXTENSION}")))?;

@@ -200,11 +200,17 @@ impl ComponentRegistry {
 	}
 
 	#[instrument(skip(self))]
-	pub fn is_registered(&self, type_id: &str) -> bool { self.components.contains_key(type_id) }
+	pub fn is_registered(&self, type_id: &str) -> bool {
+		self.components.contains_key(type_id)
+	}
 
-	pub fn registered_types(&self) -> impl Iterator<Item = &str> { self.components.keys().map(String::as_str) }
+	pub fn registered_types(&self) -> impl Iterator<Item = &str> {
+		self.components.keys().map(String::as_str)
+	}
 }
 
 impl Default for ComponentRegistry {
-	fn default() -> Self { Self::new() }
+	fn default() -> Self {
+		Self::new()
+	}
 }
