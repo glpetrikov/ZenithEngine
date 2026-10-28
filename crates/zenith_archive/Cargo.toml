@@ -31,7 +31,7 @@ sha2 = { version = "0.11", features = ["zeroize"] }
 crc32fast = "1"
 getrandom = "0.2"
 zeroize = { version = "1", features = ["derive"] }
-zstd = { version = "0.13", optional = true }
+zstd = { version = "0.14.3", optional = true }
 
 # The integration tests build containers, so they need the writers.
 [[test]]
