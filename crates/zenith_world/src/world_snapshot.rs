@@ -15,6 +15,10 @@ impl World {
 		let entities = query
 			.iter(&self.world)
 			.map(|entity| self.registry.save_entity(entity, &self.world))
+			// Entities with nothing to save are the engine's own bookkeeping
+			// (or hold nothing): writing them would add new empty entities with
+			// every save and load.
+			.filter(|saved| !saved.components.is_empty())
 			.collect();
 
 		SaveWorld {
@@ -23,6 +27,25 @@ impl World {
 			version: WORLD_VERSION,
 			entities,
 		}
+	}
+
+	/// The snapshot as the bytes of a world file (YAML, UTF-8): what
+	/// `Project::write` takes.
+	///
+	/// # Errors
+	/// `YAMLSerialization` if a component cannot be written.
+	pub fn snapshot_bytes(&mut self) -> ZResult<Vec<u8>> {
+		Ok(serde_saphyr::to_string(&self.snapshot())?.into_bytes())
+	}
+
+	/// Restores the world from the bytes of a world file (see
+	/// [`Self::snapshot_bytes`]).
+	///
+	/// # Errors
+	/// `YAML` if the bytes are not a world file, otherwise as
+	/// [`Self::restore_snapshot`].
+	pub fn restore_bytes(&mut self, bytes: &[u8]) -> ZResult<()> {
+		self.restore_snapshot(serde_saphyr::from_slice(bytes)?)
 	}
 
 	/// restores the world from a snapshot, replacing all existing entities and
@@ -56,6 +79,32 @@ impl World {
 			}
 		}
 
+		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use zenith_components::Name;
+
+	use super::*;
+
+	#[test]
+	fn a_world_survives_being_turned_into_bytes() -> ZResult<()> {
+		let mut world = World::new("world");
+		world.create_entity("Test");
+		let bytes = world.snapshot_bytes()?;
+		assert!(std::str::from_utf8(&bytes).is_ok(), "a text file");
+
+		let mut restored = World::new("other");
+		restored.restore_bytes(&bytes)?;
+		let mut query = restored.world_mut().query::<&Name>();
+		let names: Vec<_> = query.iter(restored.world()).map(|n| format!("{n:?}")).collect();
+		assert_eq!(names.len(), 1, "the entity came back: {names:?}");
+		assert!(names[0].contains("Test"), "with its name: {names:?}");
+		assert_eq!(restored.snapshot_bytes()?, bytes, "and writes the same bytes again");
+
+		assert!(restored.restore_bytes(b"not: [a world").is_err(), "garbage is an error");
 		Ok(())
 	}
 }

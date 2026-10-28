@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+#[cfg(not(target_arch = "wasm32"))]
+mod native;
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
@@ -17,6 +20,9 @@ use zenith_renderer::{types::PowerMode, viewport::Viewport};
 pub struct State {
 	viewport: Viewport,
 	window: Arc<Window>,
+	#[allow(dead_code)]
+	#[cfg(not(target_arch = "wasm32"))]
+	project: zenith_filesystem::Project,
 }
 
 impl State {
@@ -36,7 +42,15 @@ impl State {
 		)
 		.await?;
 
-		Ok(Self { viewport, window })
+		#[cfg(not(target_arch = "wasm32"))]
+		let project = native::open_project()?;
+
+		Ok(Self {
+			viewport,
+			window,
+			#[cfg(not(target_arch = "wasm32"))]
+			project,
+		})
 	}
 
 	pub fn resize(&mut self, width: u32, height: u32) {

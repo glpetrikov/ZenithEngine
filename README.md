@@ -11,6 +11,7 @@ ZenithEngine is a modern GameEngine written in Rust with ECS.
       - [Native](#native)
       - [WASM](#wasm)
         - [How to Install Node.js \& npm](#how-to-install-nodejs--npm)
+  - [Documentation](#documentation)
   - [Roadmap](#roadmap)
   - [Supported Platforms](#supported-platforms)
   - [License](#license)
@@ -80,19 +81,38 @@ wasm-pack build --target web
 npx serve .
 ```
 
+## Documentation
+
+The guides are two [mdBook](https://rust-lang.github.io/mdBook/) books:
+[`docs/engine`](docs/engine/src/SUMMARY.md) (projects, builds and file formats)
+and [`docs/scripting`](docs/scripting/src/SUMMARY.md) (scripting).
+
+```bash
+cargo install mdbook
+mdbook serve docs/engine --open
+mdbook serve docs/scripting --open
+```
+
+API reference: `cargo doc --open -p zenith_filesystem -p zenith_build -p zenith_archive`.
+
+Before committing a change: `python scripts/check.py` (fmt, check, clippy, tests and
+`cargo deny`). After dependencies change, `python scripts/gen_notice.py`
+regenerates `NOTICE` (needs `cargo-about`).
+
 ## Roadmap
 
 - [x] Base Project System
 - [ ] Editor Based on dear-imgui-rs
-- [ ] CLI
 - [ ] Base WGPU Rendering (scene renderer for the viewport)
 - [ ] Input (action maps — shared, needed for editor Play mode too)
 - [ ] Window & Input for zenith_runtime (standalone binary)
 - [ ] WASM Scripting
+- [ ] CLI
 - [ ] Advanced WGPU Rendering(Render Graph, Scriptable Rendering, etc)
 - [ ] Physics
 - [ ] Game UI
-- [ ] Project Building & zenith_runtime rewrite for builded-project running
+- [x] Project Building (`zenith_build`)
+- [ ] zenith_runtime update for running built projects
 - [ ] Audio
 - [ ] ZenithEngine Hub
 - [ ] Editor coworking

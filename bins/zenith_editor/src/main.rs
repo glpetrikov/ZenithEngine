@@ -34,7 +34,11 @@ impl Application for EditorApp {
 		}
 
 		std::thread::spawn(|| {
-			panic!("404, Cannot Load Theme!");
+			// Deliberate: exercises the editor's panic handler.
+			#[allow(clippy::panic)]
+			{
+				panic!("404, Cannot Load Theme!");
+			}
 		});
 
 		zenith_log::info!("ImGui Configuring ended!");

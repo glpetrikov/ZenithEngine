@@ -34,6 +34,19 @@ strip = "symbols"
 [profile.dist.package."*"]
 opt-level = "z" # 3, "s", "z"
 
+[workspace.dependencies]
+glam = { version = "0.34.1", default-features = false, features = [
+    "std",
+    "float-types",
+    "bytemuck",
+    "serde",
+] }
+bevy_ecs = { version = "0.20.0", features = [
+    "multi_threaded",
+    "trace",
+    "serialize",
+] }
+
 [workspace.lints.rust]
 unsafe_code = "allow"
 
@@ -54,6 +67,7 @@ cast_sign_loss = { level = "deny", priority = 1 }
 missing_errors_doc = { level = "deny", priority = 1 }
 missing_panics_doc = { level = "deny", priority = 1 }
 dbg_macro = { level = "deny", priority = 1 }
+panic = { level = "deny", priority = 1 }                  # a deliberate panic needs a local #[allow(clippy::panic)] (zenith_editor panic handler test)
 
 # Allow
 similar_names = { level = "allow", priority = 1 }
@@ -63,7 +77,6 @@ cast_precision_loss = { level = "allow", priority = 1 }
 cast_possible_truncation = { level = "allow", priority = 1 }
 unreachable = { level = "allow", priority = 1 }
 
-# Deny on release
+# Temporary
 todo = { level = "allow", priority = 1 }
 unimplemented = { level = "allow", priority = 1 }
-panic = { level = "allow", priority = 1 }         # For zenith_editor panic handler testing

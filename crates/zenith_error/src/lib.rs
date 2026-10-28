@@ -28,8 +28,6 @@ pub enum ZenithError {
 	UnknownPaletteReference(String, String),
 
 	// === World Errors ===
-	#[error("Invalid world path: {0}")]
-	InvalidWorldPath(PathBuf),
 	#[error("Invalid world: {0}")]
 	InvalidWorld(String),
 
@@ -73,6 +71,87 @@ pub enum ZenithError {
 
 	#[error("{0}")]
 	Other(String),
+
+	// === Archive Errors ===
+	// Appended after `Other` on purpose: new variants only go to the end.
+	#[error("Unsupported archive format version: {0}")]
+	UnsupportedArchiveVersion(u16),
+	#[error("Corrupt archive: {0}")]
+	ArchiveCorrupt(String),
+	#[error("Invalid archive entry path: {0}")]
+	ArchiveInvalidPath(String),
+	#[error("Archive limit exceeded: {0}")]
+	ArchiveLimitExceeded(String),
+	#[error("Archive is encrypted, but no key was provided")]
+	ArchiveEncryptedNoKey,
+	#[error("Wrong archive encryption key")]
+	ArchiveWrongKey,
+	#[error("Archive is not encrypted, but a key was provided")]
+	ArchiveNotEncrypted,
+	#[error("Archive entry not found: {0}")]
+	ArchiveEntryNotFound(String),
+	#[error("Archive write error: {0}")]
+	ArchiveWrite(String),
+	#[error("Invalid encryption key: {0}")]
+	ArchiveInvalidKey(String),
+
+	// === Project Backend Errors ===
+	#[error("The project is read-only")]
+	ReadOnly,
+	#[error("Not supported by this kind of project: {0}")]
+	Unsupported(String),
+	#[error("Unknown project format: {0}")]
+	UnknownProjectFormat(PathBuf),
+	#[error("Scheme is not registered: {0}")]
+	SchemeNotRegistered(String),
+	#[error("Scheme is already registered: {0}")]
+	SchemeAlreadyRegistered(String),
+	#[error("Scheme is read-only: {0}")]
+	ReadOnlyScheme(String),
+	#[error("Invalid ZPath: {0}")]
+	InvalidZPath(String),
+	#[error("Not found: {0}")]
+	ProjectNotFound(String),
+	#[error("Already exists: {0}")]
+	ProjectAlreadyExists(String),
+	#[error("Wrong kind of entry: {0}")]
+	ProjectWrongKind(String),
+	#[error("Not valid UTF-8: {0}")]
+	InvalidUtf8(String),
+	#[error("Invalid trash id: {0}")]
+	InvalidTrashId(String),
+	#[error("Trash entry not found: {0}")]
+	TrashEntryNotFound(String),
+	#[error("Invalid .gitignore: {0}")]
+	InvalidGitignore(String),
+	#[error("Invalid settings: {0}")]
+	InvalidSettings(String),
+	#[error("File watcher error: {0}")]
+	Watch(String),
+
+	// === Build Errors ===
+	#[error("Invalid build option: {0}")]
+	InvalidBuildOption(String),
+	#[error("Invalid build output: {0}")]
+	InvalidBuildOutput(String),
+	#[error("Not a build folder (and not empty): {0}")]
+	NotABuildDir(PathBuf),
+	#[error("A symlink cannot go into a build: {0}")]
+	SymlinkInBuild(String),
+	#[error("The existing build in the output folder cannot be read: {0}")]
+	PreviousBuildUnreadable(String),
+
+	// === Added later (still at the end) ===
+	#[error("Invalid scheme: {0}")]
+	InvalidScheme(String),
+	#[error("File too large to load into memory: {0}")]
+	FileTooLarge(String),
+	#[error("The project is for engine {0}, this is engine {1}")]
+	EngineVersionMismatch(String, String),
+	#[error("The build in the output folder is incomplete: {0}")]
+	BuildIncomplete(String),
+	#[error("Build {0} was expected, this is build {1} (an older or another build?)")]
+	BuildIdMismatch(String, String),
 }
 
 // Public API boundary: documented, matchable variants.
@@ -96,7 +175,7 @@ impl<T> IntoZResult<T> for ZInternalResult<T> {
 		self.map_err(|report| {
 			report
 				.downcast::<ZenithError>()
-				.unwrap_or_else(|report| ZenithError::Other(report.to_string()))
+				.unwrap_or_else(|report| ZenithError::Other(format!("{report:#}")))
 		})
 	}
 }

@@ -9,7 +9,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-bevy_ecs = { version = "0.19", features = ["multi_threaded", "trace", "serialize"] }
+bevy_ecs = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 
 [lints]
