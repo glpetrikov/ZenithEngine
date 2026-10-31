@@ -21,6 +21,7 @@ impl RenderPass {
 		device: &wgpu::Device,
 		surface_capability: &wgpu::SurfaceCapabilities,
 		texture_bind_group_layout: &wgpu::BindGroupLayout,
+		camera_bind_group_layout: &wgpu::BindGroupLayout,
 	) -> ZResult<Self> {
 		let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
 			label: Some(format!("{name} Shader Module").as_str()),
@@ -28,8 +29,8 @@ impl RenderPass {
 		});
 
 		let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-			label: Some(format!("{name} Pipeline Layout").as_str()),
-			bind_group_layouts: &[Some(texture_bind_group_layout)],
+			label: Some("Render Pipeline Layout"),
+			bind_group_layouts: &[Some(texture_bind_group_layout), Some(camera_bind_group_layout)],
 			immediate_size: 0,
 		});
 

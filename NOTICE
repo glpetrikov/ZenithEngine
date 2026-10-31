@@ -597,25 +597,25 @@ android_system_properties with version 0.1.6 under Apache License 2.0.
 
 arraydeque with version 0.5.1 under Apache License 2.0.
 
-bevy_ecs with version 0.20.0 under Apache License 2.0.
+bevy_ecs with version 0.20.1 under Apache License 2.0.
 
-bevy_ecs_macro_logic with version 0.20.0 under Apache License 2.0.
+bevy_ecs_macro_logic with version 0.20.1 under Apache License 2.0.
 
-bevy_ecs_macros with version 0.20.0 under Apache License 2.0.
+bevy_ecs_macros with version 0.20.1 under Apache License 2.0.
 
-bevy_macro_utils with version 0.20.0 under Apache License 2.0.
+bevy_macro_utils with version 0.20.1 under Apache License 2.0.
 
-bevy_platform with version 0.20.0 under Apache License 2.0.
+bevy_platform with version 0.20.1 under Apache License 2.0.
 
-bevy_ptr with version 0.20.0 under Apache License 2.0.
+bevy_ptr with version 0.20.1 under Apache License 2.0.
 
-bevy_reflect with version 0.20.0 under Apache License 2.0.
+bevy_reflect with version 0.20.1 under Apache License 2.0.
 
-bevy_reflect_derive with version 0.20.0 under Apache License 2.0.
+bevy_reflect_derive with version 0.20.1 under Apache License 2.0.
 
-bevy_tasks with version 0.20.0 under Apache License 2.0.
+bevy_tasks with version 0.20.1 under Apache License 2.0.
 
-bevy_utils with version 0.20.0 under Apache License 2.0.
+bevy_utils with version 0.20.1 under Apache License 2.0.
 
 blake3 with version 1.8.7 under Apache License 2.0.
 

@@ -2,6 +2,7 @@ use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
+use glam::Vec3;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 use wgpu::util::DeviceExt;
@@ -9,6 +10,7 @@ use zenith_error::{ZResult, ZenithError};
 use zenith_filesystem::ZPath;
 
 use crate::{
+	camera::{Camera, CameraUniform},
 	pick_surface_format,
 	render_pass::RenderPass,
 	texture,
@@ -35,6 +37,15 @@ pub struct Viewport {
 	diffuse_bind_group: wgpu::BindGroup,
 	#[allow(unused)]
 	diffuse_texture: texture::Texture,
+
+	#[allow(unused)]
+	camera: Camera,
+	#[allow(unused)]
+	camera_uniform: CameraUniform,
+	#[allow(unused)]
+	camera_buffer: wgpu::Buffer,
+
+	camera_bind_group: wgpu::BindGroup,
 
 	base_title: String,
 	frame_count: u32,
@@ -184,7 +195,57 @@ impl Viewport {
 			label: Some(&format!("{label} Diffuse Bind Group")),
 		});
 
-		let render_pass = RenderPass::new("Render Pass", &device, &surface_caps, &texture_bind_group_layout)?;
+		let camera = Camera {
+			eye: Vec3::new(0.0, 1.0, 2.0),
+			target: Vec3::ZERO,
+			up: Vec3::Y,
+			aspect: config.width as f32 / config.height as f32,
+			fovy: 45.0,
+			znear: 0.1,
+			zfar: 1000.0,
+		};
+
+		let mut camera_uniform = CameraUniform::new();
+		camera_uniform.update_view_proj(&camera);
+
+		let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+			label: Some(&format!("{label} Camera Buffer")),
+			contents: bytemuck::cast_slice(&[camera_uniform]),
+			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+		});
+
+		let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+			entries: &[wgpu::BindGroupLayoutEntry {
+				binding: 0,
+				visibility: wgpu::ShaderStages::VERTEX,
+				ty: wgpu::BindingType::Buffer {
+					ty: wgpu::BufferBindingType::Uniform,
+					has_dynamic_offset: false,
+					min_binding_size: None,
+				},
+				count: None,
+			}],
+			label: Some("camera_bind_group_layout"),
+		});
+
+		let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+			layout: &camera_bind_group_layout,
+			entries: &[wgpu::BindGroupEntry {
+				binding: 0,
+				resource: camera_buffer.as_entire_binding(),
+			}],
+			label: Some("camera_bind_group"),
+		});
+
+		println!("Aspect is {}", config.width as f32 / config.height as f32);
+
+		let render_pass = RenderPass::new(
+			"Render Pass",
+			&device,
+			&surface_caps,
+			&texture_bind_group_layout,
+			&camera_bind_group_layout,
+		)?;
 
 		let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some(format!("{label} Vertex Buffer").as_str()),
@@ -220,6 +281,11 @@ impl Viewport {
 
 			diffuse_bind_group,
 			diffuse_texture,
+
+			camera,
+			camera_uniform,
+			camera_buffer,
+			camera_bind_group,
 
 			base_title: "Zenith Engine".to_string(),
 			fps_timer: Instant::now(),
@@ -297,8 +363,9 @@ impl Viewport {
 
 			render_pass.set_pipeline(&self.render_pass.pipeline);
 			render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
+			render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
 			render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-			render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16); // 1.
+			render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
 			render_pass.draw_indexed(0..self.num_indices, 0, 0..1); // 2.
 		}

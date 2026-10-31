@@ -1,5 +1,6 @@
 use crate::types::SurfaceFormats;
 
+pub mod camera;
 pub mod render_pass;
 pub mod render_target;
 pub mod texture;
