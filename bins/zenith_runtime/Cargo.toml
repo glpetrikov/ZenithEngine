@@ -28,8 +28,11 @@ web-sys = { version = "0.3", features = [
     "HtmlElement",
     "HtmlCanvasElement",
     "Node",
+    "Response",
 ] }
 wgpu = { version = "30.0.1", features = ["webgl"] }
+js-sys = "0.3"
+zenith_filesystem = { version = "0.1.0", path = "../../crates/zenith_filesystem", default-features = false }
 
 # Projects on disk (cap-std, rustix, the zstd C library) do not exist in the
 # browser: there the game will open a build over the network instead.

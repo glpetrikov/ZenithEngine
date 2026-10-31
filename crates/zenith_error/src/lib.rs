@@ -48,6 +48,8 @@ pub enum ZenithError {
 	RequestDeviceError(String),
 	#[error("LostDevice: {0}")]
 	LostDevice(String),
+	#[error("Image decode failed: {0}")]
+	ImageDecodeFailed(String),
 
 	// === Errors From Other Crates Or Std ===
 	#[error("I/O error: {0}")]

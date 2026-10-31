@@ -6,10 +6,12 @@ use std::time::Instant;
 use web_time::Instant;
 use wgpu::util::DeviceExt;
 use zenith_error::{ZResult, ZenithError};
+use zenith_filesystem::ZPath;
 
 use crate::{
 	pick_surface_format,
 	render_pass::RenderPass,
+	texture,
 	types::{INDICES, PowerMode, VERTICES},
 };
 
@@ -29,6 +31,10 @@ pub struct Viewport {
 	index_buffer: wgpu::Buffer,
 
 	num_indices: u32,
+
+	diffuse_bind_group: wgpu::BindGroup,
+	#[allow(unused)]
+	diffuse_texture: texture::Texture,
 
 	base_title: String,
 	frame_count: u32,
@@ -51,6 +57,7 @@ impl Viewport {
 		window: Arc<winit::window::Window>,
 		power_mode: PowerMode,
 		fallback_to_cpu: bool,
+		project: &zenith_filesystem::Project,
 	) -> ZResult<Self> {
 		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
 			#[cfg(not(target_arch = "wasm32"))]
@@ -137,7 +144,47 @@ impl Viewport {
 
 		surface.configure(&device, &config);
 
-		let render_pass = RenderPass::new("Render Pass", &device, &surface_caps)?;
+		let diffuse_bytes = project.read_bytes(&ZPath::new("Assets://Apple.png")?)?;
+		let diffuse_texture = texture::Texture::from_bytes(&device, &queue, &diffuse_bytes, "Apple.png")?;
+
+		let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+			entries: &[
+				wgpu::BindGroupLayoutEntry {
+					binding: 0,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Texture {
+						multisampled: false,
+						view_dimension: wgpu::TextureViewDimension::D2,
+						sample_type: wgpu::TextureSampleType::Float { filterable: true },
+					},
+					count: None,
+				},
+				wgpu::BindGroupLayoutEntry {
+					binding: 1,
+					visibility: wgpu::ShaderStages::FRAGMENT,
+					ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+					count: None,
+				},
+			],
+			label: Some(&format!("{label} Texture Bind Group Layout")),
+		});
+
+		let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+			layout: &texture_bind_group_layout,
+			entries: &[
+				wgpu::BindGroupEntry {
+					binding: 0,
+					resource: wgpu::BindingResource::TextureView(&diffuse_texture.view), // CHANGED!
+				},
+				wgpu::BindGroupEntry {
+					binding: 1,
+					resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler), // CHANGED!
+				},
+			],
+			label: Some(&format!("{label} Diffuse Bind Group")),
+		});
+
+		let render_pass = RenderPass::new("Render Pass", &device, &surface_caps, &texture_bind_group_layout)?;
 
 		let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some(format!("{label} Vertex Buffer").as_str()),
@@ -170,6 +217,9 @@ impl Viewport {
 			index_buffer,
 
 			num_indices,
+
+			diffuse_bind_group,
+			diffuse_texture,
 
 			base_title: "Zenith Engine".to_string(),
 			fps_timer: Instant::now(),
@@ -246,8 +296,10 @@ impl Viewport {
 			});
 
 			render_pass.set_pipeline(&self.render_pass.pipeline);
+			render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
 			render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 			render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16); // 1.
+
 			render_pass.draw_indexed(0..self.num_indices, 0, 0..1); // 2.
 		}
 

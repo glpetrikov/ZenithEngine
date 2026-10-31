@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
+#[cfg(target_arch = "wasm32")]
+mod web;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -21,7 +23,6 @@ pub struct State {
 	viewport: Viewport,
 	window: Arc<Window>,
 	#[allow(dead_code)]
-	#[cfg(not(target_arch = "wasm32"))]
 	project: zenith_filesystem::Project,
 }
 
@@ -32,6 +33,11 @@ impl State {
 	/// add in future.
 	#[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
 	pub async fn new(window: Arc<Window>) -> ZResult<Self> {
+		#[cfg(not(target_arch = "wasm32"))]
+		let project = native::open_project()?;
+		#[cfg(target_arch = "wasm32")]
+		let project = web::open_project().await?;
+
 		let viewport = Viewport::new(
 			"ZenithEngineRenderer",
 			window.inner_size().width,
@@ -39,16 +45,13 @@ impl State {
 			window.clone(),
 			PowerMode::Performance,
 			false,
+			&project,
 		)
 		.await?;
-
-		#[cfg(not(target_arch = "wasm32"))]
-		let project = native::open_project()?;
 
 		Ok(Self {
 			viewport,
 			window,
-			#[cfg(not(target_arch = "wasm32"))]
 			project,
 		})
 	}

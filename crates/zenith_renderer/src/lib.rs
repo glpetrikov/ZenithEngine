@@ -2,6 +2,7 @@ use crate::types::SurfaceFormats;
 
 pub mod render_pass;
 pub mod render_target;
+pub mod texture;
 pub mod types;
 pub mod viewport;
 

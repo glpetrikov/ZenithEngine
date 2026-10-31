@@ -167,9 +167,17 @@ zerocopy with version 0.8.57 under Apache License 2.0.
 
 web-time with version 1.1.0 under Apache License 2.0.
 
+moxcms with version 0.8.1 under Apache License 2.0.
+
+pxfm with version 0.1.30 under Apache License 2.0.
+
 assert_type_match with version 0.1.1 under Apache License 2.0.
 
 codespan-reporting with version 0.13.1 under Apache License 2.0.
+
+zune-core with version 0.5.3 under Apache License 2.0.
+
+zune-jpeg with version 0.5.15 under Apache License 2.0.
 
 ntapi with version 0.4.3 under Apache License 2.0.
 
@@ -192,6 +200,8 @@ foreign-types with version 0.5.0 under Apache License 2.0.
 jni-sys with version 0.3.1 under Apache License 2.0.
 
 jni-sys with version 0.4.1 under Apache License 2.0.
+
+quick-error with version 2.0.1 under Apache License 2.0.
 
 serde_spanned with version 1.1.1 under Apache License 2.0.
 
@@ -315,6 +325,8 @@ find-msvc-tools with version 0.1.12 under Apache License 2.0.
 
 fixedbitset with version 0.5.7 under Apache License 2.0.
 
+flate2 with version 1.1.10 under Apache License 2.0.
+
 fs-set-times with version 0.20.3 under Apache License 2.0.
 
 futures-lite with version 2.6.1 under Apache License 2.0.
@@ -374,6 +386,8 @@ percent-encoding with version 2.3.2 under Apache License 2.0.
 pkg-config with version 0.3.34 under Apache License 2.0.
 
 plain with version 0.2.3 under Apache License 2.0.
+
+png with version 0.18.1 under Apache License 2.0.
 
 polling with version 3.11.0 under Apache License 2.0.
 
@@ -631,11 +645,17 @@ document-features with version 0.2.12 under Apache License 2.0.
 
 erased-serde with version 0.4.10 under Apache License 2.0.
 
+fdeflate with version 0.3.7 under Apache License 2.0.
+
 gl_generator with version 0.14.0 under Apache License 2.0.
 
 granit-parser with version 2.0.0 under Apache License 2.0.
 
 half with version 2.7.1 under Apache License 2.0.
+
+image-webp with version 0.2.4 under Apache License 2.0.
+
+image with version 0.25.10 under Apache License 2.0.
 
 indenter with version 0.3.4 under Apache License 2.0.
 
@@ -654,6 +674,8 @@ libc with version 0.2.189 under Apache License 2.0.
 litrs with version 1.0.0 under Apache License 2.0.
 
 miniz_oxide with version 0.8.9 under Apache License 2.0.
+
+miniz_oxide with version 0.9.1 under Apache License 2.0.
 
 naga-types with version 30.0.1 under Apache License 2.0.
 
@@ -933,6 +955,8 @@ objc2 with version 0.5.2 under MIT License.
 
 objc2 with version 0.6.4 under MIT License.
 
+simd-adler32 with version 0.3.10 under MIT License.
+
 wayland-protocols-plasma with version 0.3.12 under MIT License.
 
 x11-dl with version 2.21.0 under MIT License.
@@ -956,6 +980,8 @@ phf_macros with version 0.13.1 under MIT License.
 phf_shared with version 0.13.1 under MIT License.
 
 aho-corasick with version 1.1.5 under MIT License.
+
+byteorder-lite with version 0.1.0 under MIT License.
 
 byteorder with version 1.5.0 under MIT License.
 
