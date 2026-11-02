@@ -2,7 +2,7 @@ Name: world
 WorldType: World
 Version: 1
 Entities:
-- Id: 1
+- Id: 2
   Components:
   - ComponentType: zenith_engine.name
     ComponentVersion: "1.0.0"

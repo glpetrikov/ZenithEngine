@@ -33,14 +33,6 @@ impl Application for EditorApp {
 				.add_font(&[FontSource::ttf_data_with_size(font_data, 18.0)]);
 		}
 
-		std::thread::spawn(|| {
-			// Deliberate: exercises the editor's panic handler.
-			#[allow(clippy::panic)]
-			{
-				panic!("404, Cannot Load Theme!");
-			}
-		});
-
 		zenith_log::info!("ImGui Configuring ended!");
 
 		Ok(())

@@ -3,6 +3,7 @@
 
 use std::{
 	path::{Path, PathBuf},
+	sync::atomic::{AtomicBool, Ordering},
 	time::Duration,
 };
 
@@ -21,6 +22,24 @@ const WEB_PKG: &str = "bins/zenith_runtime/pkg";
 const WEB_INDEX: &str = "bins/zenith_runtime/index.html";
 /// The key of the encrypted test builds. A test key, not a secret.
 const TEST_KEY: [u8; 32] = [0x5a; 32];
+
+/// Set by Ctrl+C, SIGTERM or closing the console.
+static QUIT: AtomicBool = AtomicBool::new(false);
+
+/// Makes Ctrl+C (and SIGTERM, and closing the console) ask the game to end the
+/// way closing the window does, so that it gets to clean up. The event loop
+/// looks at [`quit_requested`] between events. Only the first call has an
+/// effect.
+pub fn quit_on_ctrl_c() {
+	if let Err(e) = ctrlc::set_handler(|| QUIT.store(true, Ordering::SeqCst)) {
+		zenith_log::warn!("Ctrl+C is not handled: {e}");
+	}
+}
+
+/// Did the user ask the process to end from outside the window?
+pub fn quit_requested() -> bool {
+	QUIT.load(Ordering::SeqCst)
+}
 
 /// The project the runtime works with: with `--test` the test project (which
 /// is built too), otherwise the build that lies next to the executable.

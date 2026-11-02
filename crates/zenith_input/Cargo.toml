@@ -1,0 +1,33 @@
+[package]
+name = "zenith_input"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+default = ["ecs"]
+# `Input` is an ECS resource.
+ecs = ["dep:bevy_ecs"]
+# Turns `winit` events (and its key codes) into input.
+winit = ["dep:winit"]
+# Real gamepads through `gilrs` (the Gamepad API in a browser).
+gamepad = ["dep:gilrs", "dep:zenith_log", "dep:web-time"]
+
+[dependencies]
+zenith_error = { version = "0.1.0", path = "../zenith_error" }
+serde = { version = "1", features = ["derive"] }
+toml = "1.1.4"
+serde_json = "1"
+glam = { workspace = true }
+bevy_ecs = { workspace = true, optional = true }
+winit = { version = "0.30", optional = true }
+gilrs = { version = "0.11", optional = true }
+zenith_log = { version = "0.1.0", path = "../zenith_log", optional = true }
+web-time = { version = "1.1.0", optional = true }
+
+[lints]
+workspace = true

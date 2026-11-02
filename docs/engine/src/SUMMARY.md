@@ -9,6 +9,10 @@
 - [Working with a project](./projects/using.md)
 - [Trash, `.gitignore` and the file watcher](./projects/trash-gitignore-watch.md)
 
+# Input
+
+- [Keyboard, mouse, gamepads and actions](./input.md)
+
 # Building
 
 - [Building a project](./building/building.md)

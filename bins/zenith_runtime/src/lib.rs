@@ -7,23 +7,53 @@ mod web;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+use web_time::Instant;
 #[cfg(target_arch = "wasm32")]
 use winit::platform::web::EventLoopExtWebSys;
 use winit::{
 	application::ApplicationHandler,
-	event::{KeyEvent, WindowEvent},
+	event::{DeviceEvent, DeviceId, WindowEvent},
 	event_loop::{ActiveEventLoop, EventLoop},
-	keyboard::{KeyCode, PhysicalKey},
 	window::Window,
 };
 use zenith_error::{ZInternalResult, ZResult};
+use zenith_input::{Gamepads, ZKeyCode};
 use zenith_renderer::{types::PowerMode, viewport::Viewport};
+use zenith_world::World;
+
+/// The file of the world the runtime starts with.
+const WORLD_FILE: &str = "Worlds://world.zenith";
+
+/// The world of the project: its snapshot, `Worlds/world.zenith`, is read
+/// through the project (a folder, or a build on the desktop and on the web)
+/// and restored into a new world. A project without that file starts with an
+/// empty world, and says so in the log.
+///
+/// # Errors
+/// The project's error if the file cannot be read, and the world's if it is
+/// not a world file.
+fn load_world(project: &zenith_filesystem::Project) -> ZResult<World> {
+	let mut world = World::new("world");
+	let path = zenith_filesystem::ZPath::new(WORLD_FILE)?;
+	if project.exists(&path)? {
+		world.restore_bytes(&project.read_bytes(&path)?)?;
+		zenith_log::info!("Loaded {path}");
+	} else {
+		zenith_log::warn!("{path} does not exist: starting with an empty world");
+	}
+	Ok(world)
+}
 
 pub struct State {
 	viewport: Viewport,
 	window: Arc<Window>,
 	#[allow(dead_code)]
 	project: zenith_filesystem::Project,
+	/// The world the game runs in; it holds the input.
+	world: World,
+	/// Real gamepads; `None` where the system has none to give.
+	gamepads: Option<Gamepads>,
+	last_frame: Instant,
 }
 
 impl State {
@@ -49,11 +79,66 @@ impl State {
 		)
 		.await?;
 
+		let gamepads = match Gamepads::new() {
+			Ok(gamepads) => Some(gamepads),
+			Err(e) => {
+				zenith_log::warn!("No gamepads: {e}");
+				None
+			}
+		};
+
+		let world = load_world(&project)?;
+
 		Ok(Self {
 			viewport,
 			window,
 			project,
+			world,
+			gamepads,
+			last_frame: Instant::now(),
 		})
+	}
+
+	/// Runs one frame of the world: the gamepads are read, the systems run
+	/// with the input of this frame, and the input is ready for the next.
+	pub fn update(&mut self) {
+		let now = Instant::now();
+		let dt = now.duration_since(self.last_frame).as_secs_f32();
+		self.last_frame = now;
+		if let Some(gamepads) = &mut self.gamepads {
+			gamepads.poll(&mut self.world.input_mut());
+		}
+		self.world.update_systems(dt);
+		self.carry_out_cursor_request();
+	}
+
+	/// What the game asked of the window (a hidden or locked cursor).
+	fn carry_out_cursor_request(&mut self) {
+		let mode = self.world.input_mut().take_cursor_mode();
+		if let Some(mode) = mode
+			&& let Err(e) = zenith_input::apply_cursor_mode(&self.window, mode)
+		{
+			zenith_log::warn!("{e}");
+		}
+	}
+
+	/// Leaves nothing running behind the game: vibrations are stopped and the
+	/// cursor is given back. Whatever way the game ends (the window is closed,
+	/// Escape, Ctrl+C), this runs once, from `ApplicationHandler::exiting`.
+	///
+	/// The world is **not** saved here: the runtime plays a build, and what
+	/// the player did belongs in a save slot, not in the world of the project.
+	fn shutdown(&mut self) {
+		let pads: Vec<usize> = self.world.input().list_gamepads().iter().map(|pad| pad.id).collect();
+		for id in pads {
+			self.world.input_mut().stop_rumble(id);
+		}
+		self.world.input_mut().set_cursor_mode(zenith_input::CursorMode::Normal);
+		if let Some(gamepads) = &mut self.gamepads {
+			gamepads.poll(&mut self.world.input_mut());
+		}
+		self.carry_out_cursor_request();
+		zenith_log::info!("Shut down");
 	}
 
 	pub fn resize(&mut self, width: u32, height: u32) {
@@ -95,6 +180,7 @@ pub fn run() -> ZInternalResult<()> {
 	let event_loop = EventLoop::with_user_event().build()?;
 	#[cfg(not(target_arch = "wasm32"))]
 	{
+		native::quit_on_ctrl_c();
 		let mut app = App::new();
 		event_loop.run_app(&mut app)?;
 	}
@@ -225,26 +311,52 @@ impl ApplicationHandler<State> for App {
 
 	fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: winit::window::WindowId, event: WindowEvent) {
 		let Some(state) = &mut self.state else { return };
+		state.world.input_mut().handle_window_event(&event);
 
 		match event {
 			WindowEvent::CloseRequested => event_loop.exit(),
 			WindowEvent::Resized(size) => state.resize(size.width, size.height),
 			WindowEvent::RedrawRequested => {
+				// Before the update: it ends the frame and forgets the press.
+				if state.world.input().is_key_just_pressed(ZKeyCode::Escape) {
+					event_loop.exit();
+					return;
+				}
+				state.update();
 				if let Err(e) = state.render() {
 					zenith_log::error!("Cannot render: {e}");
 				}
 			}
-			WindowEvent::KeyboardInput {
-				event: KeyEvent {
-					physical_key: PhysicalKey::Code(code),
-					state: key_state,
-					..
-				},
-				..
-			} if (code, key_state.is_pressed()) == (KeyCode::Escape, true) => {
-				event_loop.exit();
-			}
 			_ => {}
+		}
+	}
+
+	fn device_event(&mut self, _event_loop: &ActiveEventLoop, _device_id: DeviceId, event: DeviceEvent) {
+		if let Some(state) = &mut self.state {
+			state.world.input_mut().handle_device_event(&event);
+		}
+	}
+
+	fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+		// Ctrl+C is seen here, between events. A window that is hidden gets
+		// no redraws, so the loop is woken up now and then to look.
+		#[cfg(not(target_arch = "wasm32"))]
+		{
+			if native::quit_requested() {
+				event_loop.exit();
+				return;
+			}
+			event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+				std::time::Instant::now() + std::time::Duration::from_millis(100),
+			));
+		}
+		#[cfg(target_arch = "wasm32")]
+		let _ = event_loop;
+	}
+
+	fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+		if let Some(state) = &mut self.state {
+			state.shutdown();
 		}
 	}
 }

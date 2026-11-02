@@ -15,6 +15,7 @@ zenith_components = { version = "0.1.0", path = "../zenith_components" }
 zenith_types = { version = "0.1.0", path = "../zenith_types" }
 zenith_error = { version = "0.1.0", path = "../zenith_error" }
 zenith_entity_id = { version = "0.1.0", path = "../zenith_entity_id" }
+zenith_input = { version = "0.1.0", path = "../zenith_input" }
 serde-saphyr = "2.0.0"
 tracing = "0.1"
 

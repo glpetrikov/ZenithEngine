@@ -6,6 +6,7 @@ use bevy_ecs::{
 use tracing::instrument;
 use zenith_components::Name;
 use zenith_error::{IntoZResult, WrapErr, ZResult};
+pub use zenith_input::Input;
 use zenith_registry::ComponentRegistry;
 use zenith_types::ecs::WorldType;
 
@@ -37,7 +38,8 @@ impl World {
 
 	#[instrument(skip(registry))]
 	pub fn from_registry(name: &str, registry: ComponentRegistry) -> Self {
-		let world = BevyWorld::new();
+		let mut world = BevyWorld::new();
+		world.insert_resource(Input::default());
 
 		Self {
 			name: name.to_string(),
@@ -69,13 +71,38 @@ impl World {
 
 	#[instrument(skip(self))]
 	pub fn clear_world(&mut self) {
+		// The input is the player's, not the level's: it outlives a level.
+		let input = self.world.remove_resource::<Input>().unwrap_or_default();
 		self.world = BevyWorld::new();
+		self.world.insert_resource(input);
 	}
 
 	#[instrument(skip(self))]
 	pub fn update_systems(&mut self, dt: f32) {
 		self.world.insert_resource(Time { delta: dt });
 		self.schedule.run(&mut self.world);
+		// What only lasts a frame (new presses, mouse movement) is over now
+		// that the systems have seen it.
+		self.input_mut().end_frame(dt);
+	}
+
+	/// The input of the world: keyboard, mouse, gamepads and actions. Systems
+	/// get it as `Res<Input>`.
+	///
+	/// # Panics
+	/// If the resource was removed through [`Self::world_mut`].
+	#[must_use]
+	pub fn input(&self) -> &Input {
+		self.world.resource::<Input>()
+	}
+
+	/// The input of the world, to feed it events.
+	///
+	/// # Panics
+	/// If the resource was removed through [`Self::world_mut`].
+	#[must_use]
+	pub fn input_mut(&mut self) -> bevy_ecs::change_detection::Mut<'_, Input> {
+		self.world.resource_mut::<Input>()
 	}
 }
 
@@ -197,5 +224,61 @@ impl World {
 		T: Component,
 	{
 		self.world.get::<T>(entity).is_some()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use bevy_ecs::{prelude::IntoScheduleConfigs, system::Res};
+	use zenith_input::{InputEvent, ZKeyCode};
+
+	use super::*;
+
+	#[derive(Resource, Default)]
+	struct Seen {
+		just_pressed: bool,
+	}
+
+	#[allow(clippy::needless_pass_by_value)] // a system takes its parameters by value
+	fn watch(input: Res<Input>, mut seen: bevy_ecs::system::ResMut<Seen>) {
+		seen.just_pressed = input.is_key_just_pressed(ZKeyCode::Space);
+	}
+
+	#[test]
+	fn systems_see_the_input_and_the_frame_ends_after_them() {
+		let mut world = World::new("w");
+		world.world_mut().init_resource::<Seen>();
+		world.schedule_mut().add_systems(watch.into_configs());
+
+		world.input_mut().apply(InputEvent::KeyDown(ZKeyCode::Space));
+		world.update_systems(0.016);
+		assert!(
+			world.world().resource::<Seen>().just_pressed,
+			"the system sees the press of this frame"
+		);
+		assert!(
+			world.input().is_key_pressed(ZKeyCode::Space),
+			"and the key is still held"
+		);
+		assert!(
+			!world.input().is_key_just_pressed(ZKeyCode::Space),
+			"but the press is over"
+		);
+		world.update_systems(0.016);
+		assert!(
+			!world.world().resource::<Seen>().just_pressed,
+			"the next frame sees no press"
+		);
+	}
+
+	#[test]
+	fn the_input_outlives_a_level() {
+		let mut world = World::new("w");
+		world.input_mut().apply(InputEvent::KeyDown(ZKeyCode::W));
+		world.clear_world();
+		assert!(
+			world.input().is_key_pressed(ZKeyCode::W),
+			"clearing the world keeps the input"
+		);
 	}
 }

@@ -295,6 +295,9 @@ impl Viewport {
 
 	pub fn resize(&mut self, width: u32, height: u32) {
 		if width == 0 || height == 0 {
+			// A hidden window has no size to draw to; `Resized` with the real
+			// size comes back when it is shown again.
+			self.is_surface_configured = false;
 			return;
 		}
 
@@ -326,7 +329,13 @@ impl Viewport {
 			}
 
 			wgpu::CurrentSurfaceTexture::Outdated => {
-				self.surface.configure(&self.device, &self.config);
+				// Configuring a surface of a window with no size is an error.
+				let size = self.window.inner_size();
+				if size.width == 0 || size.height == 0 {
+					self.is_surface_configured = false;
+				} else {
+					self.surface.configure(&self.device, &self.config);
+				}
 				return Ok(());
 			}
 

@@ -508,7 +508,7 @@ impl FsV1 {
 	}
 }
 
-/// One entry found by [`FsV1::walk`].
+/// One entry found by walking a project folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WalkEntry {
 	/// Project-relative path with `/` separators.

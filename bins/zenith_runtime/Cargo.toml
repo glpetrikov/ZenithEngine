@@ -39,6 +39,8 @@ zenith_filesystem = { version = "0.1.0", path = "../../crates/zenith_filesystem"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 zenith_filesystem = { version = "0.1.0", path = "../../crates/zenith_filesystem" }
 zenith_build = { version = "0.1.0", path = "../../crates/zenith_build" }
+# Ctrl+C (and SIGTERM, closing the console) end the game the way closing the window does.
+ctrlc = { version = "3", features = ["termination"] }
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ["-O", "--all-features"]
@@ -56,6 +58,8 @@ zenith_log = { version = "0.1.0", path = "../../crates/zenith_log" }
 zenith_renderer = { version = "0.1.0", path = "../../crates/zenith_renderer" }
 
 zenith_world = { version = "0.1.0", path = "../../crates/zenith_world" }
+zenith_input = { version = "0.1.0", path = "../../crates/zenith_input", features = ["winit", "gamepad"] }
+web-time = "1.1.0"
 zenith_components = { version = "0.1.0", path = "../../crates/zenith_components" }
 
 

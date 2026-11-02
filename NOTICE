@@ -229,6 +229,8 @@ typenum with version 1.20.1 under Apache License 2.0.
 
 maybe-owned with version 0.3.4 under Apache License 2.0.
 
+ctrlc with version 3.5.2 under Apache License 2.0.
+
 glam with version 0.34.1 under Apache License 2.0.
 
 gpu-allocator with version 0.28.0 under Apache License 2.0.
@@ -326,6 +328,8 @@ find-msvc-tools with version 0.1.12 under Apache License 2.0.
 fixedbitset with version 0.5.7 under Apache License 2.0.
 
 flate2 with version 1.1.10 under Apache License 2.0.
+
+fnv with version 1.0.7 under Apache License 2.0.
 
 fs-set-times with version 0.20.3 under Apache License 2.0.
 
@@ -479,6 +483,8 @@ presser with version 0.3.1 under Apache License 2.0.
 
 spdx with version 0.13.5 under Apache License 2.0.
 
+vec_map with version 0.8.2 under Apache License 2.0.
+
 hkdf with version 0.12.4 under Apache License 2.0.
 
 aes-gcm-siv with version 0.11.1 under Apache License 2.0.
@@ -569,6 +575,8 @@ zenith_error with version 0.1.0 under Apache License 2.0.
 
 zenith_filesystem with version 0.1.0 under Apache License 2.0.
 
+zenith_input with version 0.1.0 under Apache License 2.0.
+
 zenith_log with version 0.1.0 under Apache License 2.0.
 
 zenith_package with version 0.1.0 under Apache License 2.0.
@@ -646,6 +654,10 @@ document-features with version 0.2.12 under Apache License 2.0.
 erased-serde with version 0.4.10 under Apache License 2.0.
 
 fdeflate with version 0.3.7 under Apache License 2.0.
+
+gilrs-core with version 0.6.8 under Apache License 2.0.
+
+gilrs with version 0.11.2 under Apache License 2.0.
 
 gl_generator with version 0.14.0 under Apache License 2.0.
 
@@ -841,6 +853,8 @@ cfg_aliases with version 0.2.2 under MIT License.
 
 mio with version 1.2.4 under MIT License.
 
+libudev-sys with version 0.1.4 under MIT License.
+
 wayland-backend with version 0.3.17 under MIT License.
 
 wayland-client with version 0.31.15 under MIT License.
@@ -990,6 +1004,8 @@ globset with version 0.4.20 under MIT License.
 memchr with version 2.8.3 under MIT License.
 
 walkdir with version 2.5.0 under MIT License.
+
+nix with version 0.31.3 under MIT License.
 
 sysinfo with version 0.39.6 under MIT License.
 

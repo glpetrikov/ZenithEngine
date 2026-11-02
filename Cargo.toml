@@ -67,7 +67,7 @@ cast_sign_loss = { level = "deny", priority = 1 }
 missing_errors_doc = { level = "deny", priority = 1 }
 missing_panics_doc = { level = "deny", priority = 1 }
 dbg_macro = { level = "deny", priority = 1 }
-panic = { level = "deny", priority = 1 }                  # a deliberate panic needs a local #[allow(clippy::panic)] (zenith_editor panic handler test)
+panic = { level = "deny", priority = 1 }
 
 # Allow
 similar_names = { level = "allow", priority = 1 }
