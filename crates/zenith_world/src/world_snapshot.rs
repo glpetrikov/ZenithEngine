@@ -33,19 +33,21 @@ impl World {
 	/// `Project::write` takes.
 	///
 	/// # Errors
-	/// `YAMLSerialization` if a component cannot be written.
+	/// `Yaml` if a component cannot be written.
 	pub fn snapshot_bytes(&mut self) -> ZResult<Vec<u8>> {
-		Ok(serde_saphyr::to_string(&self.snapshot())?.into_bytes())
+		let text = serde_saphyr::to_string(&self.snapshot()).map_err(|e| ZenithError::Yaml(e.to_string()))?;
+		Ok(text.into_bytes())
 	}
 
 	/// Restores the world from the bytes of a world file (see
 	/// [`Self::snapshot_bytes`]).
 	///
 	/// # Errors
-	/// `YAML` if the bytes are not a world file, otherwise as
+	/// `Yaml` if the bytes are not a world file, otherwise as
 	/// [`Self::restore_snapshot`].
 	pub fn restore_bytes(&mut self, bytes: &[u8]) -> ZResult<()> {
-		self.restore_snapshot(serde_saphyr::from_slice(bytes)?)
+		let snapshot = serde_saphyr::from_slice(bytes).map_err(|e| ZenithError::Yaml(e.to_string()))?;
+		self.restore_snapshot(snapshot)
 	}
 
 	/// restores the world from a snapshot, replacing all existing entities and

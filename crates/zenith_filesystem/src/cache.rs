@@ -53,9 +53,9 @@ impl CacheSettings {
 	}
 
 	/// # Errors
-	/// `TomlSer` if serialization fails.
+	/// `Toml` if serialization fails.
 	pub fn to_toml(&self) -> ZResult<String> {
-		Ok(toml::to_string(self)?)
+		toml::to_string(self).map_err(|e| ZenithError::Toml(e.to_string()))
 	}
 }
 

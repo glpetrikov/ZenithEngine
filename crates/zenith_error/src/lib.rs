@@ -55,22 +55,6 @@ pub enum ZenithError {
 	#[error("I/O error: {0}")]
 	Io(#[from] std::io::Error),
 
-	#[error("Semver error: {0}")]
-	Semver(#[from] semver::Error),
-
-	#[error("Toml deserialization error: {0}")]
-	TomlDe(#[from] toml::de::Error),
-	#[error("Toml serialization error: {0}")]
-	TomlSer(#[from] toml::ser::Error),
-
-	#[error("JSON error: {0}")]
-	Json(#[from] serde_json::Error),
-
-	#[error("YAML error: {0}")]
-	YAML(#[from] serde_saphyr::Error),
-	#[error("YAML Serialization error: {0}")]
-	YAMLSerialization(#[from] serde_saphyr::SerializeError),
-
 	#[error("{0}")]
 	Other(String),
 
@@ -154,6 +138,19 @@ pub enum ZenithError {
 	BuildIncomplete(String),
 	#[error("Build {0} was expected, this is build {1} (an older or another build?)")]
 	BuildIdMismatch(String, String),
+
+	// === Format errors ===
+	// They carry the message only: this crate depends on no format library,
+	// so that nobody who uses an error pays for TOML, JSON or YAML. The code
+	// that meets them turns them in with `map_err`.
+	#[error("TOML error: {0}")]
+	Toml(String),
+	#[error("JSON error: {0}")]
+	Json(String),
+	#[error("YAML error: {0}")]
+	Yaml(String),
+	#[error("Version error: {0}")]
+	Version(String),
 }
 
 // Public API boundary: documented, matchable variants.

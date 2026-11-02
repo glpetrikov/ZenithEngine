@@ -20,7 +20,7 @@ use crate::{
 /// The manifest names the engine versions the project is for. Until there are
 /// migrations, a project (or a build) of another engine version does not open.
 fn check_engine_version(manifest: &Manifest) -> ZResult<()> {
-	let current = Version::parse(env!("CARGO_PKG_VERSION"))?;
+	let current = Version::parse(env!("CARGO_PKG_VERSION")).map_err(|e| ZenithError::Version(e.to_string()))?;
 	if manifest.engine_version.matches(&current) {
 		Ok(())
 	} else {

@@ -160,8 +160,8 @@ impl FsV1 {
 			ignored,
 		};
 		let moved = (|| -> ZResult<()> {
-			self.dir
-				.write(format!("{base}/entry.toml"), toml::to_string(&record)?)?;
+			let text = toml::to_string(&record).map_err(|e| ZenithError::Toml(e.to_string()))?;
+			self.dir.write(format!("{base}/entry.toml"), text)?;
 			self.dir.create_dir(format!("{base}/files"))?;
 			self.dir
 				.rename(rel, &self.dir, format!("{base}/files/{name}"))
@@ -197,7 +197,7 @@ impl FsV1 {
 			.dir
 			.read_to_string(format!("{base}/entry.toml"))
 			.map_err(|_| ZenithError::TrashEntryNotFound(id.to_string()))?;
-		let record: EntryFile = toml::from_str(&text)?;
+		let record: EntryFile = toml::from_str(&text).map_err(|e| ZenithError::Toml(e.to_string()))?;
 		let mut objects = self
 			.dir
 			.read_dir(format!("{base}/files"))

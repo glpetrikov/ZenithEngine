@@ -4807,11 +4807,7 @@ version = "0.1.0"
 dependencies = [
  "color-eyre",
  "eyre",
- "semver",
- "serde-saphyr",
- "serde_json",
  "thiserror 2.0.20",
- "toml",
 ]
 
 [[package]]

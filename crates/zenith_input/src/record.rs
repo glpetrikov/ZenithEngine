@@ -48,7 +48,7 @@ impl Recording {
 	/// # Errors
 	/// `Json` if a value cannot be written (a `NaN` in an event, say).
 	pub fn to_json(&self) -> ZResult<String> {
-		Ok(serde_json::to_string(self)?)
+		serde_json::to_string(self).map_err(|e| ZenithError::Json(e.to_string()))
 	}
 
 	/// A recording from the text `to_json` wrote.
@@ -57,7 +57,7 @@ impl Recording {
 	/// `Json` for text that is not a recording, `InvalidSettings` for a
 	/// recording of another version.
 	pub fn from_json(text: &str) -> ZResult<Self> {
-		let recording: Self = serde_json::from_str(text)?;
+		let recording: Self = serde_json::from_str(text).map_err(|e| ZenithError::Json(e.to_string()))?;
 		if recording.version != VERSION {
 			return Err(ZenithError::InvalidSettings(format!(
 				"an input recording of version {}, this engine reads version {VERSION}",

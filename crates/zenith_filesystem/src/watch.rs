@@ -574,7 +574,8 @@ mod tests {
 	fn build_toml_ignores_foreign_sections() -> ZResult<()> {
 		let parsed: BuildToml = toml::from_str(
 			"[scripts]\ncompiler = \"x\"\n\n[[watch]]\nname = \"rust\"\npatterns = [\"**/*.rs\"]\nunknown = 1\n",
-		)?;
+		)
+		.map_err(|e| ZenithError::Toml(e.to_string()))?;
 		assert_eq!(parsed.watch.len(), 1, "one rule");
 		assert!(
 			parsed.watch.first().is_some_and(|r| r.exclude.is_empty()),

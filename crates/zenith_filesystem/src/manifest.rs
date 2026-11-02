@@ -57,13 +57,14 @@ impl Manifest {
 	/// version>`.
 	///
 	/// # Errors
-	/// `BadProjectName` or a semver error.
+	/// `BadProjectName` or `Version`.
 	pub fn new(name: &str) -> ZResult<Self> {
 		validate_project_name(name)?;
 		Ok(Self {
 			name: name.to_string(),
 			project_version: Version::new(0, 1, 0),
-			engine_version: VersionReq::parse(&format!("^{}", env!("CARGO_PKG_VERSION")))?,
+			engine_version: VersionReq::parse(&format!("^{}", env!("CARGO_PKG_VERSION")))
+				.map_err(|e| ZenithError::Version(e.to_string()))?,
 			version: MANIFEST_VERSION,
 		})
 	}
@@ -71,10 +72,10 @@ impl Manifest {
 	/// Parses manifest text.
 	///
 	/// # Errors
-	/// `TomlDe` for malformed text, `UnsupportedProjectVersion` for another
+	/// `Toml` for malformed text, `UnsupportedProjectVersion` for another
 	/// manifest format version, `BadProjectName` for an unusable name.
 	pub fn parse(text: &str) -> ZResult<Self> {
-		let file: File = toml::from_str(text)?;
+		let file: File = toml::from_str(text).map_err(|e| ZenithError::Toml(e.to_string()))?;
 		if file.project.version != MANIFEST_VERSION {
 			return Err(ZenithError::UnsupportedProjectVersion);
 		}
@@ -85,9 +86,9 @@ impl Manifest {
 	/// Serializes the manifest.
 	///
 	/// # Errors
-	/// `TomlSer` if serialization fails.
+	/// `Toml` if serialization fails.
 	pub fn to_toml(&self) -> ZResult<String> {
-		Ok(toml::to_string(&File { project: self.clone() })?)
+		toml::to_string(&File { project: self.clone() }).map_err(|e| ZenithError::Toml(e.to_string()))
 	}
 }
 

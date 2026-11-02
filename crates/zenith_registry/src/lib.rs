@@ -116,7 +116,7 @@ impl ComponentRegistry {
 
 		let load: LoadComponentFn = Box::new(
 			|entity: Entity, world: &mut world::World, value: Value| -> ZResult<()> {
-				let component: T = serde_json::from_value(value)?;
+				let component: T = serde_json::from_value(value).map_err(|e| ZenithError::Json(e.to_string()))?;
 				world.entity_mut(entity).insert(component);
 				Ok(())
 			},
