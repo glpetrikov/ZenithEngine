@@ -1,0 +1,33 @@
+[package]
+name = "zenith_save"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+zenith_error = { version = "0.1.0", path = "../zenith_error" }
+zenith_log = { version = "0.1.0", path = "../zenith_log" }
+# Saves are written to `Data://`, which works with or without a real folder.
+zenith_filesystem = { version = "0.1.0", path = "../zenith_filesystem", default-features = false }
+# A save is a container of the same format as a build.
+zenith_archive = { version = "0.1.0", path = "../zenith_archive", default-features = false, features = ["write"] }
+serde = { version = "1", features = ["derive"] }
+toml = "1.1.4"
+# `SystemTime::now` panics in a browser; this one does not.
+web-time = "1.1.0"
+
+# The C library compresses better and faster; a browser has only the pure Rust
+# encoder (see `zenith_archive`).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+zenith_archive = { version = "0.1.0", path = "../zenith_archive", default-features = false, features = ["write", "zstd"] }
+
+[dev-dependencies]
+tempfile = "3"
+zenith_filesystem = { version = "0.1.0", path = "../zenith_filesystem", features = ["fs"] }
+
+[lints]
+workspace = true

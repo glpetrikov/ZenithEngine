@@ -13,7 +13,7 @@ default = ["fs"]
 # Everything that needs a real filesystem: the `Fs` backend (cap-std), the
 # trash, `.gitignore` handling and the file watcher. Without it only the
 # read-only build backends remain, which is what the web target uses.
-fs = ["dep:cap-std", "dep:notify", "dep:notify-debouncer-full", "dep:globset"]
+fs = ["dep:cap-std", "dep:notify", "dep:notify-debouncer-full", "dep:globset", "dep:dirs"]
 
 [dependencies]
 zenith_error = { version = "0.1.0", path = "../zenith_error" }
@@ -26,9 +26,28 @@ convert_case = "0.10"
 serde = { version = "1", features = ["derive"] }
 toml = "1.1.4"
 cap-std = { version = "4.0.3", optional = true }
+# Where the user's data folder is (`Data://` goes there by default).
+dirs = { version = "7.0.0", optional = true }
 notify = { version = "8.2.0", optional = true }
 notify-debouncer-full = { version = "0.7.0", optional = true }
 globset = { version = "0.4", optional = true }
+
+# IndexedDB, where a browser keeps the data of the player (`IdbStore`).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "IdbFactory",
+    "IdbOpenDbRequest",
+    "IdbDatabase",
+    "IdbObjectStore",
+    "IdbTransaction",
+    "IdbTransactionMode",
+    "IdbRequest",
+    "DomException",
+] }
 
 # The integration tests drive project folders, the trash and the watcher.
 [[test]]

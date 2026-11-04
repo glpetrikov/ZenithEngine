@@ -12,6 +12,7 @@
 # Input
 
 - [Keyboard, mouse, gamepads and actions](./input.md)
+- [Saves and the data of the player](./saves.md)
 
 # Building
 

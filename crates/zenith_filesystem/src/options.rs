@@ -1,11 +1,11 @@
 //! How a project is opened.
 
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use zenith_archive::{BuildId, EncryptionKey};
 use zenith_error::ZResult;
 
-use crate::{cache::CacheConfig, project::Project};
+use crate::{cache::CacheConfig, project::Project, userdata::UserStore};
 
 /// Settings for [`Project::open`]-style calls. Build with the chain methods:
 ///
@@ -24,6 +24,7 @@ pub struct OpenOptions {
 	pub(crate) max_read_size: u64,
 	pub(crate) ignore_engine_version: bool,
 	pub(crate) expected_build_id: Option<BuildId>,
+	pub(crate) user_data: Option<Arc<dyn UserStore>>,
 }
 
 /// Default for [`OpenOptions::max_read_size`].
@@ -37,6 +38,7 @@ impl Default for OpenOptions {
 			max_read_size: DEFAULT_MAX_READ_SIZE,
 			ignore_engine_version: false,
 			expected_build_id: None,
+			user_data: None,
 		}
 	}
 }
@@ -76,6 +78,16 @@ impl OpenOptions {
 	#[must_use]
 	pub const fn ignore_engine_version(mut self) -> Self {
 		self.ignore_engine_version = true;
+		self
+	}
+
+	/// Where the data of the player (`Data://`) is kept. By default it is the
+	/// user's data folder on a computer (`<data folder>/<project name>`) and
+	/// memory, which is gone with the process, where there is no folder (a
+	/// browser: give it an `IdbStore`). See [`UserStore`].
+	#[must_use]
+	pub fn user_data(mut self, store: Arc<dyn UserStore>) -> Self {
+		self.user_data = Some(store);
 		self
 	}
 

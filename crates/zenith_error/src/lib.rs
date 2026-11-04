@@ -151,6 +151,24 @@ pub enum ZenithError {
 	Yaml(String),
 	#[error("Version error: {0}")]
 	Version(String),
+
+	// === Save errors ===
+	#[error("Invalid save slot name: {0}")]
+	InvalidSaveSlot(String),
+	#[error("There is no save in slot {0}")]
+	SaveNotFound(String),
+	#[error("The save is damaged: {0}")]
+	SaveDamaged(String),
+	#[error("The save cannot be read by this engine: {0}")]
+	SaveVersionMismatch(String),
+	#[error("Invalid save data: {0}")]
+	InvalidSaveData(String),
+	#[error("The save has no section {0}")]
+	SaveSectionNotFound(String),
+	#[error("The save has no value {0}")]
+	SaveKeyNotFound(String),
+	#[error("The value in the save is not what was asked for: {0}")]
+	SaveWrongType(String),
 }
 
 // Public API boundary: documented, matchable variants.

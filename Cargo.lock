@@ -4816,13 +4816,18 @@ version = "0.1.0"
 dependencies = [
  "cap-std",
  "convert_case",
+ "dirs",
  "globset",
+ "js-sys",
  "notify",
  "notify-debouncer-full",
  "semver",
  "serde",
  "tempfile",
  "toml",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "zenith_archive",
  "zenith_error",
  "zenith_log",
@@ -4924,6 +4929,20 @@ dependencies = [
  "zenith_log",
  "zenith_renderer",
  "zenith_world",
+]
+
+[[package]]
+name = "zenith_save"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tempfile",
+ "toml",
+ "web-time",
+ "zenith_archive",
+ "zenith_error",
+ "zenith_filesystem",
+ "zenith_log",
 ]
 
 [[package]]

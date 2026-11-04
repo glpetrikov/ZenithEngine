@@ -44,16 +44,49 @@ fn load_world(project: &zenith_filesystem::Project) -> ZResult<World> {
 	Ok(world)
 }
 
+/// The controls the author of the game chose: settings and actions.
+const INPUT_SETTINGS: &str = "Settings://Input.toml";
+/// The changes the player made to the controls, kept apart from the game.
+const INPUT_OVERRIDES: &str = "Data://Input.toml";
+/// How often the changes of the player are looked for and written.
+const SAVE_OVERRIDES_EVERY: f32 = 2.0;
+
+/// Reads the controls into the input of the world: the settings of the
+/// project, then the changes of the player, if there are any. Returns the text
+/// of the changes as they are now, which is what is on disk.
+///
+/// # Errors
+/// The project's error if the settings cannot be read or are not valid. The
+/// changes of the player never fail the start: a bad file is reported in the
+/// log and ignored.
+fn load_input(project: &zenith_filesystem::Project, world: &mut World) -> ZResult<String> {
+	let settings = zenith_filesystem::ZPath::new(INPUT_SETTINGS)?;
+	if project.exists(&settings)? {
+		world.input_mut().load_settings(&project.read_string(&settings)?)?;
+	}
+	let overrides = zenith_filesystem::ZPath::new(INPUT_OVERRIDES)?;
+	let loaded = project
+		.exists(&overrides)
+		.and_then(|exists| exists.then(|| project.read_string(&overrides)).transpose())
+		.and_then(|text| text.map_or(Ok(()), |text| world.input_mut().load_overrides(&text)));
+	if let Err(e) = loaded {
+		zenith_log::warn!("The changes you made to the controls cannot be used: {e}");
+	}
+	Ok(world.input().overrides_toml())
+}
+
 pub struct State {
 	viewport: Viewport,
 	window: Arc<Window>,
-	#[allow(dead_code)]
 	project: zenith_filesystem::Project,
 	/// The world the game runs in; it holds the input.
 	world: World,
 	/// Real gamepads; `None` where the system has none to give.
 	gamepads: Option<Gamepads>,
 	last_frame: Instant,
+	/// The changes to the controls that are on disk (or in the browser).
+	saved_overrides: String,
+	overrides_timer: f32,
 }
 
 impl State {
@@ -87,7 +120,8 @@ impl State {
 			}
 		};
 
-		let world = load_world(&project)?;
+		let mut world = load_world(&project)?;
+		let saved_overrides = load_input(&project, &mut world)?;
 
 		Ok(Self {
 			viewport,
@@ -96,7 +130,32 @@ impl State {
 			world,
 			gamepads,
 			last_frame: Instant::now(),
+			saved_overrides,
+			overrides_timer: 0.0,
 		})
+	}
+
+	/// Writes the changes the player made to the controls, if there are new
+	/// ones (or removes the file when there are none left). It is looked for
+	/// every few seconds, since nothing says when the player changed a binding
+	/// and a browser has no moment to save at the end.
+	fn sync_overrides(&mut self) {
+		let text = self.world.input().overrides_toml();
+		if text == self.saved_overrides {
+			return;
+		}
+		let written = zenith_filesystem::ZPath::new(INPUT_OVERRIDES).and_then(|path| {
+			// NOTE: maybe here doesn't need to delete
+			if text.is_empty() {
+				self.project.delete(&path).map(|_| ())
+			} else {
+				self.project.write(&path, text.as_bytes())
+			}
+		});
+		match written {
+			Ok(()) => self.saved_overrides = text,
+			Err(e) => zenith_log::warn!("Your controls could not be saved: {e}"),
+		}
 	}
 
 	/// Runs one frame of the world: the gamepads are read, the systems run
@@ -110,6 +169,11 @@ impl State {
 		}
 		self.world.update_systems(dt);
 		self.carry_out_cursor_request();
+		self.overrides_timer += dt;
+		if self.overrides_timer >= SAVE_OVERRIDES_EVERY {
+			self.overrides_timer = 0.0;
+			self.sync_overrides();
+		}
 	}
 
 	/// What the game asked of the window (a hidden or locked cursor).
@@ -138,6 +202,10 @@ impl State {
 			gamepads.poll(&mut self.world.input_mut());
 		}
 		self.carry_out_cursor_request();
+		self.sync_overrides();
+		if let Err(e) = self.project.flush_data() {
+			zenith_log::warn!("The data of the player could not be flushed: {e}");
+		}
 		zenith_log::info!("Shut down");
 	}
 

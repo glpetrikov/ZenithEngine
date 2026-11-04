@@ -29,6 +29,7 @@ mod scheme;
 mod trash_id;
 mod tree;
 mod types;
+pub mod userdata;
 mod zpath;
 
 #[cfg(feature = "fs")]
@@ -54,6 +55,11 @@ pub use project::{ArchiveProject, BackendKind, BuildFsProject, Project};
 pub use trash::{OnConflict, RestoreOptions, TrashEntry};
 pub use trash_id::TrashId;
 pub use types::{DirEntry, EntryKind, Metadata, ReadSeek};
+#[cfg(feature = "fs")]
+pub use userdata::DirStore;
+#[cfg(target_arch = "wasm32")]
+pub use userdata::IdbStore;
+pub use userdata::{DATA_SCHEME, MemStore, UserStore};
 #[cfg(feature = "fs")]
 pub use watch::{ChangeKind, EventReceiver, FileChange, ProjectEvent, WatchConfig, WatchRule, Watcher};
 /// Re-exported so callers need no direct dependency on the archive crate for

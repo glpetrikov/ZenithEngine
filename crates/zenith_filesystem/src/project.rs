@@ -13,6 +13,7 @@ use crate::{
 	options::{OpenOptions, ProjectWarning},
 	trash_id::TrashId,
 	types::{DirEntry, Metadata, ReadSeek},
+	userdata::{DATA_SCHEME, UserStore, check_path},
 	zpath::ZPath,
 };
 #[cfg(feature = "fs")]
@@ -251,9 +252,99 @@ impl Project {
 
 	// --- reading ------------------------------------------------------------
 
+	// --- the data of the player (`Data://`)
+	// -----------------------------------
+
+	/// The path inside `Data://`, if `path` is one (checked: a name that is
+	/// safe everywhere, the root only if `allow_root`).
+	fn data_path(path: &ZPath, allow_root: bool) -> ZResult<Option<&str>> {
+		if path.scheme() != DATA_SCHEME {
+			return Ok(None);
+		}
+		check_path(path.path(), allow_root)?;
+		Ok(Some(path.path()))
+	}
+
+	/// Where `Data://` is kept.
+	#[must_use]
+	pub fn user_data(&self) -> Arc<dyn UserStore> {
+		self.core()
+			.user_data
+			.read()
+			.unwrap_or_else(std::sync::PoisonError::into_inner)
+			.clone()
+	}
+
+	/// Keeps `Data://` somewhere else from now on (nothing is moved). For a
+	/// browser, which opens its store once the project has been read, since it
+	/// is named after the project.
+	pub fn set_user_data(&self, store: Arc<dyn UserStore>) {
+		*self
+			.core()
+			.user_data
+			.write()
+			.unwrap_or_else(std::sync::PoisonError::into_inner) = store;
+	}
+
+	/// Waits until what was written to `Data://` is safe (a browser writes in
+	/// the background). Call it before the game ends.
+	///
+	/// # Errors
+	/// An I/O error.
+	pub fn flush_data(&self) -> ZResult<()> {
+		self.user_data().flush()
+	}
+
+	/// Deletes a file or a folder of `Data://` for good; `false` if there was
+	/// nothing. (A file of the project is never deleted for good: `remove`
+	/// moves it to the trash.)
+	///
+	/// # Errors
+	/// `Unsupported` for a path that is not in `Data://`, `InvalidZPath` for a
+	/// bad name.
+	pub fn delete(&self, path: &ZPath) -> ZResult<bool> {
+		if let Some(rel) = Self::data_path(path, false)? {
+			return self.user_data().remove(rel);
+		}
+		Err(ZenithError::Unsupported(
+			"only Data:// is deleted for good; `remove` moves a project file to the trash".into(),
+		))
+	}
+
+	/// Replaces a file atomically: it is the old file or the new one, never
+	/// half of each. Missing folders are made.
+	///
+	/// `Data://` can be written for any project or build. A file of the
+	/// project can be written in a project folder only.
+	///
+	/// # Errors
+	/// `ReadOnly` for a build, `ReadOnlyScheme` for `Trash://`,
+	/// `ProjectWrongKind` if the path is a folder.
+	pub fn write(&self, path: &ZPath, data: &[u8]) -> ZResult<()> {
+		if let Some(rel) = Self::data_path(path, false)? {
+			return self.user_data().write(rel, data);
+		}
+		self.write_project_file(path, data)
+	}
+
+	/// Creates a folder and its parents.
+	///
+	/// # Errors
+	/// `ReadOnly` for a build (`Data://` can always be written),
+	/// `ReadOnlyScheme` for `Trash://`.
+	pub fn create_dir(&self, path: &ZPath) -> ZResult<()> {
+		if let Some(rel) = Self::data_path(path, true)? {
+			return self.user_data().create_dir(rel);
+		}
+		self.create_project_dir(path)
+	}
+
 	/// # Errors
 	/// `SchemeNotRegistered`, or an I/O error.
 	pub fn exists(&self, path: &ZPath) -> ZResult<bool> {
+		if let Some(rel) = Self::data_path(path, true)? {
+			return Ok(self.user_data().metadata(rel)?.is_some());
+		}
 		self.backend().exists(&self.resolve(path)?)
 	}
 
@@ -262,12 +353,21 @@ impl Project {
 	/// # Errors
 	/// `ProjectNotFound` if it does not exist.
 	pub fn list(&self, path: &ZPath) -> ZResult<Vec<DirEntry>> {
+		if let Some(rel) = Self::data_path(path, true)? {
+			return self.user_data().list(rel);
+		}
 		self.backend().list(&self.resolve(path)?)
 	}
 
 	/// # Errors
 	/// `ProjectNotFound` if it does not exist.
 	pub fn metadata(&self, path: &ZPath) -> ZResult<Metadata> {
+		if let Some(rel) = Self::data_path(path, true)? {
+			return self
+				.user_data()
+				.metadata(rel)?
+				.ok_or_else(|| ZenithError::ProjectNotFound(path.to_string()));
+		}
 		self.backend().metadata(&self.resolve(path)?)
 	}
 
@@ -276,7 +376,29 @@ impl Project {
 	/// # Errors
 	/// `ProjectNotFound` if it does not exist.
 	pub fn is_symlink(&self, path: &ZPath) -> ZResult<bool> {
+		if Self::data_path(path, true)?.is_some() {
+			return Ok(false);
+		}
 		self.backend().is_symlink(&self.resolve(path)?)
+	}
+
+	/// A file of `Data://`, within the size limit.
+	fn read_data(&self, path: &ZPath, rel: &str) -> ZResult<Vec<u8>> {
+		if rel.is_empty() {
+			return Err(ZenithError::ProjectWrongKind(format!("{path} is a folder")));
+		}
+		let data = self
+			.user_data()
+			.read(rel)?
+			.ok_or_else(|| ZenithError::ProjectNotFound(path.to_string()))?;
+		let limit = self.core().max_read_size;
+		if data.len() as u64 > limit {
+			return Err(ZenithError::FileTooLarge(format!(
+				"{path} is {} bytes, the limit is {limit} (OpenOptions::max_read_size)",
+				data.len()
+			)));
+		}
+		Ok(data)
 	}
 
 	/// Reads a whole file, through the cache (`Trash://` is never cached).
@@ -285,6 +407,9 @@ impl Project {
 	/// `ProjectNotFound`, `ProjectWrongKind` for a folder, `PathEscapesRoot`
 	/// for a link that leaves the project, or an I/O error.
 	pub fn read_bytes(&self, path: &ZPath) -> ZResult<Arc<[u8]>> {
+		if let Some(rel) = Self::data_path(path, true)? {
+			return Ok(Arc::from(self.read_data(path, rel)?));
+		}
 		let backend = self.backend();
 		let rel = backend.core().resolve(path)?;
 		if is_trash_path(&rel) {
@@ -321,6 +446,9 @@ impl Project {
 	/// Same as [`Self::read_bytes`], plus `InvalidUtf8`.
 	pub fn read_string(&self, path: &ZPath) -> ZResult<String> {
 		let invalid = || ZenithError::InvalidUtf8(path.to_string());
+		if let Some(rel) = Self::data_path(path, true)? {
+			return String::from_utf8(self.read_data(path, rel)?).map_err(|_| invalid());
+		}
 		let backend = self.backend();
 		let core = backend.core();
 		let rel = core.resolve(path)?;
@@ -344,6 +472,10 @@ impl Project {
 	/// # Errors
 	/// Same as [`Self::read_bytes`].
 	pub fn open_read(&self, path: &ZPath) -> ZResult<Box<dyn ReadSeek + Send>> {
+		if let Some(rel) = Self::data_path(path, true)? {
+			// A file of the player's data is read whole; it is small.
+			return Ok(Box::new(std::io::Cursor::new(self.read_data(path, rel)?)));
+		}
 		self.backend().open_read(&self.resolve(path)?)
 	}
 }
@@ -365,6 +497,11 @@ impl Project {
 	fn writable(&self, path: &ZPath) -> ZResult<(&FsV1, String)> {
 		match self {
 			Self::Fs(FsProject::V1(fs)) => {
+				if path.scheme() == DATA_SCHEME {
+					return Err(ZenithError::Unsupported(
+						"Data:// is not part of the project: use write and delete".into(),
+					));
+				}
 				let rel = fs.core.resolve(path)?;
 				if is_trash_path(&rel) {
 					return Err(ZenithError::ReadOnlyScheme(path.scheme().to_string()));
@@ -375,21 +512,12 @@ impl Project {
 		}
 	}
 
-	/// Replaces a file atomically (written to a temporary file next to it,
-	/// then renamed). Missing parent folders are created.
-	///
-	/// # Errors
-	/// `ReadOnly` for builds, `ReadOnlyScheme` for `Trash://`.
-	pub fn write(&self, path: &ZPath, data: &[u8]) -> ZResult<()> {
+	fn write_project_file(&self, path: &ZPath, data: &[u8]) -> ZResult<()> {
 		let (fs, rel) = self.writable(path)?;
 		fs.write(&rel, data)
 	}
 
-	/// Creates a folder and its parents.
-	///
-	/// # Errors
-	/// `ReadOnly` for builds, `ReadOnlyScheme` for `Trash://`.
-	pub fn create_dir(&self, path: &ZPath) -> ZResult<()> {
+	fn create_project_dir(&self, path: &ZPath) -> ZResult<()> {
 		let (fs, rel) = self.writable(path)?;
 		fs.create_dir(&rel)
 	}
@@ -412,6 +540,11 @@ impl Project {
 	/// `ReadOnly` for builds, `ProjectAlreadyExists`, `ProjectNotFound`.
 	pub fn copy(&self, from: &ZPath, to: &ZPath) -> ZResult<()> {
 		let (fs, to_rel) = self.writable(to)?;
+		if from.scheme() == DATA_SCHEME {
+			return Err(ZenithError::Unsupported(
+				"Data:// is not part of the project: read the file and write it".into(),
+			));
+		}
 		let from_rel = fs.core.resolve(from)?;
 		fs.copy(&from_rel, &to_rel)
 	}
@@ -586,19 +719,15 @@ impl Project {
 		Err(ZenithError::ReadOnly)
 	}
 
-	/// Always `ReadOnly`: without the `fs` feature there are only builds.
-	///
-	/// # Errors
-	/// `ReadOnly`.
-	pub const fn write(&self, _path: &ZPath, _data: &[u8]) -> ZResult<()> {
+	// Without the `fs` feature there are only builds: nothing of the project
+	// can be written (`Data://` can, see `Project::write`).
+	#[allow(clippy::unused_self)] // the same signature as with the `fs` feature
+	const fn write_project_file(&self, _path: &ZPath, _data: &[u8]) -> ZResult<()> {
 		Err(ZenithError::ReadOnly)
 	}
 
-	/// Always `ReadOnly`.
-	///
-	/// # Errors
-	/// `ReadOnly`.
-	pub const fn create_dir(&self, _path: &ZPath) -> ZResult<()> {
+	#[allow(clippy::unused_self)] // the same signature as with the `fs` feature
+	const fn create_project_dir(&self, _path: &ZPath) -> ZResult<()> {
 		Err(ZenithError::ReadOnly)
 	}
 

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use zenith_error::{ZResult, ZenithError};
-use zenith_filesystem::{OpenOptions, Project};
+use zenith_filesystem::{IdbStore, OpenOptions, Project};
 
 const BUILD_URL: &str = "game.zenithbuild";
 
@@ -38,5 +38,16 @@ pub async fn open_project() -> ZResult<Project> {
 		.await
 		.map_err(|e| failed("body", &e))?;
 	let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
-	Project::open_archive_bytes(Arc::from(bytes), &OpenOptions::new())
+	let project = Project::open_archive_bytes(Arc::from(bytes), &OpenOptions::new())?;
+
+	// The data of the player (`Data://`) goes to IndexedDB, in a database named
+	// after the game. It can only be opened now that the name is known. Where
+	// the browser has none (a private window), it stays in memory and is gone
+	// with the page.
+	let database = format!("ZenithEngine {}", project.manifest().user_data_folder());
+	match IdbStore::open(&database).await {
+		Ok(store) => project.set_user_data(Arc::new(store)),
+		Err(e) => zenith_log::warn!("Nothing the player does can be kept: {e}"),
+	}
+	Ok(project)
 }

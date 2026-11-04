@@ -48,6 +48,8 @@ mod archive_write;
 #[cfg(feature = "write")]
 mod folder_write;
 #[cfg(feature = "write")]
+mod squeeze;
+#[cfg(feature = "write")]
 mod write;
 
 pub use archive::{ArchiveEntry, ArchiveReader};

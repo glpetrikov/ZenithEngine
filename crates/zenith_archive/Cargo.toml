@@ -9,14 +9,20 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-default = ["write"]
+default = ["write", "zstd"]
 # Writers and everything that is only needed while producing a build.
 # The readers never depend on it (the web target builds without it).
-write = ["dep:zstd"]
+write = []
+# The zstd C library as the compressor (levels 1 to 22, fast and strong).
+# Without it the writers use the pure Rust encoder of `ruzstd` (one fast
+# level), which is what builds for the web, where a C library does not.
+zstd = ["write", "dep:zstd"]
 
 [dependencies]
 zenith_error = { version = "0.1.0", path = "../zenith_error" }
-ruzstd = "0.9.1"
+# Without its `hash` feature: chunks are protected by the chunk table's CRC or
+# the AEAD tag, so the frames need no checksum of their own.
+ruzstd = { version = "0.9.1", default-features = false, features = ["std"] }
 # default-features are off: the default `getrandom` backend does not build
 # on wasm32-unknown-unknown, and nonces are derived, never random.
 aes-gcm-siv = { version = "0.11.1", default-features = false, features = [
@@ -45,6 +51,9 @@ getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
 tempfile = "3"
+# The reference compressor and decompressor for the tests of the pure Rust
+# encoder, whatever features the crate is built with.
+zstd = "0.14.3"
 # Only to check the key derivation in crypto.rs against the reference crates.
 hkdf = "0.12"
 hmac = "0.12"

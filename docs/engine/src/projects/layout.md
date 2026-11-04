@@ -51,6 +51,7 @@ name = "Game"
 project_version = "0.1.0"
 engine_version = "^0.1.0"
 version = 1
+user_data = "Studio/Game"   # optional
 ```
 
 | Field             | Meaning                                                                                                                                                                                                                                                                                         |
@@ -60,7 +61,16 @@ version = 1
 | `engine_version`  | Which engine versions the project is for (a semver requirement). A project for another engine version does not open: `EngineVersionMismatch`. (Migrations will convert old projects; until then `OpenOptions::ignore_engine_version()` lets a tool read one anyway.) The same holds for builds. |
 | `version`         | Manifest format. Only `1` exists; anything else is `UnsupportedProjectVersion`.                                                                                                                                                                                                                 |
 
-`Project::manifest()` returns it as `zenith_filesystem::Manifest`.
+`user_data` is optional: the folder of the data of the player (`Data://`, see
+[Saves](../saves.md)) below the data folder of the system (`dirs::data_dir()`:
+`%APPDATA%` on Windows, `~/.local/share` on Linux, `~/Library/Application Support`
+on macOS), a name or a path of names such as `Studio/Game`. Without it the folder
+is called like the project. Choose it once and keep it: the saves of the players
+stay where they are if the game is renamed. A name with `..`, a drive or
+anything a platform cannot name is refused when the project is opened.
+
+`Project::manifest()` returns it as `zenith_filesystem::Manifest`
+(`manifest.user_data_folder()` is the folder in effect).
 
 ## Which kind of project is it?
 

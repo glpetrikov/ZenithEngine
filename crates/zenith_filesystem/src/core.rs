@@ -1,6 +1,6 @@
 //! State every backend shares, and the operations every backend offers.
 
-use std::sync::{Mutex, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use semver::Version;
 use zenith_archive::BuildId;
@@ -14,6 +14,7 @@ use crate::{
 	options::{OpenOptions, ProjectWarning},
 	scheme::Schemes,
 	types::{DirEntry, Metadata, ReadSeek},
+	userdata::{MemStore, UserStore},
 	zpath::ZPath,
 };
 
@@ -37,7 +38,22 @@ pub struct Core {
 	pub cache: Cache,
 	/// Largest file `read_bytes`/`read_string` load into memory.
 	pub max_read_size: u64,
+	/// Where `Data://` goes. Replaceable: a browser opens its store (which is
+	/// named after the project) only once the project has been read.
+	pub user_data: RwLock<Arc<dyn UserStore>>,
 	warnings: Mutex<Vec<ProjectWarning>>,
+}
+
+/// The store `Data://` uses when it is not given one: the user's data folder
+/// on a computer, memory where there is none.
+fn default_user_store(manifest: &Manifest) -> Arc<dyn UserStore> {
+	#[cfg(feature = "fs")]
+	if let Some(root) = crate::userdata::default_data_dir(manifest.user_data_folder()) {
+		return Arc::new(crate::userdata::DirStore::new(root));
+	}
+	#[cfg(not(feature = "fs"))]
+	let _ = manifest;
+	Arc::new(MemStore::new())
 }
 
 impl Core {
@@ -53,11 +69,13 @@ impl Core {
 		if !opts.ignore_engine_version {
 			check_engine_version(&manifest)?;
 		}
+		let user_data = opts.user_data.clone().unwrap_or_else(|| default_user_store(&manifest));
 		Ok(Self {
 			manifest,
 			schemes: RwLock::new(Schemes::with_builtin()),
 			cache: Cache::new(backend_tag, settings),
 			max_read_size: opts.max_read_size,
+			user_data: RwLock::new(user_data),
 			warnings: Mutex::new(Vec::new()),
 		})
 	}

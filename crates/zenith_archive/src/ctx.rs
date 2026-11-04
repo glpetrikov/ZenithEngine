@@ -177,7 +177,7 @@ impl FileCtx {
 /// allocates its window from this header, so a hostile window size must be
 /// rejected here. The frame must declare its content size and it must be
 /// exactly the size the chunk table implies.
-fn validate_frame_header(frame: &[u8], chunk_size: usize, expected: usize) -> ZResult<()> {
+pub fn validate_frame_header(frame: &[u8], chunk_size: usize, expected: usize) -> ZResult<()> {
 	let mut r = Rd::new(frame);
 	if r.u32()? != 0xFD2F_B528 {
 		return Err(corrupt("chunk is not a zstd frame"));

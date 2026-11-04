@@ -6,13 +6,13 @@ use std::{
 };
 
 use zenith_error::{ZResult, ZenithError};
-use zstd::bulk::Compressor;
 
 use crate::{
 	crypto::{Crypto, EncryptionKey},
 	error::{limit, to_u64},
 	format::{DEFAULT_CHUNK_SIZE_LOG2, Footer, Header, Kind, MAX_CHUNK_SIZE_LOG2, MAX_ENTRY_SIZE, MIN_CHUNK_SIZE_LOG2},
 	layout::{ChunkMeta, tag_prefix},
+	squeeze::Squeezer,
 };
 
 /// Most chunks one writer compresses at the same time.
@@ -78,7 +78,7 @@ pub fn write_err(msg: impl Into<String>) -> ZenithError {
 
 /// One compression thread's state: its zstd context and the chunk it works on.
 struct Worker {
-	compressor: Option<Compressor<'static>>,
+	compressor: Option<Squeezer>,
 	buf: Vec<u8>,
 	len: usize,
 }
@@ -106,7 +106,7 @@ impl Sealer {
 				Ok(Worker {
 					compressor: opts
 						.compress
-						.then(|| Compressor::new(opts.compression_level))
+						.then(|| Squeezer::new(opts.compression_level))
 						.transpose()?,
 					buf: Vec::new(),
 					len: 0,

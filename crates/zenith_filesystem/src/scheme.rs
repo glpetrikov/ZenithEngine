@@ -42,7 +42,8 @@ impl Schemes {
 				"scheme {name:?}: {root:?} is not a folder a scheme can point at ({top} is managed by the engine or git)"
 			)));
 		}
-		if self.roots.contains_key(name) {
+		// `Data://` is the player's data, kept outside the project.
+		if name == crate::userdata::DATA_SCHEME || self.roots.contains_key(name) {
 			return Err(ZenithError::SchemeAlreadyRegistered(name.to_string()));
 		}
 		self.roots.insert(name.to_string(), root.to_string());

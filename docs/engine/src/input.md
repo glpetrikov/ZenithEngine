@@ -221,8 +221,10 @@ as it is. The press still counts for the game too, so listen in a menu;
 `input.overrides_toml()` is the text of a file with only the actions that
 differ from how they were defined (the same format as `Input.toml`), and
 `input.load_overrides(&text)` puts it back (actions the game no longer has are
-skipped, and the settings in the file are not used). Where to keep it (the data
-folder of the player) is up to the game.
+skipped, and the settings in the file are not used). The place for it is
+`Data://Input.toml`, the data of the player (see [Saves](./saves.md)); the
+runtime reads `Settings://Input.toml` of the project, then that file, and
+writes it back when the player changes something.
 
 ## `Settings/Input.toml`
 

@@ -206,7 +206,7 @@ result can be run or shipped as it is:
 Builder::new()
     .path("Game")
     .output("dist/Game.zenithbuild")
-    .engine_exe("C:/Users/me/AppData/Local/ZenithEngine/Versions/1/zenith_engine.exe")
+    .engine_exe(dirs::data_local_dir().ok_or("no data folder")?.join("ZenithEngine/Versions/1/zenith_engine.exe"))
     .rename_exe(RenameExe::ProjectName)      // dist/Game.exe
     .build()?;
 ```

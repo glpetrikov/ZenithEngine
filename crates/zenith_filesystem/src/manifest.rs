@@ -6,7 +6,14 @@
 //! project_version = "0.1.0"
 //! engine_version = "^0.1.0"
 //! version = 1          # manifest format, unrelated to the `.v1` folder flag
+//! user_data = "Studio/Test"   # optional, see below
 //! ```
+//!
+//! `user_data` is the folder of the data of the player (`Data://`) below the
+//! data folder of the system, a name or a path of names. Without it the folder
+//! is called like the project. Choose it once and keep it: the saves of the
+//! players stay where they are when the game is renamed, and several games of
+//! one studio can share a folder name above their own.
 
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
@@ -22,6 +29,10 @@ pub struct Manifest {
 	pub project_version: Version,
 	pub engine_version: VersionReq,
 	pub version: u32,
+	/// The folder of the data of the player, below the data folder of the
+	/// system (`Studio/Game`); the project name when absent.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub user_data: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -52,7 +63,24 @@ pub fn validate_project_name(name: &str) -> ZResult<()> {
 	}
 }
 
+/// The folder of the data of the player must be a plain, portable path of
+/// names: no `..`, nothing a platform cannot name.
+///
+/// # Errors
+/// `InvalidSettings` describing the problem.
+pub fn validate_user_data_folder(folder: &str) -> ZResult<()> {
+	zenith_archive::validate_entry_path(folder)
+		.map_err(|e| ZenithError::InvalidSettings(format!("user_data {folder:?} in the manifest: {e}")))
+}
+
 impl Manifest {
+	/// The folder of the data of the player: `user_data` of the manifest, the
+	/// project name without it.
+	#[must_use]
+	pub fn user_data_folder(&self) -> &str {
+		self.user_data.as_deref().unwrap_or(&self.name)
+	}
+
 	/// A manifest for a new project: version 0.1.0 for engines `^<this
 	/// version>`.
 	///
@@ -66,6 +94,7 @@ impl Manifest {
 			engine_version: VersionReq::parse(&format!("^{}", env!("CARGO_PKG_VERSION")))
 				.map_err(|e| ZenithError::Version(e.to_string()))?,
 			version: MANIFEST_VERSION,
+			user_data: None,
 		})
 	}
 
@@ -73,13 +102,17 @@ impl Manifest {
 	///
 	/// # Errors
 	/// `Toml` for malformed text, `UnsupportedProjectVersion` for another
-	/// manifest format version, `BadProjectName` for an unusable name.
+	/// manifest format version, `BadProjectName` for an unusable name,
+	/// `InvalidSettings` for an unusable `user_data`.
 	pub fn parse(text: &str) -> ZResult<Self> {
 		let file: File = toml::from_str(text).map_err(|e| ZenithError::Toml(e.to_string()))?;
 		if file.project.version != MANIFEST_VERSION {
 			return Err(ZenithError::UnsupportedProjectVersion);
 		}
 		validate_project_name(&file.project.name)?;
+		if let Some(folder) = &file.project.user_data {
+			validate_user_data_folder(folder)?;
+		}
 		Ok(file.project)
 	}
 
@@ -105,6 +138,34 @@ mod tests {
 		assert_eq!(m.project_version, Version::new(0, 1, 0), "project version");
 		assert!(m.engine_version.matches(&Version::new(0, 1, 5)), "engine requirement");
 		assert_eq!(Manifest::parse(&m.to_toml()?)?, m, "serialization round trip");
+		Ok(())
+	}
+
+	#[test]
+	fn the_folder_of_the_data_of_the_player_defaults_to_the_name() -> ZResult<()> {
+		let plain = Manifest::new("Game")?;
+		assert_eq!(plain.user_data_folder(), "Game", "the project name");
+		assert!(
+			!plain.to_toml()?.contains("user_data"),
+			"nothing is written for the default"
+		);
+
+		let mut chosen = Manifest::new("Game")?;
+		chosen.user_data = Some("Studio/Zenith Game".to_string());
+		assert_eq!(chosen.user_data_folder(), "Studio/Zenith Game", "the chosen one");
+		assert_eq!(Manifest::parse(&chosen.to_toml()?)?, chosen, "it survives a round trip");
+
+		let text = |folder: &str| {
+			format!(
+				"[project]\nname = \"Game\"\nproject_version = \"0.1.0\"\nengine_version = \"^0.1.0\"\nversion = 1\nuser_data = \"{folder}\"\n"
+			)
+		};
+		for bad in ["", "..", "a/../b", "/abs", "a//b", "C:/x", "a\\b", "CON", "x."] {
+			assert!(
+				matches!(Manifest::parse(&text(bad)), Err(ZenithError::InvalidSettings(_))),
+				"{bad:?} must be refused"
+			);
+		}
 		Ok(())
 	}
 
