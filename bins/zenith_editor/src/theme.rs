@@ -1,4 +1,4 @@
-use dear_app::imgui::{ColorOverride, StyleColor, StyleTweaks, TableTheme, Theme, ThemePreset, WindowTheme};
+use dear_imgui_rs::{ColorOverride, StyleColor, StyleTweaks, TableTheme, Theme, ThemePreset, WindowTheme};
 
 const BG_PRIMARY: [f32; 4] = [0.1216, 0.1216, 0.1216, 1.0];
 const BG_SECONDARY: [f32; 4] = [0.1490, 0.1490, 0.1490, 1.0];
@@ -8,11 +8,11 @@ const TEXT_PRIMARY: [f32; 4] = [0.9608, 0.9608, 0.9608, 1.0];
 // pub const TEXT_ON_ACCENT: [f32; 4] = [0.1804, 0.1804, 0.1804, 1.0];
 const TEXT_DISABLED: [f32; 4] = [0.5, 0.5, 0.5, 1.0];
 
-const ACCENT_DARKEST: [f32; 4] = [0.0784, 0.3020, 0.2039, 1.0];
-const ACCENT_MUTED: [f32; 4] = [0.1059, 0.4314, 0.2902, 1.0];
-const ACCENT_MUTED_HOVER: [f32; 4] = [0.1216, 0.4784, 0.3216, 1.0];
-const ACCENT: [f32; 4] = [0.1333, 0.4902, 0.3333, 1.0];
-const ACCENT_BRIGHT: [f32; 4] = [0.1804, 0.6118, 0.4196, 1.0];
+const ACCENT_DARKEST: [f32; 4] = [0.1400, 0.1826, 0.2600, 1.0];
+const ACCENT_MUTED: [f32; 4] = [0.2380, 0.3104, 0.4420, 1.0];
+const ACCENT_MUTED_HOVER: [f32; 4] = [0.2870, 0.3743, 0.5330, 1.0];
+const ACCENT: [f32; 4] = [121.0 / 255.0, 137.0 / 255.0, 166.0 / 255.0, 1.0];
+const ACCENT_BRIGHT: [f32; 4] = [0.5800, 0.6652, 0.8200, 1.0];
 
 // pub const COLOR_ERROR: [f32; 4] = [0.8275, 0.1843, 0.1843, 1.0];
 // pub const COLOR_WARNING: [f32; 4] = [0.9608, 0.6510, 0.1373, 1.0];
@@ -201,7 +201,7 @@ pub fn zenith_theme() -> Theme {
 			},
 		],
 		style: StyleTweaks {
-			window_rounding: Some(6.0),
+			window_rounding: Some(12.0),
 			child_rounding: Some(6.0),
 			frame_rounding: Some(4.0),
 			popup_rounding: Some(6.0),

@@ -19,7 +19,7 @@ fn default_outputs_live_in_build_and_are_ignored() -> TestResult {
 	assert!(file.is_file(), "written");
 	assert_eq!(
 		gitignore(&root)?,
-		"Temp/\nTrash/\n*.zenith-tmp\n# zenith:begin\n/Build/\n# zenith:end\n",
+		"Temp/\nTrash/\n.zenitheditor-backup/\n*.zenith-tmp\n# zenith:begin\n/Build/\n# zenith:end\n",
 		"Build/ went into the managed .gitignore block"
 	);
 

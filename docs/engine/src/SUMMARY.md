@@ -14,6 +14,10 @@
 - [Keyboard, mouse, gamepads and actions](./input.md)
 - [Saves and the data of the player](./saves.md)
 
+# Editor
+
+- [The editor: worlds, saving, the backup](./editor.md)
+
 # Building
 
 - [Building a project](./building/building.md)

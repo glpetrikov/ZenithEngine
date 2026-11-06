@@ -30,7 +30,7 @@ fn create_makes_the_whole_layout() -> TestResult {
 	);
 	assert_eq!(
 		std::fs::read_to_string(root.join(".gitignore"))?,
-		"Temp/\nTrash/\n*.zenith-tmp\n",
+		"Temp/\nTrash/\n.zenitheditor-backup/\n*.zenith-tmp\n",
 		"gitignore content"
 	);
 	assert_eq!(

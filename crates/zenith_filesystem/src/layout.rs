@@ -7,7 +7,7 @@ pub const MANIFEST_EXTENSION: &str = "zenithproject";
 pub const V1_FLAG: &str = ".v1";
 pub const GITIGNORE: &str = ".gitignore";
 /// Written into a new project's `.gitignore`.
-pub const DEFAULT_GITIGNORE: &str = "Temp/\nTrash/\n*.zenith-tmp\n";
+pub const DEFAULT_GITIGNORE: &str = "Temp/\nTrash/\n.zenitheditor-backup/\n*.zenith-tmp\n";
 /// Ending of the temporary file next to a file that is being replaced
 /// atomically (`write`, archive and folder builds).
 pub const TMP_SUFFIX: &str = ".zenith-tmp";
@@ -19,6 +19,9 @@ pub const DIR_SETTINGS: &str = "Settings";
 pub const DIR_TEMP: &str = "Temp";
 pub const DIR_TRASH: &str = "Trash";
 pub const DIR_GIT: &str = ".git";
+/// The editor puts the changes that were not saved here when it is stopped
+/// from outside, and offers them when the project is opened again.
+pub const DIR_EDITOR_BACKUP: &str = ".zenitheditor-backup";
 /// Not created with the project; appears when something asks for it.
 pub const DIR_BUILD: &str = "Build";
 
@@ -46,7 +49,7 @@ pub const BUILTIN_SCHEMES: &[(&str, &str)] = &[
 ];
 
 /// Never reported by the watcher, whatever the rules say.
-pub const ALWAYS_IGNORED_DIRS: &[&str] = &[DIR_TEMP, DIR_TRASH, DIR_BUILD, DIR_GIT];
+pub const ALWAYS_IGNORED_DIRS: &[&str] = &[DIR_TEMP, DIR_TRASH, DIR_BUILD, DIR_GIT, DIR_EDITOR_BACKUP];
 
 pub const CACHE_CONFIG_FILE: &str = "Settings/CacheConfig.toml";
 pub const BUILD_CONFIG_FILE: &str = "Settings/Build.toml";

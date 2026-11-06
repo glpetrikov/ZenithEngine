@@ -14,14 +14,14 @@ fn a_folder_inside_the_project_is_created_and_listed() -> TestResult {
 	assert!(root.join("Build").is_dir(), "the folder exists");
 	assert_eq!(
 		gitignore(&root)?,
-		"Temp/\nTrash/\n*.zenith-tmp\n# zenith:begin\n/Build/\n# zenith:end\n",
+		"Temp/\nTrash/\n.zenitheditor-backup/\n*.zenith-tmp\n# zenith:begin\n/Build/\n# zenith:end\n",
 		"an anchored entry in a managed block; the original lines are untouched"
 	);
 	project.ensure_ignored_dir(root.join("Build"))?;
 	project.ensure_ignored_dir(root.join("Out").join("Dist"))?;
 	assert_eq!(
 		gitignore(&root)?,
-		"Temp/\nTrash/\n*.zenith-tmp\n# zenith:begin\n/Build/\n/Out/Dist/\n# zenith:end\n",
+		"Temp/\nTrash/\n.zenitheditor-backup/\n*.zenith-tmp\n# zenith:begin\n/Build/\n/Out/Dist/\n# zenith:end\n",
 		"repeating changes nothing, a nested folder is added to the same block"
 	);
 	assert!(root.join("Out/Dist").is_dir(), "parents are created");
@@ -97,7 +97,7 @@ fn removing_the_folder_through_the_project_drops_the_entry() -> TestResult {
 	let id = project.remove(&z("dist://win")?)?;
 	assert_eq!(
 		gitignore(&root)?,
-		"Temp/\nTrash/\n*.zenith-tmp\n# zenith:begin\n/Build/\n# zenith:end\n",
+		"Temp/\nTrash/\n.zenitheditor-backup/\n*.zenith-tmp\n# zenith:begin\n/Build/\n# zenith:end\n",
 		"the entry of the removed folder is gone, the other stays"
 	);
 	let entry: toml::Table =
@@ -121,7 +121,7 @@ fn the_block_disappears_with_its_last_folder() -> TestResult {
 	project.remove(&z("build://x")?)?;
 	assert_eq!(
 		gitignore(&root)?,
-		"Temp/\nTrash/\n*.zenith-tmp\n",
+		"Temp/\nTrash/\n.zenitheditor-backup/\n*.zenith-tmp\n",
 		"an empty block is removed entirely"
 	);
 	Ok(())
@@ -135,7 +135,7 @@ fn moving_a_folder_through_the_project_syncs_too() -> TestResult {
 	project.move_to(&z("out://a")?, &z("Assets://moved")?)?;
 	assert_eq!(
 		gitignore(&root)?,
-		"Temp/\nTrash/\n*.zenith-tmp\n",
+		"Temp/\nTrash/\n.zenitheditor-backup/\n*.zenith-tmp\n",
 		"the old location is no longer listed"
 	);
 	Ok(())
@@ -147,7 +147,11 @@ fn an_explicit_sync_cleans_up_stale_entries_and_open_leaves_the_file_alone() -> 
 	project.ensure_ignored_dir(root.join("Build"))?;
 	std::fs::remove_dir(root.join("Build"))?;
 	project.sync_gitignore()?;
-	assert_eq!(gitignore(&root)?, "Temp/\nTrash/\n*.zenith-tmp\n", "explicit sync");
+	assert_eq!(
+		gitignore(&root)?,
+		"Temp/\nTrash/\n.zenitheditor-backup/\n*.zenith-tmp\n",
+		"explicit sync"
+	);
 
 	project.ensure_ignored_dir(root.join("Build"))?;
 	drop(project);

@@ -13,7 +13,7 @@ Game/
   Settings/
   Temp/
   Trash/
-  .gitignore            Temp/, Trash/ and *.zenith-tmp (one per line)
+  .gitignore            Temp/, Trash/, .zenitheditor-backup/ and *.zenith-tmp (one per line)
   .v1                   empty flag file: folder structure version 1
   Game.zenithproject    the manifest
 ```

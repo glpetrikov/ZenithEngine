@@ -71,8 +71,9 @@ folder is inside the project and the project has a `.gitignore`, it adds an
 anchored entry such as `/Build/`. A folder outside the project is only created.
 `zenith_build` calls it for the parent of every output (for the output itself if it is a folder build straight in the project root).
 
-A new project's `.gitignore` starts with `Temp/`, `Trash/` and `*.zenith-tmp`
-(the leftover of a write that was interrupted half-way: files are written to a
+A new project's `.gitignore` starts with `Temp/`, `Trash/`, `.zenitheditor-backup/`
+(where the editor puts changes that were not saved, see [the editor](../editor.md))
+and `*.zenith-tmp` (the leftover of a write that was interrupted half-way: files are written to a
 `.<name>.<random>.zenith-tmp` next to the target and renamed). Older projects
 can add the last line themselves.
 
@@ -81,6 +82,7 @@ Zenith keeps its entries in one block at the end of `.gitignore`:
 ```gitignore
 Temp/
 Trash/
+.zenitheditor-backup/
 *.zenith-tmp
 # zenith:begin
 /Build/

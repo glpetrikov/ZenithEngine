@@ -9,12 +9,29 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-dear-app = "0.18.0"
+# The window, the GPU and the UI: our own loop on these (see `app.rs`).
+winit = "0.30.13"
+dear-imgui-rs = "0.18.0"
+dear-imgui-winit = "0.18.0"
+dear-imgui-wgpu = "0.18.0"
+pollster = "1.0.1"
+# Ctrl+C (and SIGTERM, closing the console) end the editor the way closing the window does.
+ctrlc = { version = "3", features = ["termination"] }
+
 zenith_error = { version = "0.1.0", path = "../../crates/zenith_error" }
 zenith_log = { version = "0.1.0", path = "../../crates/zenith_log" }
 zenith_package = { version = "0.1.0", path = "../../crates/zenith_package" }
+zenith_filesystem = { version = "0.1.0", path = "../../crates/zenith_filesystem" }
+zenith_world = { version = "0.1.0", path = "../../crates/zenith_world" }
+zenith_input = { version = "0.1.0", path = "../../crates/zenith_input", features = ["winit", "gamepad"] }
 dirs = "7.0.0"
 rfd = "0.17.2"
+serde = { version = "1", features = ["derive"] }
+toml = "1.1.4"
+web-time = "1.1.0"
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

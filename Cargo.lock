@@ -925,22 +925,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
-name = "dear-app"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0d1d5000187bc27946bf23fdb6c4b0a73d8cc7db96c9c2a43602f9f7539cc71"
-dependencies = [
- "dear-imgui-rs",
- "dear-imgui-wgpu",
- "dear-imgui-winit",
- "pollster 1.0.1",
- "thiserror 2.0.20",
- "tracing",
- "wgpu",
- "winit",
-]
-
-[[package]]
 name = "dear-imgui-build-support"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4785,12 +4769,24 @@ dependencies = [
 name = "zenith_editor"
 version = "0.1.0"
 dependencies = [
- "dear-app",
+ "ctrlc",
+ "dear-imgui-rs",
+ "dear-imgui-wgpu",
+ "dear-imgui-winit",
  "dirs",
+ "pollster 1.0.1",
  "rfd",
+ "serde",
+ "tempfile",
+ "toml",
+ "web-time",
+ "winit",
  "zenith_error",
+ "zenith_filesystem",
+ "zenith_input",
  "zenith_log",
  "zenith_package",
+ "zenith_world",
 ]
 
 [[package]]
