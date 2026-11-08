@@ -8,6 +8,50 @@ pub struct Texture {
 }
 
 impl Texture {
+	/// The format of every depth buffer in the renderer.
+	pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+	/// ## Creates a depth buffer of the size of the surface
+	///
+	/// It has to be made again when the surface changes its size: a depth
+	/// buffer smaller or bigger than the color attachment is an error.
+	#[must_use]
+	pub fn create_depth_texture(device: &wgpu::Device, width: u32, height: u32, label: &str) -> Self {
+		let size = wgpu::Extent3d {
+			width: width.max(1),
+			height: height.max(1),
+			depth_or_array_layers: 1,
+		};
+		let texture = device.create_texture(&wgpu::TextureDescriptor {
+			label: Some(label),
+			size,
+			mip_level_count: 1,
+			sample_count: 1,
+			dimension: wgpu::TextureDimension::D2,
+			format: Self::DEPTH_FORMAT,
+			// RENDER_ATTACHMENT: the passes draw into it. TEXTURE_BINDING: a
+			// later pass (a shadow, a fog) can read it.
+			usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+			view_formats: &[],
+		});
+
+		let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+		let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+			address_mode_u: wgpu::AddressMode::ClampToEdge,
+			address_mode_v: wgpu::AddressMode::ClampToEdge,
+			address_mode_w: wgpu::AddressMode::ClampToEdge,
+			mag_filter: wgpu::FilterMode::Linear,
+			min_filter: wgpu::FilterMode::Linear,
+			mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+			compare: Some(wgpu::CompareFunction::LessEqual),
+			lod_min_clamp: 0.0,
+			lod_max_clamp: 100.0,
+			..Default::default()
+		});
+
+		Self { texture, view, sampler }
+	}
+
 	/// ## Creates a texture from bytes
 	///
 	/// ## Errors
