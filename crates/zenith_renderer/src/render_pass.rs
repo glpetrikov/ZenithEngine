@@ -1,6 +1,6 @@
 use zenith_error::{ZResult, ZenithError};
 
-use crate::{pick_surface_format, render_target::RenderTargetHandle, types::Vertex};
+use crate::{pick_surface_format, render_target::RenderTargetHandle, instance::InstanceRaw, types::Vertex};
 
 pub struct RenderPass {
 	// TODO: add color for future imnodes render graph editor
@@ -43,7 +43,7 @@ impl RenderPass {
 			vertex: wgpu::VertexState {
 				module: &shader,
 				entry_point: Some("vs_main"),
-				buffers: &[Some(Vertex::desc())],
+				buffers: &[Some(Vertex::desc()), Some(InstanceRaw::desc())],
 				compilation_options: wgpu::PipelineCompilationOptions::default(),
 			},
 			fragment: Some(wgpu::FragmentState {
