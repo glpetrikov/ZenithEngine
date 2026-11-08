@@ -27,9 +27,15 @@ image = { version = "0.25.10", default-features = false, features = [
 
 # Only reads files, so it works without the `fs` feature (the browser has no folders).
 zenith_filesystem = { version = "0.1.0", path = "../zenith_filesystem", default-features = false }
+tobj = { version = "4", default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 web-time = "1.1.0"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+pollster = "0.4"
+# The tests open the sample project on disk, which needs the `fs` feature.
+zenith_filesystem = { version = "0.1.0", path = "../zenith_filesystem" }
