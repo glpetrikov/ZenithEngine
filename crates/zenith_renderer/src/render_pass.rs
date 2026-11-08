@@ -1,6 +1,6 @@
 use zenith_error::{ZResult, ZenithError};
 
-use crate::{pick_surface_format, render_target::RenderTargetHandle, instance::InstanceRaw, types::Vertex};
+use crate::{pick_surface_format, render_target::RenderTargetHandle, texture::Texture, instance::InstanceRaw, types::Vertex};
 
 pub struct RenderPass {
 	// TODO: add color for future imnodes render graph editor
@@ -65,7 +65,14 @@ impl RenderPass {
 				unclipped_depth: false,
 				conservative: false,
 			},
-			depth_stencil: None,
+			depth_stencil: Some(wgpu::DepthStencilState {
+				format: Texture::DEPTH_FORMAT,
+				depth_write_enabled: Some(true),
+				// A fragment closer to the camera hides the one behind it.
+				depth_compare: Some(wgpu::CompareFunction::Less),
+				stencil: wgpu::StencilState::default(),
+				bias: wgpu::DepthBiasState::default(),
+			}),
 			multisample: wgpu::MultisampleState {
 				count: 1,
 				mask: !0,
