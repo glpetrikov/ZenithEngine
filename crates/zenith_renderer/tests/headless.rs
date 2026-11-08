@@ -7,7 +7,7 @@
 // A test that cannot go on has to stop: panicking is how it fails.
 #![allow(clippy::expect_used)]
 
-use glam::Vec2;
+use glam::{Vec2, Vec3};
 use zenith_filesystem::Project;
 use zenith_renderer::{camera::CameraInput, renderer::Renderer};
 
@@ -123,6 +123,11 @@ fn dump(name: &str, pixels: &[u8]) {
 	}
 }
 
+const fn pixel(pixels: &[u8], x: u32, y: u32) -> [u8; 3] {
+	let i = ((y * WIDTH + x) * 4) as usize;
+	[pixels[i], pixels[i + 1], pixels[i + 2]]
+}
+
 fn distinct_colors(pixels: &[u8]) -> usize {
 	let mut seen = std::collections::HashSet::new();
 	for p in pixels.as_chunks::<4>().0 {
@@ -173,4 +178,62 @@ fn the_camera_turns_and_moves() {
 	let after = frame(&gpu, &renderer);
 	dump("camera-moved", &after);
 	assert_ne!(before, after, "the view did not change");
+}
+
+/// The sky of the sample is brightest around its sun, which is at a longitude
+/// of -75 degrees and 12 degrees above the horizon.
+#[test]
+fn the_sky_and_the_sun_are_seen() {
+	let Some(gpu) = gpu() else {
+		return;
+	};
+	let mut renderer = renderer(&gpu);
+
+	// High above the cubes, looking at the sun.
+	renderer.camera_mut().position = Vec3::new(0.0, 30.0, 0.0);
+	renderer.camera_mut().yaw = (-75.0_f32).to_radians();
+	renderer.camera_mut().pitch = 12.0_f32.to_radians();
+	renderer.update(0.0, &CameraInput::default());
+	let toward_the_sun = frame(&gpu, &renderer);
+	dump("sky-sun", &toward_the_sun);
+
+	// The sun is much brighter than white, and tone mapping leaves it white.
+	let (cx, cy) = (WIDTH / 2, HEIGHT / 2);
+	let centre = pixel(&toward_the_sun, cx, cy);
+	assert!(centre.iter().all(|&c| c > 245), "the sun is not white: {centre:?}");
+
+	// Looking straight up: the sky is blue, not the clear color of the scene.
+	renderer.camera_mut().pitch = 80.0_f32.to_radians();
+	renderer.update(0.0, &CameraInput::default());
+	let up = frame(&gpu, &renderer);
+	dump("sky-up", &up);
+	let zenith = pixel(&up, cx, cy);
+	assert!(zenith[2] > zenith[0], "the zenith should be blue: {zenith:?}");
+
+	// Looking down at the ground of the sky: darker than the glow of the sun.
+	renderer.camera_mut().position = Vec3::new(0.0, 60.0, 0.0);
+	renderer.camera_mut().pitch = (-80.0_f32).to_radians();
+	renderer.update(0.0, &CameraInput::default());
+	let down = frame(&gpu, &renderer);
+	dump("sky-down", &down);
+	let sum = |p: [u8; 3]| p.iter().map(|&c| u32::from(c)).sum::<u32>();
+	assert!(
+		sum(pixel(&down, 5, 5)) < sum(centre),
+		"the ground is brighter than the sun"
+	);
+}
+
+#[test]
+fn a_cube_close_up_reflects_the_sky() {
+	let Some(gpu) = gpu() else {
+		return;
+	};
+	let mut renderer = renderer(&gpu);
+	renderer.camera_mut().position = Vec3::new(-1.0, 1.5, 4.0);
+	renderer.camera_mut().yaw = (-80.0_f32).to_radians();
+	renderer.camera_mut().pitch = (-15.0_f32).to_radians();
+	renderer.update(0.0, &CameraInput::default());
+	let pixels = frame(&gpu, &renderer);
+	dump("closeup", &pixels);
+	assert!(distinct_colors(&pixels) > 500);
 }
