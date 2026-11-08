@@ -54,11 +54,21 @@ impl Texture {
 
 	/// ## Creates a texture from bytes
 	///
+	/// `is_normal_map` says what the pixels are. Colors are stored in sRGB and
+	/// the GPU turns them linear when it reads them; the pixels of a normal map
+	/// are *directions*, which must be read as they are.
+	///
 	/// ## Errors
 	/// if image can't make image from bytes
-	pub fn from_bytes(device: &wgpu::Device, queue: &wgpu::Queue, bytes: &[u8], label: &str) -> ZResult<Self> {
+	pub fn from_bytes(
+		device: &wgpu::Device,
+		queue: &wgpu::Queue,
+		bytes: &[u8],
+		label: &str,
+		is_normal_map: bool,
+	) -> ZResult<Self> {
 		let img = image::load_from_memory(bytes).map_err(|e| ZenithError::ImageDecodeFailed(e.to_string()))?;
-		Self::from_image(device, queue, &img, Some(label))
+		Self::from_image(device, queue, &img, Some(label), is_normal_map)
 	}
 
 	/// ## Creates a texture from `image`'s `Image`
@@ -70,13 +80,47 @@ impl Texture {
 		queue: &wgpu::Queue,
 		img: &image::DynamicImage,
 		label: Option<&str>,
+		is_normal_map: bool,
 	) -> ZResult<Self> {
 		let rgba = img.to_rgba8();
-		let dimensions = img.dimensions();
+		let (width, height) = img.dimensions();
+		Ok(Self::from_rgba8(
+			device,
+			queue,
+			&rgba,
+			width,
+			height,
+			label,
+			is_normal_map,
+		))
+	}
 
+	/// A texture of one color. It stands in for a texture a material does not
+	/// have: white for a color, `(0.5, 0.5, 1.0)` (the normal does not tilt)
+	/// for a normal map.
+	#[must_use]
+	pub fn from_color(
+		device: &wgpu::Device,
+		queue: &wgpu::Queue,
+		rgba: [u8; 4],
+		label: &str,
+		is_normal_map: bool,
+	) -> Self {
+		Self::from_rgba8(device, queue, &rgba, 1, 1, Some(label), is_normal_map)
+	}
+
+	fn from_rgba8(
+		device: &wgpu::Device,
+		queue: &wgpu::Queue,
+		rgba: &[u8],
+		width: u32,
+		height: u32,
+		label: Option<&str>,
+		is_normal_map: bool,
+	) -> Self {
 		let size = wgpu::Extent3d {
-			width: dimensions.0,
-			height: dimensions.1,
+			width,
+			height,
 			depth_or_array_layers: 1,
 		};
 		let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -85,7 +129,11 @@ impl Texture {
 			mip_level_count: 1,
 			sample_count: 1,
 			dimension: wgpu::TextureDimension::D2,
-			format: wgpu::TextureFormat::Rgba8UnormSrgb,
+			format: if is_normal_map {
+				wgpu::TextureFormat::Rgba8Unorm
+			} else {
+				wgpu::TextureFormat::Rgba8UnormSrgb
+			},
 			usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
 			view_formats: &[],
 		});
@@ -97,26 +145,26 @@ impl Texture {
 				mip_level: 0,
 				origin: wgpu::Origin3d::ZERO,
 			},
-			&rgba,
+			rgba,
 			wgpu::TexelCopyBufferLayout {
 				offset: 0,
-				bytes_per_row: Some(4 * dimensions.0),
-				rows_per_image: Some(dimensions.1),
+				bytes_per_row: Some(4 * width),
+				rows_per_image: Some(height),
 			},
 			size,
 		);
 
 		let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 		let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-			address_mode_u: wgpu::AddressMode::ClampToEdge,
-			address_mode_v: wgpu::AddressMode::ClampToEdge,
-			address_mode_w: wgpu::AddressMode::ClampToEdge,
+			address_mode_u: wgpu::AddressMode::Repeat,
+			address_mode_v: wgpu::AddressMode::Repeat,
+			address_mode_w: wgpu::AddressMode::Repeat,
 			mag_filter: wgpu::FilterMode::Linear,
-			min_filter: wgpu::FilterMode::Nearest,
+			min_filter: wgpu::FilterMode::Linear,
 			mipmap_filter: wgpu::MipmapFilterMode::Nearest,
 			..Default::default()
 		});
 
-		Ok(Self { texture, view, sampler })
+		Self { texture, view, sampler }
 	}
 }

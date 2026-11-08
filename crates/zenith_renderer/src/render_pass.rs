@@ -1,7 +1,7 @@
-use zenith_error::{ZResult, ZenithError};
+use crate::{render_target::RenderTargetHandle, texture::Texture};
 
-use crate::{pick_surface_format, render_target::RenderTargetHandle, texture::Texture, instance::InstanceRaw, types::Vertex};
-
+/// A render pipeline with the name and the clear color of the pass that uses
+/// it.
 pub struct RenderPass {
 	// TODO: add color for future imnodes render graph editor
 	// TODO: add reads/writes and other things
@@ -12,79 +12,11 @@ pub struct RenderPass {
 }
 
 impl RenderPass {
-	/// Create new render pass
-	///
-	/// # Errors
-	/// return error if cannot find supported surface format.
-	pub fn new(
-		name: &str,
-		device: &wgpu::Device,
-		surface_capability: &wgpu::SurfaceCapabilities,
-		texture_bind_group_layout: &wgpu::BindGroupLayout,
-		camera_bind_group_layout: &wgpu::BindGroupLayout,
-	) -> ZResult<Self> {
-		let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-			label: Some(format!("{name} Shader Module").as_str()),
-			source: wgpu::ShaderSource::Wgsl(include_str!("triangle.wgsl").into()),
-		});
-
-		let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-			label: Some("Render Pipeline Layout"),
-			bind_group_layouts: &[Some(texture_bind_group_layout), Some(camera_bind_group_layout)],
-			immediate_size: 0,
-		});
-
-		let formats = pick_surface_format(surface_capability)
-			.ok_or_else(|| ZenithError::NoSuitableSurfaceFormat("no supported surface format".into()))?;
-
-		let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-			label: Some(format!("{name} Pipeline").as_str()),
-			layout: Some(&render_pipeline_layout),
-			vertex: wgpu::VertexState {
-				module: &shader,
-				entry_point: Some("vs_main"),
-				buffers: &[Some(Vertex::desc()), Some(InstanceRaw::desc())],
-				compilation_options: wgpu::PipelineCompilationOptions::default(),
-			},
-			fragment: Some(wgpu::FragmentState {
-				module: &shader,
-				entry_point: Some("fs_main"),
-				targets: &[Some(wgpu::ColorTargetState {
-					format: formats.view,
-					blend: Some(wgpu::BlendState::REPLACE),
-					write_mask: wgpu::ColorWrites::ALL,
-				})],
-				compilation_options: wgpu::PipelineCompilationOptions::default(),
-			}),
-			primitive: wgpu::PrimitiveState {
-				topology: wgpu::PrimitiveTopology::TriangleList,
-				strip_index_format: None,
-				front_face: wgpu::FrontFace::Ccw,
-				cull_mode: Some(wgpu::Face::Back),
-				polygon_mode: wgpu::PolygonMode::Fill,
-				unclipped_depth: false,
-				conservative: false,
-			},
-			depth_stencil: Some(wgpu::DepthStencilState {
-				format: Texture::DEPTH_FORMAT,
-				depth_write_enabled: Some(true),
-				// A fragment closer to the camera hides the one behind it.
-				depth_compare: Some(wgpu::CompareFunction::Less),
-				stencil: wgpu::StencilState::default(),
-				bias: wgpu::DepthBiasState::default(),
-			}),
-			multisample: wgpu::MultisampleState {
-				count: 1,
-				mask: !0,
-				alpha_to_coverage_enabled: false,
-			},
-			multiview_mask: None,
-			cache: None, // TODO: Add Cache
-		});
-
-		Ok(Self {
+	#[must_use]
+	pub fn new(name: &str, pipeline: wgpu::RenderPipeline) -> Self {
+		Self {
 			name: name.to_string(),
-			pipeline: render_pipeline,
+			pipeline,
 			color_targets: vec![],
 			load_op: wgpu::LoadOp::Clear(wgpu::Color {
 				r: 0.1,
@@ -92,6 +24,83 @@ impl RenderPass {
 				b: 0.5,
 				a: 1.0,
 			}),
-		})
+		}
 	}
+}
+
+/// What differs between the pipelines of the renderer; the rest of a pipeline
+/// (triangle lists, counter-clockwise front faces, no blending) is the same.
+pub struct PipelineDesc<'a> {
+	pub label: &'a str,
+	pub layout: &'a wgpu::PipelineLayout,
+	pub shader: &'a wgpu::ShaderModule,
+	pub vertex_layouts: &'a [wgpu::VertexBufferLayout<'a>],
+	pub color_format: wgpu::TextureFormat,
+	/// `None`: no depth buffer.
+	pub depth: Option<DepthDesc>,
+	/// `None`: both sides of a triangle are drawn.
+	pub cull_mode: Option<wgpu::Face>,
+	pub vs_entry: &'a str,
+	pub fs_entry: &'a str,
+}
+
+#[derive(Clone, Copy)]
+pub struct DepthDesc {
+	pub write: bool,
+	pub compare: wgpu::CompareFunction,
+}
+
+impl DepthDesc {
+	/// Closer fragments hide those behind them, and are remembered.
+	pub const SOLID: Self = Self {
+		write: true,
+		compare: wgpu::CompareFunction::Less,
+	};
+}
+
+#[must_use]
+pub fn create_render_pipeline(device: &wgpu::Device, desc: &PipelineDesc<'_>) -> wgpu::RenderPipeline {
+	device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+		label: Some(desc.label),
+		layout: Some(desc.layout),
+		vertex: wgpu::VertexState {
+			module: desc.shader,
+			entry_point: Some(desc.vs_entry),
+			buffers: &desc.vertex_layouts.iter().cloned().map(Some).collect::<Vec<_>>(),
+			compilation_options: wgpu::PipelineCompilationOptions::default(),
+		},
+		fragment: Some(wgpu::FragmentState {
+			module: desc.shader,
+			entry_point: Some(desc.fs_entry),
+			targets: &[Some(wgpu::ColorTargetState {
+				format: desc.color_format,
+				blend: Some(wgpu::BlendState::REPLACE),
+				write_mask: wgpu::ColorWrites::ALL,
+			})],
+			compilation_options: wgpu::PipelineCompilationOptions::default(),
+		}),
+		primitive: wgpu::PrimitiveState {
+			topology: wgpu::PrimitiveTopology::TriangleList,
+			strip_index_format: None,
+			front_face: wgpu::FrontFace::Ccw,
+			cull_mode: desc.cull_mode,
+			polygon_mode: wgpu::PolygonMode::Fill,
+			unclipped_depth: false,
+			conservative: false,
+		},
+		depth_stencil: desc.depth.map(|depth| wgpu::DepthStencilState {
+			format: Texture::DEPTH_FORMAT,
+			depth_write_enabled: Some(depth.write),
+			depth_compare: Some(depth.compare),
+			stencil: wgpu::StencilState::default(),
+			bias: wgpu::DepthBiasState::default(),
+		}),
+		multisample: wgpu::MultisampleState {
+			count: 1,
+			mask: !0,
+			alpha_to_coverage_enabled: false,
+		},
+		multiview_mask: None,
+		cache: None, // TODO: Add Cache
+	})
 }

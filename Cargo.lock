@@ -3565,6 +3565,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "tobj"
+version = "4.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6eb8e04167c1c0c76b5de63226fd733485ad63ef71e40de31e16272f47b099e2"
+
+[[package]]
 name = "toml"
 version = "1.1.6+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4891,7 +4897,9 @@ dependencies = [
  "bytemuck",
  "glam 0.34.1",
  "image",
+ "pollster 0.4.0",
  "serde",
+ "tobj",
  "web-time",
  "wgpu",
  "winit",

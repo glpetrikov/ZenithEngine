@@ -2,27 +2,13 @@ use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
-use glam::{Quat, Vec3};
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
-use wgpu::util::DeviceExt;
 use zenith_error::{ZResult, ZenithError};
-use zenith_filesystem::ZPath;
 
-use crate::{
-	camera::{Camera, CameraUniform},
-	instance::Instance,
-	pick_surface_format,
-	render_pass::RenderPass,
-	texture,
-	types::{INDICES, PowerMode, VERTICES},
-};
+use crate::{camera::CameraInput, pick_surface_format, renderer::Renderer, types::PowerMode};
 
-/// The copies of the mesh stand in a square of this many per side.
-const INSTANCES_PER_ROW: u32 = 10;
-/// How far from each other, along both axes.
-const INSTANCE_SPACING: f32 = 3.0;
-
+/// A window to draw the [`Renderer`] into.
 pub struct Viewport {
 	window: Arc<winit::window::Window>,
 
@@ -33,29 +19,7 @@ pub struct Viewport {
 	view_format: wgpu::TextureFormat,
 	is_surface_configured: bool,
 
-	render_pass: RenderPass,
-	depth_texture: texture::Texture,
-
-	vertex_buffer: wgpu::Buffer,
-	index_buffer: wgpu::Buffer,
-
-	num_indices: u32,
-
-	instances: Vec<Instance>,
-	instance_buffer: wgpu::Buffer,
-
-	diffuse_bind_group: wgpu::BindGroup,
-	#[allow(unused)]
-	diffuse_texture: texture::Texture,
-
-	#[allow(unused)]
-	camera: Camera,
-	#[allow(unused)]
-	camera_uniform: CameraUniform,
-	#[allow(unused)]
-	camera_buffer: wgpu::Buffer,
-
-	camera_bind_group: wgpu::BindGroup,
+	renderer: Renderer,
 
 	base_title: String,
 	frame_count: u32,
@@ -165,145 +129,18 @@ impl Viewport {
 
 		surface.configure(&device, &config);
 
-		let diffuse_bytes = project.read_bytes(&ZPath::new("Assets://Apple.png")?)?;
-		let diffuse_texture = texture::Texture::from_bytes(&device, &queue, &diffuse_bytes, "Apple.png")?;
-
-		let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-			entries: &[
-				wgpu::BindGroupLayoutEntry {
-					binding: 0,
-					visibility: wgpu::ShaderStages::FRAGMENT,
-					ty: wgpu::BindingType::Texture {
-						multisampled: false,
-						view_dimension: wgpu::TextureViewDimension::D2,
-						sample_type: wgpu::TextureSampleType::Float { filterable: true },
-					},
-					count: None,
-				},
-				wgpu::BindGroupLayoutEntry {
-					binding: 1,
-					visibility: wgpu::ShaderStages::FRAGMENT,
-					ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-					count: None,
-				},
-			],
-			label: Some(&format!("{label} Texture Bind Group Layout")),
-		});
-
-		let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &texture_bind_group_layout,
-			entries: &[
-				wgpu::BindGroupEntry {
-					binding: 0,
-					resource: wgpu::BindingResource::TextureView(&diffuse_texture.view), // CHANGED!
-				},
-				wgpu::BindGroupEntry {
-					binding: 1,
-					resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler), // CHANGED!
-				},
-			],
-			label: Some(&format!("{label} Diffuse Bind Group")),
-		});
-
-		let camera = Camera {
-			eye: Vec3::new(0.0, 1.0, 2.0),
-			target: Vec3::ZERO,
-			up: Vec3::Y,
-			aspect: config.width as f32 / config.height as f32,
-			fovy: 45.0_f32.to_radians(),
-			znear: 0.1,
-			zfar: 1000.0,
-		};
-
-		let mut camera_uniform = CameraUniform::new();
-		camera_uniform.update_view_proj(&camera);
-
-		let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some(&format!("{label} Camera Buffer")),
-			contents: bytemuck::cast_slice(&[camera_uniform]),
-			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-		});
-
-		let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-			entries: &[wgpu::BindGroupLayoutEntry {
-				binding: 0,
-				visibility: wgpu::ShaderStages::VERTEX,
-				ty: wgpu::BindingType::Buffer {
-					ty: wgpu::BufferBindingType::Uniform,
-					has_dynamic_offset: false,
-					min_binding_size: None,
-				},
-				count: None,
-			}],
-			label: Some("camera_bind_group_layout"),
-		});
-
-		let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-			layout: &camera_bind_group_layout,
-			entries: &[wgpu::BindGroupEntry {
-				binding: 0,
-				resource: camera_buffer.as_entire_binding(),
-			}],
-			label: Some("camera_bind_group"),
-		});
-
-		println!("Aspect is {}", config.width as f32 / config.height as f32);
-
-		let depth_texture =
-			texture::Texture::create_depth_texture(&device, config.width, config.height, &format!("{label} Depth Texture"));
-
-		let render_pass = RenderPass::new(
-			"Render Pass",
+		let renderer = Renderer::new(
 			&device,
-			&surface_caps,
-			&texture_bind_group_layout,
-			&camera_bind_group_layout,
+			&queue,
+			formats.view,
+			config.width,
+			config.height,
+			project,
+			label,
 		)?;
 
-		let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some(format!("{label} Vertex Buffer").as_str()),
-			contents: bytemuck::cast_slice(VERTICES),
-			usage: wgpu::BufferUsages::VERTEX,
-		});
-
-		let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some("Index Buffer"),
-			contents: bytemuck::cast_slice(INDICES),
-			usage: wgpu::BufferUsages::INDEX,
-		});
-
-		let num_indices = INDICES.len() as u32;
-
-		let half = INSTANCES_PER_ROW as f32 * 0.5;
-		let instances = (0..INSTANCES_PER_ROW)
-			.flat_map(|z| {
-				(0..INSTANCES_PER_ROW).map(move |x| {
-					let position = Vec3::new(
-						(x as f32 + 0.5 - half) * INSTANCE_SPACING,
-						0.0,
-						(z as f32 + 0.5 - half) * INSTANCE_SPACING,
-					);
-					// Rotating around a zero-length axis is not possible, and the
-					// copy standing on the origin has none to go by.
-					let rotation = if position == Vec3::ZERO {
-						Quat::IDENTITY
-					} else {
-						Quat::from_axis_angle(position.normalize(), 45.0_f32.to_radians())
-					};
-					Instance { position, rotation }
-				})
-			})
-			.collect::<Vec<_>>();
-
-		let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-		let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some(&format!("{label} Instance Buffer")),
-			contents: bytemuck::cast_slice(&instance_data),
-			usage: wgpu::BufferUsages::VERTEX,
-		});
-
 		Ok(Self {
-			window: window.clone(),
+			window,
 
 			device,
 			surface,
@@ -313,29 +150,22 @@ impl Viewport {
 			view_format: formats.view,
 			is_surface_configured: true,
 
-			render_pass,
-			depth_texture,
-
-			vertex_buffer,
-			index_buffer,
-
-			num_indices,
-
-			instances,
-			instance_buffer,
-
-			diffuse_bind_group,
-			diffuse_texture,
-
-			camera,
-			camera_uniform,
-			camera_buffer,
-			camera_bind_group,
+			renderer,
 
 			base_title: "Zenith Engine".to_string(),
 			fps_timer: Instant::now(),
 			frame_count: 0,
 		})
+	}
+
+	/// Moves the camera by what the player asked in `dt` seconds, and goes on
+	/// with the scene.
+	pub fn update(&mut self, dt: f32, input: &CameraInput) {
+		self.renderer.update(dt, input);
+	}
+
+	pub const fn renderer_mut(&mut self) -> &mut Renderer {
+		&mut self.renderer
 	}
 
 	pub fn resize(&mut self, width: u32, height: u32) {
@@ -351,12 +181,7 @@ impl Viewport {
 		self.config.height = height.min(max);
 
 		self.surface.configure(&self.device, &self.config);
-		self.depth_texture = texture::Texture::create_depth_texture(
-			&self.device,
-			self.config.width,
-			self.config.height,
-			"Depth Texture",
-		);
+		self.renderer.resize(self.config.width, self.config.height);
 		self.is_surface_configured = true;
 	}
 
@@ -403,40 +228,7 @@ impl Viewport {
 			label: Some(encoder_label),
 		});
 
-		{
-			let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-				label: Some(render_pass_label),
-				color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-					view: &view,
-					resolve_target: None,
-					depth_slice: None,
-					ops: wgpu::Operations {
-						load: self.render_pass.load_op,
-						store: wgpu::StoreOp::Store,
-					},
-				})],
-				depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-					view: &self.depth_texture.view,
-					depth_ops: Some(wgpu::Operations {
-						load: wgpu::LoadOp::Clear(1.0),
-						store: wgpu::StoreOp::Store,
-					}),
-					stencil_ops: None,
-				}),
-				occlusion_query_set: None,
-				timestamp_writes: None,
-				multiview_mask: None,
-			});
-
-			render_pass.set_pipeline(&self.render_pass.pipeline);
-			render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-			render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
-			render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-			render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-			render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-
-			render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as u32);
-		}
+		self.renderer.render(&mut encoder, &view, render_pass_label);
 
 		self.queue.submit(std::iter::once(encoder.finish()));
 		self.queue.present(output);

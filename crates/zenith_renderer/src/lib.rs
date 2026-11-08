@@ -2,8 +2,11 @@ use crate::types::SurfaceFormats;
 
 pub mod camera;
 pub mod instance;
+pub mod light;
+pub mod model;
 pub mod render_pass;
 pub mod render_target;
+pub mod renderer;
 pub mod texture;
 pub mod types;
 pub mod viewport;

@@ -17,8 +17,8 @@ use winit::{
 	window::Window,
 };
 use zenith_error::{ZInternalResult, ZResult};
-use zenith_input::{Gamepads, ZKeyCode};
-use zenith_renderer::{types::PowerMode, viewport::Viewport};
+use zenith_input::{CursorMode, Gamepads, Input, ZKeyCode, ZMouseButton};
+use zenith_renderer::{camera::CameraInput, types::PowerMode, viewport::Viewport};
 use zenith_world::World;
 
 /// The file of the world the runtime starts with.
@@ -73,6 +73,43 @@ fn load_input(project: &zenith_filesystem::Project, world: &mut World) -> ZResul
 		zenith_log::warn!("The changes you made to the controls cannot be used: {e}");
 	}
 	Ok(world.input().overrides_toml())
+}
+
+/// What the player asks of the camera this frame: `W` `A` `S` `D` walk, `Space`
+/// and `Shift` go up and down, the wheel moves along the view, and the mouse
+/// turns the camera while the right button is held.
+///
+/// The right button also takes the cursor away (and gives it back), so the
+/// mouse can turn the camera as far as it likes.
+fn camera_input(input: &mut Input) -> CameraInput {
+	let axis = |plus: ZKeyCode, minus: ZKeyCode| {
+		f32::from(u8::from(input.is_key_pressed(plus))) - f32::from(u8::from(input.is_key_pressed(minus)))
+	};
+	let (forward, right, up) = (
+		axis(ZKeyCode::W, ZKeyCode::S),
+		axis(ZKeyCode::D, ZKeyCode::A),
+		axis(ZKeyCode::Space, ZKeyCode::LeftShift),
+	);
+
+	if input.is_mouse_just_pressed(ZMouseButton::Right) {
+		input.set_cursor_mode(CursorMode::Locked);
+	}
+	if input.is_mouse_just_released(ZMouseButton::Right) {
+		input.set_cursor_mode(CursorMode::Normal);
+	}
+	let look = if input.is_mouse_pressed(ZMouseButton::Right) {
+		input.mouse_delta()
+	} else {
+		glam::Vec2::ZERO
+	};
+
+	CameraInput {
+		forward,
+		right,
+		up,
+		look,
+		scroll: input.scroll().y,
+	}
 }
 
 pub struct State {
@@ -167,6 +204,10 @@ impl State {
 		if let Some(gamepads) = &mut self.gamepads {
 			gamepads.poll(&mut self.world.input_mut());
 		}
+		// Before the systems run: they end the frame, and the movement of the
+		// mouse of this frame is forgotten with it.
+		let camera = camera_input(&mut self.world.input_mut());
+		self.viewport.update(dt, &camera);
 		self.world.update_systems(dt);
 		self.carry_out_cursor_request();
 		self.overrides_timer += dt;
