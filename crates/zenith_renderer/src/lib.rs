@@ -1,6 +1,8 @@
 use crate::types::SurfaceFormats;
 
 pub mod camera;
+pub mod environment;
+pub mod hdr;
 pub mod instance;
 pub mod light;
 pub mod model;

@@ -44,6 +44,11 @@ struct VertexOutput {
     @location(1) tangent_position: vec3<f32>,
     @location(2) tangent_light_position: vec3<f32>,
     @location(3) tangent_view_position: vec3<f32>,
+    // The same in the world, for what is looked up by a world direction.
+    @location(4) world_position: vec3<f32>,
+    @location(5) world_normal: vec3<f32>,
+    @location(6) world_tangent: vec3<f32>,
+    @location(7) world_bitangent: vec3<f32>,
 }
 
 @vertex
@@ -80,6 +85,10 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput {
     out.tangent_position = tangent_matrix * world_position.xyz;
     out.tangent_view_position = tangent_matrix * camera.view_pos.xyz;
     out.tangent_light_position = tangent_matrix * light.position;
+    out.world_position = world_position.xyz;
+    out.world_normal = world_normal;
+    out.world_tangent = world_tangent;
+    out.world_bitangent = world_bitangent;
     return out;
 }
 
@@ -91,6 +100,14 @@ var s_diffuse: sampler;
 var t_normal: texture_2d<f32>;
 @group(0) @binding(3)
 var s_normal: sampler;
+
+@group(3) @binding(0)
+var env_map: texture_cube<f32>;
+@group(3) @binding(1)
+var env_sampler: sampler;
+
+// How much of the sky the surface throws back. The bricks are not mirrors.
+const REFLECTIVITY: f32 = 0.1;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -115,6 +132,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let specular_strength = pow(max(dot(tangent_normal, half_dir), 0.0), 32.0);
     let specular_color = specular_strength * light.color;
 
-    let result = (ambient_color + diffuse_color + specular_color) * object_color.xyz;
+    // The reflection: the view ray bounced off the surface (with the normal
+    // of the normal map, taken back to the world), looked up in the sky.
+    let tbn = mat3x3<f32>(in.world_tangent, in.world_bitangent, in.world_normal);
+    let world_normal = normalize(tbn * tangent_normal);
+    let world_view_dir = normalize(camera.view_pos.xyz - in.world_position);
+    let reflected = reflect(-world_view_dir, world_normal);
+    let reflection = textureSample(env_map, env_sampler, reflected).rgb;
+
+    let result = (ambient_color + diffuse_color + specular_color) * object_color.xyz + reflection * REFLECTIVITY;
     return vec4<f32>(result, object_color.a);
 }

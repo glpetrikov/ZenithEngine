@@ -10,6 +10,8 @@ use zenith_filesystem::{Project, ZPath};
 
 use crate::{
 	camera::{Camera, CameraController, CameraInput, CameraUniform, Projection},
+	environment::Environment,
+	hdr::HdrPipeline,
 	instance::{Instance, InstanceRaw},
 	light::Light,
 	model::{Material, Model, ModelVertex},
@@ -19,6 +21,9 @@ use crate::{
 
 /// The model of the scene, and where it lies in the project.
 const MODEL_PATH: &str = "Assets://Models/Cube/cube.obj";
+
+/// The sky: an equirectangular HDR picture.
+const SKY_PATH: &str = "Assets://Sky/pure-sky.hdr";
 
 /// The copies of the model stand in a square of this many per side.
 const INSTANCES_PER_ROW: u32 = 10;
@@ -44,15 +49,21 @@ pub struct Renderer {
 	instances: Vec<Instance>,
 	instance_buffer: wgpu::Buffer,
 
+	environment: Environment,
+
+	hdr: HdrPipeline,
+
 	scene_pass: RenderPass,
 	light_pipeline: wgpu::RenderPipeline,
+	sky_pipeline: wgpu::RenderPipeline,
 }
 
 impl Renderer {
 	/// ## Creates the renderer
 	///
 	/// `color_format` is the format of the view that [`Renderer::render`] will
-	/// be given.
+	/// be given. The scene itself is drawn in a high dynamic range format and
+	/// tone mapped into that view.
 	///
 	/// ## Errors
 	/// The project's error if the model or a texture cannot be read, and an
@@ -82,6 +93,7 @@ impl Renderer {
 			label: Some("camera_bind_group_layout"),
 		});
 		let light_bind_group_layout = Light::bind_group_layout(device);
+		let environment_layout = Environment::bind_group_layout(device);
 
 		let camera = Camera::new(
 			Vec3::new(0.0, 5.0, 10.0),
@@ -109,6 +121,10 @@ impl Renderer {
 		});
 
 		let light = Light::new(device, &light_bind_group_layout, Vec3::new(8.0, 6.0, 8.0), Vec3::ONE);
+
+		let environment = Environment::load(device, queue, project, &ZPath::new(SKY_PATH)?, &environment_layout)?;
+
+		let hdr = HdrPipeline::new(device, width, height, color_format);
 
 		let model = Model::load(device, queue, project, &ZPath::new(MODEL_PATH)?, &material_layout)?;
 
@@ -148,6 +164,7 @@ impl Renderer {
 					Some(&material_layout),
 					Some(&camera_bind_group_layout),
 					Some(&light_bind_group_layout),
+					Some(&environment_layout),
 				],
 				immediate_size: 0,
 			});
@@ -159,7 +176,7 @@ impl Renderer {
 					layout: &layout,
 					shader: &shader,
 					vertex_layouts: &[ModelVertex::desc(), InstanceRaw::desc()],
-					color_format,
+					color_format: HdrPipeline::FORMAT,
 					depth: Some(DepthDesc::SOLID),
 					cull_mode: Some(wgpu::Face::Back),
 					vs_entry: "vs_main",
@@ -183,9 +200,37 @@ impl Renderer {
 					layout: &layout,
 					shader: &shader,
 					vertex_layouts: &[ModelVertex::desc()],
-					color_format,
+					color_format: HdrPipeline::FORMAT,
 					depth: Some(DepthDesc::SOLID),
 					cull_mode: Some(wgpu::Face::Back),
+					vs_entry: "vs_main",
+					fs_entry: "fs_main",
+				},
+			)
+		};
+
+		let sky_pipeline = {
+			let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+				label: Some("Sky Pipeline Layout"),
+				bind_group_layouts: &[Some(&camera_bind_group_layout), Some(&environment_layout)],
+				immediate_size: 0,
+			});
+			let shader = device.create_shader_module(wgpu::include_wgsl!("shaders/sky.wgsl"));
+			create_render_pipeline(
+				device,
+				&PipelineDesc {
+					label: "Sky Pipeline",
+					layout: &layout,
+					shader: &shader,
+					vertex_layouts: &[],
+					color_format: HdrPipeline::FORMAT,
+					// On the far plane, so only what nothing hides is the sky;
+					// it must not write depth, or it would hide itself.
+					depth: Some(DepthDesc {
+						write: false,
+						compare: wgpu::CompareFunction::LessEqual,
+					}),
+					cull_mode: None,
 					vs_entry: "vs_main",
 					fs_entry: "fs_main",
 				},
@@ -211,14 +256,20 @@ impl Renderer {
 			instances,
 			instance_buffer,
 
+			environment,
+
+			hdr,
+
 			scene_pass,
 			light_pipeline,
+			sky_pipeline,
 		})
 	}
 
 	/// The size of what is drawn into changed.
 	pub fn resize(&mut self, width: u32, height: u32) {
 		self.projection.resize(width, height);
+		self.hdr.resize(&self.device, width, height);
 		self.depth_texture = Texture::create_depth_texture(&self.device, width, height, "Depth Texture");
 	}
 
@@ -245,12 +296,13 @@ impl Renderer {
 		self.light.orbit(&self.queue, dt);
 	}
 
-	/// Records the drawing of the scene into `output`.
+	/// Records the drawing of the scene into `output`: the scene into the HDR
+	/// texture, and from there, tone mapped, into `output`.
 	pub fn render(&self, encoder: &mut wgpu::CommandEncoder, output: &wgpu::TextureView, label: &str) {
 		let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
 			label: Some(label),
 			color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-				view: output,
+				view: self.hdr.view(),
 				resolve_target: None,
 				depth_slice: None,
 				ops: wgpu::Operations {
@@ -281,7 +333,17 @@ impl Renderer {
 		pass.set_pipeline(&self.scene_pass.pipeline);
 		pass.set_bind_group(1, &self.camera_bind_group, &[]);
 		pass.set_bind_group(2, &self.light.bind_group, &[]);
+		pass.set_bind_group(3, &self.environment.bind_group, &[]);
 		pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 		self.model.draw_instanced(&mut pass, 0..self.instances.len() as u32);
+
+		// The sky goes last: it only fills what nothing was drawn on.
+		pass.set_pipeline(&self.sky_pipeline);
+		pass.set_bind_group(0, &self.camera_bind_group, &[]);
+		pass.set_bind_group(1, &self.environment.bind_group, &[]);
+		pass.draw(0..3, 0..1);
+
+		drop(pass);
+		self.hdr.process(encoder, output);
 	}
 }
