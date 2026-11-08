@@ -2,7 +2,7 @@ use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
-use glam::Vec3;
+use glam::{Quat, Vec3};
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 use wgpu::util::DeviceExt;
@@ -11,11 +11,17 @@ use zenith_filesystem::ZPath;
 
 use crate::{
 	camera::{Camera, CameraUniform},
+	instance::Instance,
 	pick_surface_format,
 	render_pass::RenderPass,
 	texture,
 	types::{INDICES, PowerMode, VERTICES},
 };
+
+/// The copies of the mesh stand in a square of this many per side.
+const INSTANCES_PER_ROW: u32 = 10;
+/// How far from each other, along both axes.
+const INSTANCE_SPACING: f32 = 3.0;
 
 pub struct Viewport {
 	window: Arc<winit::window::Window>,
@@ -33,6 +39,9 @@ pub struct Viewport {
 	index_buffer: wgpu::Buffer,
 
 	num_indices: u32,
+
+	instances: Vec<Instance>,
+	instance_buffer: wgpu::Buffer,
 
 	diffuse_bind_group: wgpu::BindGroup,
 	#[allow(unused)]
@@ -200,7 +209,7 @@ impl Viewport {
 			target: Vec3::ZERO,
 			up: Vec3::Y,
 			aspect: config.width as f32 / config.height as f32,
-			fovy: 45.0,
+			fovy: 45.0_f32.to_radians(),
 			znear: 0.1,
 			zfar: 1000.0,
 		};
@@ -261,6 +270,34 @@ impl Viewport {
 
 		let num_indices = INDICES.len() as u32;
 
+		let half = INSTANCES_PER_ROW as f32 * 0.5;
+		let instances = (0..INSTANCES_PER_ROW)
+			.flat_map(|z| {
+				(0..INSTANCES_PER_ROW).map(move |x| {
+					let position = Vec3::new(
+						(x as f32 + 0.5 - half) * INSTANCE_SPACING,
+						0.0,
+						(z as f32 + 0.5 - half) * INSTANCE_SPACING,
+					);
+					// Rotating around a zero-length axis is not possible, and the
+					// copy standing on the origin has none to go by.
+					let rotation = if position == Vec3::ZERO {
+						Quat::IDENTITY
+					} else {
+						Quat::from_axis_angle(position.normalize(), 45.0_f32.to_radians())
+					};
+					Instance { position, rotation }
+				})
+			})
+			.collect::<Vec<_>>();
+
+		let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+		let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+			label: Some(&format!("{label} Instance Buffer")),
+			contents: bytemuck::cast_slice(&instance_data),
+			usage: wgpu::BufferUsages::VERTEX,
+		});
+
 		Ok(Self {
 			window: window.clone(),
 
@@ -278,6 +315,9 @@ impl Viewport {
 			index_buffer,
 
 			num_indices,
+
+			instances,
+			instance_buffer,
 
 			diffuse_bind_group,
 			diffuse_texture,
@@ -374,9 +414,10 @@ impl Viewport {
 			render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
 			render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
 			render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+			render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
 			render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
-			render_pass.draw_indexed(0..self.num_indices, 0, 0..1); // 2.
+			render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as u32);
 		}
 
 		self.queue.submit(std::iter::once(encoder.finish()));
