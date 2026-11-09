@@ -69,10 +69,10 @@ pub fn map_io(err: io::Error, rel: &str) -> ZenithError {
 	match err.kind() {
 		io::ErrorKind::NotFound => ZenithError::ProjectNotFound(rel.to_string()),
 		io::ErrorKind::AlreadyExists => ZenithError::ProjectAlreadyExists(rel.to_string()),
-		// cap-std reports a path that leaves the sandbox as PermissionDenied with
-		// "a path led outside of the filesystem" and offers no other way to tell
-		// it apart. The `escape` integration tests fail if a cap-std upgrade
-		// changes the wording.
+		// cap-std reports a path that leaves the sandbox as PermissionDenied
+		// with "a path led outside of the filesystem" and offers no other way
+		// to tell it apart. The `escape` integration tests fail if a cap-std
+		// upgrade changes the wording.
 		io::ErrorKind::PermissionDenied if err.to_string().contains("outside") => {
 			ZenithError::PathEscapesRoot(PathBuf::from(rel))
 		}
@@ -690,7 +690,8 @@ pub fn has_other_version_flag(path: &Path) -> bool {
 		entries.flatten().any(|e| {
 			e.file_name().to_str().is_some_and(|n| {
 				n != V1_FLAG
-					&& n.len() > 2 && n.starts_with(".v")
+					&& n.len() > 2
+					&& n.starts_with(".v")
 					&& n.get(2..).is_some_and(|d| d.bytes().all(|b| b.is_ascii_digit()))
 			})
 		})

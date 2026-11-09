@@ -1,6 +1,6 @@
 //! Where a build goes, and what it must not overlap.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use zenith_error::{ZResult, ZenithError};
 use zenith_filesystem::layout;
@@ -31,19 +31,36 @@ const fn bad(message: String) -> ZenithError {
 /// Canonical form of a path that may not exist yet: the deepest existing
 /// ancestor is canonicalized (so links and `\\?\` prefixes compare equal), the
 /// rest is appended as written.
+///
+/// A `..` below that ancestor cancels the name before it (a folder that does
+/// not exist cannot be a link, so this is exact). Windows does that already
+/// when it makes a path absolute, Unix does not: there `a/missing/..` is an
+/// error, not `a`.
 pub fn resolve_for_compare(path: &Path) -> ZResult<PathBuf> {
 	let absolute = std::path::absolute(path)?;
 	let mut existing = absolute.as_path();
 	let mut tail = Vec::new();
+	// `..` seen from the end that no name has cancelled yet.
+	let mut parents = 0_usize;
 	while !existing.exists() {
-		let Some(name) = existing.file_name() else { break };
-		tail.push(name.to_os_string());
+		match existing.components().next_back() {
+			Some(Component::Normal(_)) if parents > 0 => parents -= 1,
+			Some(Component::Normal(name)) => tail.push(name.to_os_string()),
+			Some(Component::ParentDir) => parents += 1,
+			// `.` adds nothing; a root or a prefix cannot be missing.
+			_ => {}
+		}
 		match existing.parent() {
 			Some(parent) => existing = parent,
 			None => break,
 		}
 	}
 	let mut resolved = std::fs::canonicalize(existing)?;
+	// What is left over goes up from the folder that exists, which is a real
+	// directory now, so its `..` is its parent.
+	for _ in 0..parents {
+		resolved.pop();
+	}
 	resolved.extend(tail.iter().rev());
 	Ok(resolved)
 }
