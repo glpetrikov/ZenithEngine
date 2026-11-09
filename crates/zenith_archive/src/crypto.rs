@@ -306,8 +306,9 @@ mod tests {
 			format!("{}g", &HEX[..63]),
 			format!("{} ", &HEX[..63]),
 			format!("0x{}", &HEX[..62]),
-			// 62 hex digits + a two-byte character: 64 bytes but not 64 hex digits,
-			// and slicing text bytes naively would panic on the char boundary.
+			// 62 hex digits + a two-byte character: 64 bytes but not 64 hex
+			// digits, and slicing text bytes naively would panic on the char
+			// boundary.
 			format!("{}é", &HEX[..62]),
 		];
 		for text in cases {

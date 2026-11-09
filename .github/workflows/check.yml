@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install native dependencies (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libdrm-dev libgtk-3-dev
+        run: sudo apt-get update && sudo apt-get install -y libdrm-dev libgtk-3-dev libudev-dev
       - name: Install Rust stable
         run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2
@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install native dependencies (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libdrm-dev libgtk-3-dev
+        run: sudo apt-get update && sudo apt-get install -y libdrm-dev libgtk-3-dev libudev-dev
       - name: Install Rust stable
         run: |
           rustup toolchain install stable --profile minimal
@@ -74,7 +74,9 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install native dependencies (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libdrm-dev libgtk-3-dev
+        # mesa-vulkan-drivers is lavapipe, a software Vulkan: the headless
+        # tests of the renderer (crates/zenith_renderer/tests) need an adapter.
+        run: sudo apt-get update && sudo apt-get install -y libdrm-dev libgtk-3-dev libudev-dev mesa-vulkan-drivers
       - name: Install Rust stable
         run: rustup toolchain install stable --profile minimal
       - uses: Swatinem/rust-cache@v2

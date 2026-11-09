@@ -309,7 +309,8 @@ impl Shared<'_> {
 			rel,
 			size,
 			modified: Some(modified),
-		} = source && let Some(record) = Record::new(*size, *modified, hash)
+		} = source
+			&& let Some(record) = Record::new(*size, *modified, hash)
 		{
 			self.fresh
 				.lock()

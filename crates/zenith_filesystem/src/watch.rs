@@ -321,7 +321,8 @@ impl Context {
 					}
 				}
 			}
-			// Backend errors usually mean lost events (an overflowing OS buffer).
+			// Backend errors usually mean lost events (an overflowing OS
+			// buffer).
 			Err(_) => self.queue.push(ProjectEvent::Rescan),
 		}
 	}
