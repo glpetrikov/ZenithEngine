@@ -239,8 +239,11 @@ impl Model {
 			layout,
 		));
 
-		let meshes = obj_models
+		let meshes: Vec<Mesh> = obj_models
 			.into_iter()
+			// A mesh without triangles cannot be drawn (the GPU refuses an
+			// empty buffer), and has nothing to show.
+			.filter(|m| !m.mesh.indices.is_empty())
 			.map(|m| {
 				let vertices = build_vertices(&m.mesh);
 				let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -262,6 +265,12 @@ impl Model {
 				}
 			})
 			.collect();
+
+		if meshes.is_empty() {
+			return Err(ZenithError::Other(format!(
+				"{path}: the model has no triangles (a Git LFS pointer instead of the file? run `git lfs pull`)"
+			)));
+		}
 
 		Ok(Self { meshes, materials })
 	}

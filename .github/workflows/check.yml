@@ -72,6 +72,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          # The renderer's tests load the sample project (Sandbox/Test): its
+          # models and textures are Git LFS files, which are pointers
+          # (text) without this.
+          lfs: true
       - name: Install native dependencies (Linux)
         if: runner.os == 'Linux'
         # mesa-vulkan-drivers is lavapipe, a software Vulkan: the headless
