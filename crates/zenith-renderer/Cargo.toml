@@ -1,0 +1,34 @@
+[package]
+name = "zenith-renderer"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+bevy_ecs = { workspace = true }
+# WebGPU in the browser, the native APIs elsewhere. No WebGL2.
+wgpu = "30.0.1"
+# `RenderSettings` can be saved.
+serde = { version = "1", features = ["derive"] }
+
+zenith_error = { version = "0.1.0", path = "../zenith_error" }
+zenith_log = { version = "0.1.0", path = "../zenith_log" }
+zenith_world = { version = "0.1.0", path = "../zenith_world" }
+
+# A browser without threads: the wgpu types are not `Send` and `Sync` there
+# unless asked, and the resources of bevy_ecs have to be. Nothing runs on
+# another thread, so nothing is shared for real.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { version = "30.0.1", features = ["fragile-send-sync-non-atomic-wasm"] }
+
+[dev-dependencies]
+pollster = "1.0.1"
+winit = "0.30.13"
+toml = "1.1.4"
+
+[lints]
+workspace = true

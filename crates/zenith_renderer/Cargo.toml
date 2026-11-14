@@ -1,5 +1,5 @@
 [package]
-name = "zenith_renderer"
+name = "zenith_renderer_old"
 edition.workspace = true
 license.workspace = true
 authors.workspace = true

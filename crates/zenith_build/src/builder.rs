@@ -212,6 +212,10 @@ impl Builder {
 	///   incompressible data and 77 to 162 MB/s on text and binaries), and the
 	///   key must be available to the client to decrypt anything, so it
 	///   protects the files from nobody who matters.
+	/// * **The key goes with the game.** The copies of the engine's executable
+	///   ([`Self::engine_exe`]) and of its `.wasm` ([`Self::web_runtime`]) get
+	///   the key written into them, so they can open the build. It is hidden,
+	///   not safe: anyone who looks for it in the program finds it.
 	///
 	/// The key is 32 random bytes (`EncryptionKey::generate`), never derived
 	/// from a password: the header carries a value that lets anyone test key
@@ -382,6 +386,9 @@ impl Builder {
 			Some(exe) => {
 				let destination = exe.destination(parent, &name)?;
 				output::check_output(&root, &destination, &name, &plan, BuildFormat::Archive)?;
+				if self.key.is_some() {
+					engine_exe::check_key_slot(&exe.source)?;
+				}
 				Some((exe.source.as_path(), destination))
 			}
 			None => None,
@@ -391,6 +398,9 @@ impl Builder {
 				let web_plan = web.plan(parent)?;
 				for destination in web_plan.destinations() {
 					output::check_output(&root, destination, &name, &plan, BuildFormat::Archive)?;
+				}
+				if self.key.is_some() {
+					web_plan.check_key_slots()?;
 				}
 				Some(web_plan)
 			}
@@ -426,15 +436,16 @@ impl Builder {
 			BuildFormat::Archive => archive_build::build_id(&output_path, self.key.as_ref())?,
 			BuildFormat::Fs => folder_build::build_id(&output_path, self.key.as_ref())?,
 		};
+		// The programs carry the key of the build, so they can open it.
 		let engine_exe = match exe {
 			Some((source, destination)) => {
-				engine_exe::copy(source, &destination)?;
+				engine_exe::copy_with_key(source, &destination, self.key.as_ref())?;
 				Some(destination)
 			}
 			None => None,
 		};
 		let web_files = match web {
-			Some(web) => web.write()?,
+			Some(web) => web.write(self.key.as_ref())?,
 			None => Vec::new(),
 		};
 		Ok(BuildReport {

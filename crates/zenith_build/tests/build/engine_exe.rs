@@ -1,3 +1,4 @@
+use zenith_archive::key_slot;
 use zenith_build::{BuildFormat, Builder, RenameExe};
 use zenith_error::ZenithError;
 
@@ -111,10 +112,25 @@ fn bad_engine_options_fail_before_anything_is_written() -> TestResult {
 	Ok(())
 }
 
+/// A pretend program with a slot for the key, the way the engine's are.
+fn program_with_slot(head: &[u8]) -> Vec<u8> {
+	let mut bytes = head.to_vec();
+	bytes.extend_from_slice(&key_slot::blank_slot());
+	bytes.extend_from_slice(b"tail");
+	bytes
+}
+
+/// Where the key of a copy is, if it was given one (see `key_slot`).
+fn written_key(copy: &[u8], head_len: usize) -> Option<Vec<u8>> {
+	let slot = copy.get(head_len..head_len + key_slot::SLOT_LEN)?;
+	(slot.get(16) == Some(&1)).then(|| slot.get(17..).map(<[u8]>::to_vec))?
+}
+
 #[test]
-fn the_engine_executable_is_never_compressed_or_encrypted() -> TestResult {
+fn the_engine_executable_is_never_compressed_or_encrypted_and_carries_the_key() -> TestResult {
 	let (tmp, root) = standard_project()?;
-	let exe: Vec<u8> = (0..50_000u32).map(|n| (n % 251) as u8).collect();
+	let head: Vec<u8> = (0..50_000u32).map(|n| (n % 251) as u8).collect();
+	let exe = program_with_slot(&head);
 	write(tmp.path(), "engine/zenith_engine.exe", &exe)?;
 	let out = tmp.path().join("dist").join("g.zenithbuild");
 	Builder::new()
@@ -124,17 +140,78 @@ fn the_engine_executable_is_never_compressed_or_encrypted() -> TestResult {
 		.zstd_compression(19)
 		.engine_exe(tmp.path().join("engine").join("zenith_engine.exe"))
 		.build()?;
+	let copy = std::fs::read(tmp.path().join("dist").join("zenith_engine.exe"))?;
+	assert_eq!(copy.len(), exe.len(), "as long as the original");
+	assert_eq!(
+		copy.get(..head.len()),
+		Some(head.as_slice()),
+		"byte for byte the original"
+	);
+	assert_eq!(copy.last_chunk::<4>(), Some(b"tail"), "to the end");
+	assert_eq!(
+		written_key(&copy, head.len()),
+		Some(vec![5; 32]),
+		"with the key in its slot"
+	);
+	assert_eq!(
+		std::fs::read(tmp.path().join("engine").join("zenith_engine.exe"))?,
+		exe,
+		"the original keeps no key"
+	);
+
+	// A build without a key leaves the slot empty.
+	Builder::new()
+		.path(&root)
+		.output(&out)
+		.engine_exe(tmp.path().join("engine").join("zenith_engine.exe"))
+		.build()?;
+	assert_eq!(std::fs::read(tmp.path().join("dist").join("zenith_engine.exe"))?, exe);
+	Ok(())
+}
+
+#[test]
+fn a_program_without_a_key_slot_is_refused_for_an_encrypted_build() -> TestResult {
+	let (tmp, root) = standard_project()?;
+	write(tmp.path(), "engine/zenith_engine.exe", b"MZ old engine")?;
+	fake_pkg(tmp.path())?;
+	write(tmp.path(), "pkg/zenith_runtime_bg.wasm", b"\0asm old")?;
+	let out = tmp.path().join("dist").join("g.zenithbuild");
+	let exe = Builder::new()
+		.path(&root)
+		.output(&out)
+		.encryption_key(crate::common::key(5))
+		.engine_exe(tmp.path().join("engine").join("zenith_engine.exe"))
+		.build();
+	let web = Builder::new()
+		.path(&root)
+		.output(&out)
+		.encryption_key(crate::common::key(5))
+		.web_runtime(tmp.path().join("pkg"))
+		.build();
+	for (what, result) in [("exe", exe), ("wasm", web)] {
+		assert!(
+			matches!(result, Err(ZenithError::InvalidBuildOption(_))),
+			"{what}: {result:?}"
+		);
+	}
+	assert!(!tmp.path().join("dist").exists(), "nothing was written");
+
+	// Without a key, an old program is copied as it is.
+	Builder::new()
+		.path(&root)
+		.output(&out)
+		.engine_exe(tmp.path().join("engine").join("zenith_engine.exe"))
+		.build()?;
 	assert_eq!(
 		std::fs::read(tmp.path().join("dist").join("zenith_engine.exe"))?,
-		exe,
-		"byte for byte the original"
+		b"MZ old engine"
 	);
 	Ok(())
 }
 
 fn fake_pkg(tmp: &std::path::Path) -> TestResult {
 	write(tmp, "pkg/zenith_runtime.js", b"export default async function init() {}")?;
-	write(tmp, "pkg/zenith_runtime_bg.wasm", b"\0asm")?;
+	write(tmp, "pkg/zenith_runtime_bg.wasm", &program_with_slot(b"\0asm"))?;
 	write(tmp, "pkg/zenith_runtime.d.ts", b"// types")?;
 	write(tmp, "pkg/package.json", b"{}")?;
 	write(tmp, "pkg/snippets/x/inline0.js", b"export {}")?;
@@ -153,7 +230,9 @@ fn the_web_runtime_is_copied_with_a_page() -> TestResult {
 		.web_runtime(tmp.path().join("pkg"))
 		.build()?;
 	let web = tmp.path().join("web");
-	assert_eq!(std::fs::read(web.join("pkg/zenith_runtime_bg.wasm"))?, b"\0asm");
+	let wasm = std::fs::read(web.join("pkg/zenith_runtime_bg.wasm"))?;
+	assert_eq!(wasm.get(..4), Some(b"\0asm".as_slice()));
+	assert_eq!(written_key(&wasm, 4), Some(vec![5; 32]), "the .wasm carries the key");
 	assert!(web.join("pkg/zenith_runtime.js").is_file(), "the script");
 	assert!(web.join("pkg/snippets/x/inline0.js").is_file(), "snippets come along");
 	assert!(

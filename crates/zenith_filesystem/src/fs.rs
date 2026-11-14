@@ -690,8 +690,7 @@ pub fn has_other_version_flag(path: &Path) -> bool {
 		entries.flatten().any(|e| {
 			e.file_name().to_str().is_some_and(|n| {
 				n != V1_FLAG
-					&& n.len() > 2
-					&& n.starts_with(".v")
+					&& n.len() > 2 && n.starts_with(".v")
 					&& n.get(2..).is_some_and(|d| d.bytes().all(|b| b.is_ascii_digit()))
 			})
 		})

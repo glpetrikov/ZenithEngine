@@ -29,8 +29,11 @@ web-sys = { version = "0.3", features = [
     "HtmlCanvasElement",
     "Node",
     "Response",
+    "CustomEvent",
+    "CustomEventInit",
+    "Event",
+    "EventTarget",
 ] }
-wgpu = { version = "30.0.1", features = ["webgl"] }
 js-sys = "0.3"
 zenith_filesystem = { version = "0.1.0", path = "../../crates/zenith_filesystem", default-features = false }
 
@@ -51,11 +54,13 @@ pollster = "1.0.1"
 dirs = "7.0.0"
 console_error_panic_hook = "0.1.6"
 glam = { workspace = true }
+# The runtime keeps the render schedule and runs it on the world.
+bevy_ecs = { workspace = true }
 
 zenith_error = { version = "0.1.0", path = "../../crates/zenith_error" }
 zenith_log = { version = "0.1.0", path = "../../crates/zenith_log" }
 
-zenith_renderer = { version = "0.1.0", path = "../../crates/zenith_renderer" }
+zenith-renderer = { version = "0.1.0", path = "../../crates/zenith-renderer" }
 
 zenith_world = { version = "0.1.0", path = "../../crates/zenith_world" }
 zenith_input = { version = "0.1.0", path = "../../crates/zenith_input", features = ["winit", "gamepad"] }

@@ -4730,6 +4730,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
+name = "zenith-renderer"
+version = "0.1.0"
+dependencies = [
+ "bevy_ecs",
+ "pollster 1.0.1",
+ "serde",
+ "toml",
+ "wgpu",
+ "winit",
+ "zenith_error",
+ "zenith_log",
+ "zenith_world",
+]
+
+[[package]]
 name = "zenith_archive"
 version = "0.1.0"
 dependencies = [
@@ -4890,7 +4905,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zenith_renderer"
+name = "zenith_renderer_old"
 version = "0.1.0"
 dependencies = [
  "bevy_ecs",
@@ -4912,6 +4927,7 @@ dependencies = [
 name = "zenith_runtime"
 version = "0.1.0"
 dependencies = [
+ "bevy_ecs",
  "console_error_panic_hook",
  "console_log",
  "ctrlc",
@@ -4923,15 +4939,14 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "web-time",
- "wgpu",
  "winit",
+ "zenith-renderer",
  "zenith_build",
  "zenith_components",
  "zenith_error",
  "zenith_filesystem",
  "zenith_input",
  "zenith_log",
- "zenith_renderer",
  "zenith_world",
 ]
 

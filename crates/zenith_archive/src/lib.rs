@@ -38,6 +38,7 @@ mod entry_reader;
 mod error;
 mod folder;
 mod format;
+pub mod key_slot;
 mod layout;
 mod path;
 mod probe;

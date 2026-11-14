@@ -1,0 +1,1 @@
+//! GPU meshes by `AssetId`.

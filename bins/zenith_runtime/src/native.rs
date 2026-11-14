@@ -9,7 +9,7 @@ use std::{
 
 use zenith_build::{BuildFormat, Builder, EncryptionKey, RenameExe, ZPath};
 use zenith_error::{ZResult, ZenithError};
-use zenith_filesystem::{Project, ProjectEvent, WatchConfig, layout};
+use zenith_filesystem::{OpenOptions, Project, ProjectEvent, WatchConfig, layout};
 use zenith_world::World;
 
 /// The project `--test` works on, relative to where `cargo run` was started.
@@ -20,6 +20,8 @@ const TEST_BUILDS: &str = "Sandbox/Test/Builds";
 /// relative to where `cargo run` was started.
 const WEB_PKG: &str = "bins/zenith_runtime/pkg";
 const WEB_INDEX: &str = "bins/zenith_runtime/index.html";
+/// How the browser runtime is made, from where `cargo run` was started.
+const WASM_PACK: &str = "run `wasm-pack build bins/zenith_runtime --target web`";
 /// The key of the encrypted test builds. A test key, not a secret.
 const TEST_KEY: [u8; 32] = [0x5a; 32];
 
@@ -51,6 +53,12 @@ pub fn open_project() -> ZResult<Project> {
 	}
 }
 
+/// How a build is opened: with the key the build wrote into this executable,
+/// if it is encrypted.
+fn build_options() -> OpenOptions {
+	zenith_filesystem::embedded_key().map_or_else(OpenOptions::new, |key| OpenOptions::new().encryption_key(key))
+}
+
 /// Opens the build next to the executable: `game.zenithbuild` or `game/`,
 /// beside it or in a `Build` folder beside it.
 fn open_game() -> ZResult<Project> {
@@ -64,7 +72,7 @@ fn open_game() -> ZResult<Project> {
 		for name in [archive.as_str(), layout::DEFAULT_BUILD_NAME] {
 			let candidate = base.join(name);
 			if candidate.exists() {
-				return Project::open(candidate);
+				return build_options().open(candidate);
 			}
 			tried.push(candidate.display().to_string());
 		}
@@ -113,6 +121,25 @@ fn watch(project: &Project) -> ZResult<()> {
 	Ok(())
 }
 
+/// Was the `.wasm` of the browser runtime made before `exe`? The executable is
+/// built again whenever the code changes, so an older `.wasm` was built from
+/// older code. `false` when either cannot be looked at.
+fn pkg_is_older_than(exe: &Path) -> bool {
+	let modified = |path: &Path| std::fs::metadata(path).and_then(|m| m.modified()).ok();
+	let Some(exe_time) = modified(exe) else {
+		return false;
+	};
+	let Ok(entries) = std::fs::read_dir(WEB_PKG) else {
+		return false;
+	};
+	entries
+		.filter_map(Result::ok)
+		.map(|entry| entry.path())
+		.filter(|path| path.extension().is_some_and(|ext| ext == "wasm"))
+		.filter_map(|path| modified(&path))
+		.any(|wasm_time| wasm_time < exe_time)
+}
+
 /// `Builds/<Pc|Web>/<Plain|Encrypted>`. A PC build is a folder build with the
 /// executable beside it; a web build is an archive with the browser runtime
 /// beside it. Plain builds are not compressed, so their files can be read;
@@ -122,7 +149,11 @@ fn build_all() -> ZResult<()> {
 	let exe = std::env::current_exe()?;
 	let web = Path::new(WEB_PKG).is_dir();
 	if !web {
-		zenith_log::warn!("{WEB_PKG} does not exist (run `wasm-pack build --target web`): no web builds");
+		zenith_log::warn!("{WEB_PKG} does not exist ({WASM_PACK}): no web builds");
+	} else if pkg_is_older_than(&exe) {
+		// The web builds copy the browser runtime as it is: an old one does
+		// not know what the engine does now.
+		zenith_log::warn!("{WEB_PKG} is older than this runtime: the web builds get the old one ({WASM_PACK})");
 	}
 	for encrypted in [false, true] {
 		let kind = if encrypted { "Encrypted" } else { "Plain" };

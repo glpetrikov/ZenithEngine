@@ -66,16 +66,37 @@
         <p>Zenith Engine needs a browser with WebGPU support.</p>
         <button onclick="this.closest('dialog').close()">OK</button>
     </dialog>
+    <dialog id="zenith-error">
+        <h2>The game cannot start</h2>
+        <p id="zenith-error-text"></p>
+        <button onclick="this.closest('dialog').close()">OK</button>
+    </dialog>
 
     <script type="module">
-        if (!navigator.gpu) {
+        function fail(message) {
+            document.getElementById("zenith-error-text").textContent = message;
+            document.getElementById("zenith-error").showModal();
+        }
+        // The runtime tells the page why it cannot start (no build, an
+        // encrypted build, no GPU to draw with).
+        window.addEventListener("zenith-error", (event) => fail(event.detail));
+
+        if (location.protocol === "file:") {
+            // A page opened as a file cannot load WebAssembly or the build.
+            fail("Open this page through a web server, not as a file: browsers do not run it from file://. "
+                + "For example, run \"npx serve\" or \"python -m http.server\" in this folder and open the address it prints.");
+        } else if (!window.isSecureContext) {
+            // WebGPU only exists on https:// or on localhost.
+            fail("WebGPU needs a secure page: open it over https://, or on this computer through localhost.");
+        } else if (!navigator.gpu) {
             document.getElementById("no-webgpu").showModal();
         } else {
-            // Temp!!
-            // document.getElementById("no-webgpu").showModal();
-
-            const { default: init } = await import("./pkg/zenith_runtime.js");
-            await init();
+            try {
+                const { default: init } = await import("./pkg/zenith_runtime.js");
+                await init();
+            } catch (error) {
+                fail("The runtime did not load: " + error);
+            }
         }
     </script>
 </body>

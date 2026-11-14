@@ -29,9 +29,10 @@ let key = EncryptionKey::new([7u8; 32]);     // from bytes you already have
   crate cannot wipe its state: the pads and the intermediate digests are
   `Zeroizing`, and the hash states wipe themselves when dropped (the `zeroize`
   feature of `sha2`; the tests check at compile time that the types promise
-  it). The AES key schedule is wiped by `aes` (its `zeroize` feature). There is
-  no `unsafe` code in the three crates. What the operating system copies (swap,
-  crash dumps) is out of reach for any of this.
+  it). The AES key schedule is wiped by `aes` (its `zeroize` feature). The only
+  `unsafe` code in the three crates is the volatile read of the key slot (see
+  below). What the operating system copies (swap, crash dumps) is out of reach
+  for any of this.
 * **Never derive a key from a password.** Every header carries a short check
   value, derived from the key, so that a wrong key can be told from damaged data.
   It also lets anyone who holds a build test candidate keys offline at full
@@ -55,6 +56,31 @@ chunk number), so an unchanged file produces identical bytes in every build.
 This is safe with AES-GCM-SIV: reusing a nonce for different content reveals
 only whether two messages are equal. **Do not replace the cipher with an AEAD
 that lacks this property.**
+
+## How the game gets the key
+
+The game has to open its own build, so the key goes with it. The engine's
+executable and its `.wasm` hold a **key slot** (`zenith_archive::key_slot`): a
+16-byte marker, a flag and room for 32 bytes. When a build is made with a key,
+the copies that `Builder::engine_exe` and `Builder::web_runtime` put next to it
+get the key written into their slot; the originals are not touched. When the
+game starts it reads the slot (`zenith_filesystem::embedded_key()`) and opens
+the build with it. A build without a key empties the slot of its copies.
+
+* A build with a key and a program without a slot (made by an older engine)
+  is refused before anything is written (`InvalidBuildOption`).
+* The slot is checked before it is written: if what follows the marker is not
+  a slot, the program is left alone (`ArchiveInvalidKey`). An empty slot holds
+  no zero bytes, because the optimizer of a `.wasm` drops trailing zeros of its
+  data, and the room of the key would not be in the file.
+* The slot is read with volatile reads: the compiler sees an immutable static
+  and would otherwise use what was compiled (no key) instead of what the build
+  wrote.
+
+**This hides the key; it does not protect it.** The program is in the player's
+hands, and whoever looks for the key in it finds it. Encryption keeps the files
+from being opened by any tool that reads archives, not from a player who wants
+them.
 
 ## What an encrypted build hides
 
@@ -93,8 +119,8 @@ an older release included, is `BuildIdMismatch`. See [Reading builds](./reading.
 
 For a game that runs in a browser, encryption buys little and costs speed:
 
-* The key must be available to the client to decrypt anything, so anyone who
-  can run the game can get it.
+* The key must be available to the client to decrypt anything (it is in the
+  `.wasm`, see above), so anyone who can run the game can get it.
 * Decryption in WebAssembly is slow. A measurement in Node (V8): about **45
   MB/s** on incompressible data and **77 to 162 MB/s** on text and binaries,
   against 167 to 1200 MB/s without encryption. Natively with AES-NI it costs

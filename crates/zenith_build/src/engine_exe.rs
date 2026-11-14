@@ -5,6 +5,7 @@ use std::{
 	path::{Path, PathBuf},
 };
 
+use zenith_archive::EncryptionKey;
 use zenith_error::{ZResult, ZenithError};
 use zenith_filesystem::layout::TMP_SUFFIX;
 
@@ -91,13 +92,63 @@ impl EngineExe {
 /// never leaves half an executable under the final name. Permissions (the
 /// executable bit) are copied with the content.
 pub fn copy(source: &Path, destination: &Path) -> ZResult<()> {
+	copy_then(source, destination, |_| Ok(()))
+}
+
+/// Copies a program of the engine (its executable, its `.wasm`) like
+/// [`copy`], and writes `key` into the key slot of the copy, so the program
+/// opens the build it is given with. `None` leaves the slot of the copy empty.
+///
+/// # Errors
+/// `InvalidBuildOption` if there is a key and the program has no slot (it
+/// was made by an engine older than the slot), and the errors of the copy.
+pub fn copy_with_key(source: &Path, destination: &Path, key: Option<&EncryptionKey>) -> ZResult<()> {
+	copy_then(source, destination, |temp| {
+		let mut bytes = std::fs::read(temp)?;
+		let found = zenith_archive::key_slot::write_key(&mut bytes, key)?;
+		if found {
+			std::fs::write(temp, &bytes)?;
+		} else if key.is_some() {
+			return Err(no_slot(source));
+		}
+		Ok(())
+	})
+}
+
+/// Checks, before anything is built, that the program can be given the key
+/// of an encrypted build.
+///
+/// # Errors
+/// `InvalidBuildOption` if it cannot be read or has no slot for the key.
+pub fn check_key_slot(program: &Path) -> ZResult<()> {
+	let bytes = std::fs::read(program).map_err(|e| bad(format!("{}: {e}", program.display())))?;
+	if zenith_archive::key_slot::has_slot(&bytes)? {
+		Ok(())
+	} else {
+		Err(no_slot(program))
+	}
+}
+
+fn no_slot(program: &Path) -> ZenithError {
+	bad(format!(
+		"{} has no place for the key of an encrypted build: it was made by an older engine",
+		program.display()
+	))
+}
+
+/// Copies `source` to a temporary file, lets `change` work on it, and gives it
+/// its final name.
+fn copy_then(source: &Path, destination: &Path, change: impl FnOnce(&Path) -> ZResult<()>) -> ZResult<()> {
 	let mut temp = destination.as_os_str().to_os_string();
 	temp.push(TMP_SUFFIX);
 	let temp = PathBuf::from(temp);
-	let result = std::fs::copy(source, &temp).and_then(|_| std::fs::rename(&temp, destination));
+	let result = std::fs::copy(source, &temp)
+		.map_err(ZenithError::from)
+		.and_then(|_| change(&temp))
+		.and_then(|()| Ok(std::fs::rename(&temp, destination)?));
 	if result.is_err() {
 		// The error that matters is the first one.
 		let _ = std::fs::remove_file(&temp);
 	}
-	Ok(result?)
+	result
 }

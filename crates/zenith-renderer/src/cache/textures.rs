@@ -1,0 +1,1 @@
+//! GPU textures by `AssetId`.

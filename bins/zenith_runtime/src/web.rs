@@ -11,6 +11,24 @@ use zenith_filesystem::{IdbStore, OpenOptions, Project};
 
 const BUILD_URL: &str = "game.zenithbuild";
 
+/// The event the page listens for to show why the game cannot start; its
+/// `detail` is the message.
+const ERROR_EVENT: &str = "zenith-error";
+
+/// Tells the page that the game cannot start, and why. A page that does not
+/// listen for [`ERROR_EVENT`] shows nothing; the message is in the console
+/// too.
+pub fn report_to_page(message: &str) {
+	let init = web_sys::CustomEventInit::new();
+	init.set_detail(&JsValue::from_str(message));
+	let Ok(event) = web_sys::CustomEvent::new_with_event_init_dict(ERROR_EVENT, &init) else {
+		return;
+	};
+	if let Some(window) = web_sys::window() {
+		let _ = window.dispatch_event(&event);
+	}
+}
+
 fn failed(what: &str, error: &JsValue) -> ZenithError {
 	ZenithError::ProjectNotFound(format!("{BUILD_URL}: {what}: {error:?}"))
 }
@@ -19,8 +37,10 @@ fn failed(what: &str, error: &JsValue) -> ZenithError {
 ///
 /// # Errors
 /// `ProjectNotFound` if the download fails, otherwise the errors of
-/// `Project::open_archive_bytes` (an encrypted build needs a key, which the
-/// web runtime does not have yet).
+/// `Project::open_archive_bytes` (an encrypted build that was not made for
+/// this `.wasm` cannot be opened).
+// A browser has one thread: nothing there is sent anywhere.
+#[allow(clippy::future_not_send)]
 pub async fn open_project() -> ZResult<Project> {
 	let window = web_sys::window().ok_or_else(|| ZenithError::ProjectNotFound("there is no window".into()))?;
 	let response: web_sys::Response = JsFuture::from(window.fetch_with_str(BUILD_URL))
@@ -38,7 +58,10 @@ pub async fn open_project() -> ZResult<Project> {
 		.await
 		.map_err(|e| failed("body", &e))?;
 	let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
-	let project = Project::open_archive_bytes(Arc::from(bytes), &OpenOptions::new())?;
+	// An encrypted build wrote its key into this `.wasm` when it was made.
+	let options =
+		zenith_filesystem::embedded_key().map_or_else(OpenOptions::new, |key| OpenOptions::new().encryption_key(key));
+	let project = Project::open_archive_bytes(Arc::from(bytes), &options)?;
 
 	// The data of the player (`Data://`) goes to IndexedDB, in a database named
 	// after the game. It can only be opened now that the name is known. Where

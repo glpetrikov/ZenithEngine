@@ -86,6 +86,11 @@ impl EncryptionKey {
 		}
 		text
 	}
+
+	/// The 32 bytes of the key, for the key slot of a program.
+	pub(crate) const fn bytes(&self) -> &[u8; 32] {
+		&self.0
+	}
 }
 
 fn hex_value(digit: u8) -> Option<u8> {

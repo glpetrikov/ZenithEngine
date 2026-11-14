@@ -1,0 +1,19 @@
+{
+  "uuid": "a8994019-68fe-4b16-a22e-92ae914bca9f",
+  "type": "render_graph",
+  "version": 1,
+  "name": "Built-in",
+  "nodes": [
+    { "id": 1, "pass": "zenith.input_camera", "editor": { "pos": [-240, 0] } },
+    { "id": 2, "pass": "zenith.input_meshes", "params": { "phase": "opaque" }, "editor": { "pos": [-240, 160] } },
+    { "id": 3, "pass": "zenith.opaque", "params": { "clear_color": [0.1, 0.2, 0.5, 1.0] }, "editor": { "pos": [120, 80] } },
+    { "id": 4, "pass": "zenith.tonemap", "params": { "operator": "aces", "exposure": 1.0 }, "editor": { "pos": [520, 80] } },
+    { "id": 5, "pass": "zenith.output", "editor": { "pos": [860, 80] } }
+  ],
+  "links": [
+    { "from": [1, "camera"], "to": [3, "camera"] },
+    { "from": [2, "meshes"], "to": [3, "meshes"] },
+    { "from": [3, "color"], "to": [4, "hdr"] },
+    { "from": [4, "color"], "to": [5, "color"] }
+  ]
+}

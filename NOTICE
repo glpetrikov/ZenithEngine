@@ -563,6 +563,8 @@ zenith_runtime with version 0.1.0 under Apache License 2.0.
 
 zenithpack_cli with version 0.1.0 under Apache License 2.0.
 
+zenith-renderer with version 0.1.0 under Apache License 2.0.
+
 zenith_archive with version 0.1.0 under Apache License 2.0.
 
 zenith_build with version 0.1.0 under Apache License 2.0.
@@ -583,7 +585,7 @@ zenith_package with version 0.1.0 under Apache License 2.0.
 
 zenith_registry with version 0.1.0 under Apache License 2.0.
 
-zenith_renderer with version 0.1.0 under Apache License 2.0.
+zenith_renderer_old with version 0.1.0 under Apache License 2.0.
 
 zenith_save with version 0.1.0 under Apache License 2.0.
 

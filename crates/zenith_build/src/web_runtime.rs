@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use zenith_archive::EncryptionKey;
 use zenith_error::{ZResult, ZenithError};
 
 use crate::engine_exe;
@@ -137,14 +138,30 @@ impl WebPlan {
 			.chain(std::iter::once(self.index.as_path()))
 	}
 
-	/// Writes the files; returns where they went.
-	pub fn write(&self) -> ZResult<Vec<PathBuf>> {
+	/// Checks that every `.wasm` can be given the key of an encrypted build.
+	///
+	/// # Errors
+	/// `InvalidBuildOption` for a `.wasm` without a slot for the key.
+	pub fn check_key_slots(&self) -> ZResult<()> {
+		self.copies
+			.iter()
+			.filter(|(from, _)| has_extension(&from.to_string_lossy(), "wasm"))
+			.try_for_each(|(from, _)| engine_exe::check_key_slot(from))
+	}
+
+	/// Writes the files; returns where they went. `key` goes into the key slot
+	/// of the `.wasm`, so the browser can open the build it was made with.
+	pub fn write(&self, key: Option<&EncryptionKey>) -> ZResult<Vec<PathBuf>> {
 		let mut written = Vec::new();
 		for (from, to) in &self.copies {
 			if let Some(parent) = to.parent() {
 				std::fs::create_dir_all(parent)?;
 			}
-			engine_exe::copy(from, to)?;
+			if has_extension(&to.to_string_lossy(), "wasm") {
+				engine_exe::copy_with_key(from, to, key)?;
+			} else {
+				engine_exe::copy(from, to)?;
+			}
 			written.push(to.clone());
 		}
 		match &self.page {

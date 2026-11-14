@@ -9,7 +9,7 @@
 
 use glam::{Vec2, Vec3};
 use zenith_filesystem::Project;
-use zenith_renderer::{camera::CameraInput, renderer::Renderer};
+use zenith_renderer_old::{camera::CameraInput, renderer::Renderer};
 
 const WIDTH: u32 = 640;
 const HEIGHT: u32 = 360;

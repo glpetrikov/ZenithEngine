@@ -5,6 +5,7 @@ mod native;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
+use bevy_ecs::schedule::Schedule;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 use web_time::Instant;
@@ -17,9 +18,15 @@ use winit::{
 	window::Window,
 };
 use zenith_error::{ZInternalResult, ZResult};
-use zenith_input::{CursorMode, Gamepads, Input, ZKeyCode, ZMouseButton};
-use zenith_renderer::{camera::CameraInput, types::PowerMode, viewport::Viewport};
+use zenith_input::{Gamepads, ZKeyCode};
+use zenith_renderer::{
+	RenderSettings, Renderer,
+	settings::{AlphaMode, PresentMode},
+};
 use zenith_world::World;
+
+/// The title of the window; the frames per second are added to it.
+const TITLE: &str = "Zenith Engine";
 
 /// The file of the world the runtime starts with.
 const WORLD_FILE: &str = "Worlds://world.zenith";
@@ -75,79 +82,71 @@ fn load_input(project: &zenith_filesystem::Project, world: &mut World) -> ZResul
 	Ok(world.input().overrides_toml())
 }
 
-/// What the player asks of the camera this frame: `W` `A` `S` `D` walk, `Space`
-/// and `Shift` go up and down, the wheel moves along the view, and the mouse
-/// turns the camera while the right button is held.
-///
-/// The right button also takes the cursor away (and gives it back), so the
-/// mouse can turn the camera as far as it likes.
-fn camera_input(input: &mut Input) -> CameraInput {
-	let axis = |plus: ZKeyCode, minus: ZKeyCode| {
-		f32::from(u8::from(input.is_key_pressed(plus))) - f32::from(u8::from(input.is_key_pressed(minus)))
-	};
-	let (forward, right, up) = (
-		axis(ZKeyCode::W, ZKeyCode::S),
-		axis(ZKeyCode::D, ZKeyCode::A),
-		axis(ZKeyCode::Space, ZKeyCode::LeftShift),
-	);
+/// Counts the frames and shows how many there are per second in the title of
+/// the window.
+struct FpsCounter {
+	frames: u32,
+	since: Instant,
+}
 
-	if input.is_mouse_just_pressed(ZMouseButton::Right) {
-		input.set_cursor_mode(CursorMode::Locked);
+impl FpsCounter {
+	fn new() -> Self {
+		Self {
+			frames: 0,
+			since: Instant::now(),
+		}
 	}
-	if input.is_mouse_just_released(ZMouseButton::Right) {
-		input.set_cursor_mode(CursorMode::Normal);
-	}
-	let look = if input.is_mouse_pressed(ZMouseButton::Right) {
-		input.mouse_delta()
-	} else {
-		glam::Vec2::ZERO
-	};
 
-	CameraInput {
-		forward,
-		right,
-		up,
-		look,
-		scroll: input.scroll().y,
+	fn frame(&mut self, window: &Window) {
+		self.frames += 1;
+		let elapsed = self.since.elapsed().as_secs_f32();
+		if elapsed >= 1.0 {
+			window.set_title(&format!("{TITLE} — {:.0} FPS", self.frames as f32 / elapsed));
+			self.frames = 0;
+			self.since = Instant::now();
+		}
 	}
 }
 
 pub struct State {
-	viewport: Viewport,
 	window: Arc<Window>,
 	project: zenith_filesystem::Project,
-	/// The world the game runs in; it holds the input.
+	/// The world the game runs in; it holds the input and the renderer.
 	world: World,
+	/// The systems that draw the world. The runtime runs them after the game;
+	/// the world itself knows nothing of drawing.
+	render: Schedule,
 	/// Real gamepads; `None` where the system has none to give.
 	gamepads: Option<Gamepads>,
 	last_frame: Instant,
 	/// The changes to the controls that are on disk (or in the browser).
 	saved_overrides: String,
 	overrides_timer: f32,
+	fps: FpsCounter,
 }
 
 impl State {
-	/// Creates a new `State` instance with the given `Window`.
+	/// Opens the project, the GPU and the world of the game, in `window`.
 	///
 	/// # Errors
-	/// add in future.
-	#[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
+	/// The project's error if it cannot be opened or its world and controls
+	/// cannot be read; the renderer's if the GPU cannot draw in the window.
+	// A browser has one thread: nothing there is sent anywhere.
+	#[cfg_attr(target_arch = "wasm32", allow(clippy::future_not_send))]
 	pub async fn new(window: Arc<Window>) -> ZResult<Self> {
 		#[cfg(not(target_arch = "wasm32"))]
 		let project = native::open_project()?;
 		#[cfg(target_arch = "wasm32")]
 		let project = web::open_project().await?;
 
-		let viewport = Viewport::new(
-			"ZenithEngineRenderer",
-			window.inner_size().width,
-			window.inner_size().height,
-			window.clone(),
-			PowerMode::Performance,
-			false,
-			&project,
-		)
-		.await?;
+		// TODO: read them from the settings of the project and the player.
+		let settings = RenderSettings {
+			present_mode: PresentMode::AutoNoVsync,
+			alpha_mode: AlphaMode::Transparent,
+			..RenderSettings::default()
+		};
+		let size = window.inner_size();
+		let renderer = Renderer::new(Arc::clone(&window), size.width, size.height, &settings).await?;
 
 		let gamepads = match Gamepads::new() {
 			Ok(gamepads) => Some(gamepads),
@@ -159,16 +158,18 @@ impl State {
 
 		let mut world = load_world(&project)?;
 		let saved_overrides = load_input(&project, &mut world)?;
+		zenith_renderer::install(&mut world, renderer, settings);
 
 		Ok(Self {
-			viewport,
 			window,
 			project,
 			world,
+			render: zenith_renderer::schedule(),
 			gamepads,
 			last_frame: Instant::now(),
 			saved_overrides,
 			overrides_timer: 0.0,
+			fps: FpsCounter::new(),
 		})
 	}
 
@@ -204,10 +205,7 @@ impl State {
 		if let Some(gamepads) = &mut self.gamepads {
 			gamepads.poll(&mut self.world.input_mut());
 		}
-		// Before the systems run: they end the frame, and the movement of the
-		// mouse of this frame is forgotten with it.
-		let camera = camera_input(&mut self.world.input_mut());
-		self.viewport.update(dt, &camera);
+		// Sets `Time` and runs the systems of the game.
 		self.world.update_systems(dt);
 		self.carry_out_cursor_request();
 		self.overrides_timer += dt;
@@ -251,22 +249,26 @@ impl State {
 	}
 
 	pub fn resize(&mut self, width: u32, height: u32) {
-		self.viewport.resize(width, height);
+		if let Some(mut renderer) = self.world.world_mut().get_resource_mut::<Renderer>() {
+			renderer.resize_surface(width, height);
+		}
 	}
 
-	/// ## Main Render function
-	///
-	/// ## Errors
-	/// Return Error if Device lost.
-	pub fn render(&mut self) -> ZResult<()> {
+	/// Draws the world, and asks for the next frame.
+	pub fn render(&mut self) {
 		self.window.request_redraw();
-		self.viewport.render("Render Encoder", "Render Pass")?;
-		Ok(())
+		self.render.run(self.world.world_mut());
+		self.fps.frame(&self.window);
 	}
 }
 
 // wasm_bindgen(start) expands into top-level items assuming module scope;
 // this has to sit outside any impl block, not as a State method.
+/// Starts the game when the page loads the module.
+///
+/// # Errors
+/// Never: a failure to start the event loop is thrown as a JS exception, and
+/// the page catches it.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
 pub fn run_web() -> Result<(), wasm_bindgen::JsValue> {
@@ -334,7 +336,7 @@ impl ApplicationHandler<State> for App {
 	fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 		#[allow(unused_mut)]
 		let mut window_attributes = Window::default_attributes()
-			.with_title("Zenith Engine")
+			.with_title(TITLE)
 			.with_min_inner_size(winit::dpi::LogicalSize::new(320.0, 240.0))
 			.with_visible(true)
 			.with_transparent(true);
@@ -359,7 +361,7 @@ impl ApplicationHandler<State> for App {
 
 			const CANVAS_ID: &str = "zenith-canvas";
 
-			let window = wgpu::web_sys::window().unwrap_throw();
+			let window = web_sys::window().unwrap_throw();
 			let document = window.document().unwrap_throw();
 			let canvas = document.get_element_by_id(CANVAS_ID).unwrap_throw();
 			let html_canvas_element = canvas.unchecked_into();
@@ -373,6 +375,12 @@ impl ApplicationHandler<State> for App {
 			Ok(window) => window,
 			Err(err) => {
 				zenith_log::error!("Failed to create window: {}", err);
+				#[cfg(target_arch = "wasm32")]
+				{
+					web::report_to_page(&format!("The canvas cannot be used: {err}"));
+					return;
+				}
+				#[cfg(not(target_arch = "wasm32"))]
 				std::process::exit(1);
 			}
 		});
@@ -392,18 +400,20 @@ impl ApplicationHandler<State> for App {
 		{
 			if let Some(proxy) = self.proxy.take() {
 				wasm_bindgen_futures::spawn_local(async move {
-					assert!(
-						proxy
-							.send_event(match State::new(window).await {
-								Ok(state) => state,
-								Err(e) => {
-									zenith_log::error!("Unable to create canvas: {e}");
-									std::process::exit(1);
-								}
-							})
-							.is_ok()
-					)
-				})
+					// `exit` does not exist in a browser (it traps), so a game
+					// that cannot start tells the page, which shows why.
+					match State::new(window).await {
+						Ok(state) => {
+							if proxy.send_event(state).is_err() {
+								zenith_log::error!("The event loop ended before the game started");
+							}
+						}
+						Err(e) => {
+							zenith_log::error!("The game cannot start: {e}");
+							web::report_to_page(&e.to_string());
+						}
+					}
+				});
 			}
 		}
 	}
@@ -432,9 +442,7 @@ impl ApplicationHandler<State> for App {
 					return;
 				}
 				state.update();
-				if let Err(e) = state.render() {
-					zenith_log::error!("Cannot render: {e}");
-				}
+				state.render();
 			}
 			_ => {}
 		}

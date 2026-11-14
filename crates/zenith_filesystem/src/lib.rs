@@ -64,5 +64,5 @@ pub use userdata::{DATA_SCHEME, MemStore, UserStore};
 pub use watch::{ChangeKind, EventReceiver, FileChange, ProjectEvent, WatchConfig, WatchRule, Watcher};
 /// Re-exported so callers need no direct dependency on the archive crate for
 /// the common cases.
-pub use zenith_archive::{BuildId, DirSource, EncryptionKey, MemDir};
+pub use zenith_archive::{BuildId, DirSource, EncryptionKey, MemDir, key_slot::embedded_key};
 pub use zpath::ZPath;
