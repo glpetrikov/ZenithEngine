@@ -7,7 +7,7 @@
 
 use bevy_ecs::schedule::Schedule;
 use zenith_renderer::{
-	ClearColor, RenderSettings, Renderer, install,
+	ClearColor, GpuCache, RenderSettings, Renderer, install,
 	settings::{AlphaMode, Backend, PresentMode},
 	wgpu,
 };
@@ -65,6 +65,7 @@ fn the_renderer_outlives_a_level() {
 		world.world().contains_resource::<RenderSettings>(),
 		"so are its settings"
 	);
+	assert!(world.world().contains_resource::<GpuCache>(), "and its cache");
 	assert_eq!(
 		world.world().resource::<ClearColor>().0,
 		wgpu::Color::RED,

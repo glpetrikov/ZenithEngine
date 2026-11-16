@@ -18,9 +18,11 @@ against the documentation before it is built.
 - One shared cache of GPU resources.
 - The render graph is data: JSON, edited in the editor with imnodes.
 - Assets are referenced by UUID.
+- The shaders are files of the project, the engine's own and the game's
+  (section 19); later, render passes written in scripts (section 20).
 
 Not in the first version: MSAA, frustum culling, asynchronous loading, shadow
-cascades, clustered lighting, user shaders, cooked assets in a build.
+cascades, clustered lighting, cooked assets in a build.
 
 ## 2. Who writes what
 
@@ -52,6 +54,9 @@ what the contract gives.
 | Windows | No winit in the crate; the host gives sizes and the surface target | proposed |
 | Cache eviction | By time unused, not by reference count | proposed |
 | WebGL2 | Not supported; drop the `webgl` feature of wgpu | proposed |
+| Shaders | Files of the project (`Shaders://`), loaded from there; the engine writes its own into it | decided |
+| Custom shaders | A material names its shader; the shader follows the contract of section 19 | decided |
+| Scriptable render passes | Later, after the graph editor, through the contract of section 10 | decided |
 
 ## 4. The whole frame
 
@@ -507,7 +512,9 @@ blend, cull, depth write and compare, topology. A pass asks for a pipeline in
 
 ### The state of an asset in the cache
 
-`Loading` (not drawn), `Ready`, `Failed` (drawn with the fallback).
+`Loading` (not drawn), `Ready`, `Failed` (drawn with the fallback). A
+material is `Ready` even when a texture of it failed: that texture's slot gets
+the checker (a normal map, the flat normal).
 
 Loading in the first version is synchronous, in `prepare_assets`, with a time
 budget per frame. What did not fit stays `Loading` until the next frame. The
@@ -700,8 +707,8 @@ texture.
   through a comparison sampler, HDR is `Rgba16Float`.
 - The surface format: a browser stores non-sRGB and gives an sRGB view
   through `view_formats`. The logic is in the old `pick_surface_format`.
-- Shaders are WGSL only, with no preprocessor. Shared code is put together
-  from `include_str!` pieces.
+- Shaders are WGSL only, with no preprocessor but the `#import` of section
+  19.
 - No threads: everything is on one thread, and the time budget of asset
   loading matters here most. Time comes from `web-time`.
 - Drop the `webgl` feature of wgpu.
@@ -726,12 +733,14 @@ crates/zenith-renderer/src/
                     materials.rs, fallback.rs, evict.rs
   assets/           id.rs, container.rs, json.rs, registry.rs, load.rs, ops.rs,
                     import/ (mesh.rs, obj.rs, gltf.rs, image.rs)   // no wgpu
-  shaders/          *.wgsl
+  shaders/          *.wgsl: the engine's copies, written into a project
+                    (section 19)
 ```
 
 Dependencies: add `glam`, `bytemuck`, `uuid`, `serde_json`, `zenith_error`,
-`zenith_log`, `zenith_filesystem` (without `fs`), `image`, `tobj`, `web-time`
-(wasm). Remove `winit`.
+`zenith_log`, `zenith_filesystem` (without `fs`), `image`, `tobj`, `gltf`,
+`half` (HDR textures as 16-bit floats), `web-time` (the clock of the cache;
+`std` on native). Remove `winit`.
 
 The name: the package is `zenith-renderer` (`zenith_renderer` in code); the
 old one is `zenith_renderer_old` until it is removed. The other crates move
@@ -764,16 +773,30 @@ Every stage ends with something that can be checked.
    the sky of the sample are `.zenithmodel` / `.zenithtexture` assets that a
    test reads. Not yet: the `AssetHints` of world files (with the editor), the
    watcher wired to the registry (the editor), the asset index in a build.
-3. **`GpuCache`.** Meshes, textures, materials, pipelines, fallbacks,
-   eviction. Check: headless tests.
+3. **`GpuCache`.** *Done.* Meshes (one vertex and one index buffer a
+   model, the meshes as ranges), textures (sRGB colors, linear normal maps
+   and data, HDR as `Rgba16Float`, mipmaps made on the GPU), materials (the
+   layout of group 1 fixed in `cache/materials.rs`), shaders, layouts,
+   samplers and pipelines by their key (a shader made again drops its
+   pipelines), the stand-ins, loading within a time budget, invalidation
+   through the materials that use a texture, eviction by time over a memory
+   budget, `pin`, `evict_unused`. The cache is a resource kept like the
+   renderer; the render schedule starts its frame and evicts at the end.
+   Check: headless tests (the cube and the sky of the sample, a lost and a
+   broken asset, invalidation, eviction, the budget, pipelines against the
+   documented layouts, mipmaps read back). Not yet: `prepare_assets`, which
+   asks for what extract found (stage 5).
 4. **The graph core.** `PassDesc`, the trait, the registries, JSON,
-   compilation, the pool, execution. Check: compile tests with no GPU. The
-   contract of section 10 exists in code from here on.
+   compilation, the pool, execution. Names in the descriptions are owned
+   (`Cow<'static, str>`), for the script passes of section 20. Check: compile
+   tests with no GPU. The contract of section 10 exists in code from here on.
 5. **ECS.** Components, extract, prepare, the `render` system.
 6. **The first passes**: `zenith.input_camera`, `zenith.input_meshes`,
    `zenith.opaque`, `zenith.tonemap`, `zenith.output` and the built-in graph
-   of the five. Check: a headless render into a texture, and the runtime
-   draws the world with one camera.
+   of the five. The passes ask for their shaders by name (`Zenith/standard`)
+   through `ShaderSources`, which gives the engine's copies until stage 10.
+   Check: a headless render into a texture, and the runtime draws the world
+   with one camera.
 7. **Cameras and targets.** `order`, `viewport`, `clear`, `RenderTargets`,
    `Camera.graph`. Check: two cameras on one window, a third into a texture.
 8. **The rest of the 3D passes**, carrying over what the old renderer
@@ -782,12 +805,23 @@ Every stage ends with something that can be checked.
    `zenith.shadow`.
 9. **2D**: `zenith.input_sprites`, `zenith.sprites` and the orthographic
    camera.
-10. **The editor: viewport.** The texture in ImGui, the editor camera, hot
-    reload, replacing a source, the editor passes (`editor.grid`,
-    `editor.gizmos`, `editor.outline`).
-11. **The graph editor** with imnodes.
-12. **Later.** The asset index in a build, asynchronous loading, frustum
-    culling, MSAA, removing the old `zenith_renderer`.
+10. **Shaders in the project** (section 19): `Shaders://`, the engine's
+    shaders written into new projects and into old ones on open, the version
+    line and "the engine has a newer one", loading from the project,
+    `#import`, checking with `naga`, the stand-ins of a missing or broken
+    shader, custom shaders named by materials. Check: a project whose
+    `Zenith/standard.wgsl` was changed draws with the change; a broken one
+    draws with the engine's copy and a warning.
+11. **The editor: viewport.** The texture in ImGui, the editor camera, hot
+    reload (of shaders too), replacing a source, the editor passes
+    (`editor.grid`, `editor.gizmos`, `editor.outline`).
+12. **The graph editor** with imnodes.
+13. **Scriptable render passes** (section 20), once the scripting can call
+    into the engine. Check: a fullscreen effect written as a script and a
+    WGSL file in the project, put into the graph in the graph editor.
+14. **Later.** The asset index in a build, asynchronous loading, frustum
+    culling, MSAA, the parameters of custom shaders read by reflection
+    (section 19), removing the old `zenith_renderer`.
 
 ## 17. Open questions
 
@@ -796,6 +830,13 @@ Every stage ends with something that can be checked.
 - The extensions `.zenithtexture`, `.zenithmaterial` and `.zenithgraph` are
   proposals waiting for a yes.
 - Several materials for the sub-meshes of one model.
+- A shader found by its name (a path in `Shaders://`) or by a UUID like the
+  other assets (in a `// zenith-shader:` line, or a `.zenithshader` JSON
+  beside the `.wgsl`). The name is proposed: simpler, and what WGSL tools
+  leave alone; the cost is that moving a shader breaks the materials that
+  name it, unless the editor rewrites them.
+- The scripting language of the script passes, and how it calls into the
+  engine (Gleb).
 - Three things to **[verify]**: `Send + Sync` of wgpu on wasm, registering an
   external texture with `dear-imgui-wgpu`, `dear-imnodes` with
   `dear-imgui-rs` 0.18.
@@ -830,3 +871,115 @@ nothing), the asset is looked for by its hash wherever it is now.
   (a new id, the same content).
 - JSON assets (materials, graphs) are edited by hand and change all the time:
   they get no hash.
+
+## 19. Shaders in the project
+
+**[decided]** The shaders the renderer draws with are files of the project,
+and it loads them from there, not from copies built into the engine. A game
+can change how the engine draws, and can add shaders of its own.
+
+### Where they are
+
+- `Assets/Shaders/`, with a scheme of its own, `Shaders://` (like
+  `Worlds://`, which is `Assets/Worlds`). **[proposed]**
+- Plain `.wgsl` files: text, for diffs and merges, and for any editor with
+  WGSL highlighting. Nothing goes to LFS.
+- The engine's shaders are under `Shaders://Zenith/` (`Zenith/standard.wgsl`,
+  `Zenith/sky.wgsl`, `Zenith/tonemap.wgsl`, `Zenith/mipmap.wgsl`, ...); the
+  game's own are anywhere else in `Shaders://`.
+- A shader is found by its name: its path in `Shaders://` without the
+  extension (`Zenith/standard`). Not by a UUID: a WGSL file has no place for
+  one that the WGSL tools would leave alone, and a name is what a material
+  and a pass write. Moving a shader is renaming it. **[proposed]** (the open
+  question is in section 17)
+
+### How the engine's shaders get there
+
+- The engine keeps its copies (`include_str!`, `src/shaders/`) only to write
+  them. `Project::create` (through the renderer: `zenith_filesystem` knows
+  nothing of shaders) writes them into `Shaders://Zenith/`.
+- An older project without them: the editor writes the missing ones when it
+  opens the project, and says so.
+- Each copy starts with a line the engine reads:
+  `// zenith-shader: Zenith/standard 3` (its name and version). A newer
+  engine with a newer version does not overwrite the file: the project's copy
+  may have been changed on purpose. The editor shows "the engine has a newer
+  `Zenith/standard`" with a diff, and "Replace" / "Keep". "Restore the
+  engine's shaders" writes them all again.
+- A built game reads them from its archive, like any other asset (the web
+  too).
+
+### Loading
+
+- `GpuCache::shader` already takes a name and a source; a source of shaders
+  (`ShaderSources`) gives the text of a name. Until this stage it gives the
+  engine's copies; from here on it reads the project. The passes ask by name
+  from stage 6 on, so this stage changes where the text comes from, not the
+  passes.
+- Shared code: a line `#import "Zenith/common"` is replaced by the text of
+  that shader, once per shader, before compiling. Nothing else of a
+  preprocessor (no `#define`, no `#if`): the variants a pass needs are
+  separate entry points or separate files. **[proposed]**
+- Compiling: the WGSL is checked with `naga` (`wgpu::naga`) before
+  `create_shader_module`, so an error in a project file does not reach the
+  device's error handler (which panics). The error, with its file and line,
+  goes to the log and the editor.
+- A shader that is missing or does not compile: the engine's built-in copy
+  stands in, like a lost asset, with one warning; if it is not an engine
+  shader, the magenta shader. A broken edit while the game runs keeps the
+  last version that compiled.
+- Hot reload: the watcher of the editor sees the file change, the cache makes
+  the shader again under the same id and drops its pipelines (that part is
+  done in stage 3); the passes ask for them again in `prepare`.
+
+### Custom shaders
+
+- A material names its shader: `"shader": "Zenith/standard"` (the default),
+  or `"shader": "Effects/toon"`. The old `"standard"` is read as
+  `Zenith/standard`.
+- What a material shader must follow, the contract with the passes that draw
+  meshes:
+  - the entry points `vs_main` and `fs_main` (the shadow pass also looks for
+    `vs_shadow`, the depth-only version);
+  - the vertex inputs of `GpuMesh::LAYOUT` (`@location(0..4)`) and of the
+    instance buffer (stage 5 fixes its locations);
+  - group 0 is the pass's (the camera, the lights, the shadow map, the
+    environment: their structs are in `Zenith/common`), group 1 the
+    material's, groups 2 and 3 are not for a material shader.
+- Group 1 of a custom shader: the layout of `cache/materials.rs` (a uniform
+  and two textures) in the first version. Later the shader says what it
+  takes: a `struct MaterialParams` and textures named in group 1, read from
+  the WGSL by `naga`'s reflection. The material file then has
+  `"params": { "rim_color": [1, 0.5, 0, 1] }` and
+  `"textures": { "ramp": "<uuid>" }`, and the material inspector of the editor
+  builds its widgets from the same reflection. **[proposed]**
+- The pipeline key has the shader in it, so the opaque and transparent passes
+  sort by shader before material, and a shader that fails to compile falls
+  back as above.
+
+## 20. Later: scriptable render passes (SRP)
+
+**[decided]** Later, after the graph editor (stage 13 of section 16): render passes written
+in the scripting language of the engine (Gleb's part), not in Rust, that the
+graph uses like any other pass.
+
+- A script pass registers itself in the `PassRegistry`: its `PassDesc` (slots,
+  parameters, category) comes from the script, so it is a node in the graph
+  editor with pins and widgets like a built-in pass. For this `PassDesc` and
+  the other descriptions must not hold `&'static str` only: they get owned
+  names (`Cow<'static, str>`) when the graph core is written (stage 4), so
+  nothing has to be rewritten later. The same goes for the entry points in
+  `PipelineKey`.
+- What a script pass can do is the contract of section 10 and nothing more:
+  ask for a pipeline from a shader of the project and a key, read and write
+  its slots, set its parameters, and record commands through a small API
+  (`set_pipeline`, `bind`, `draw_list("meshes")`, `draw_fullscreen`,
+  `dispatch` for compute later). No raw wgpu, no resource made in `exec`.
+- The cost of a script is paid per pass, not per draw: `draw_list` runs the
+  draws of a whole slot natively.
+- Its shaders are custom shaders of section 19, so a script pass plus a WGSL
+  file in `Shaders://` is a new effect with no Rust and no rebuild of the
+  engine.
+- What is decided before it: the scripting language and how it calls into
+  the engine (Gleb), and that the renderer runs its passes on the main thread
+  (it does now).

@@ -32,6 +32,7 @@ use bevy_ecs::{
 	system::{Res, ResMut},
 	world::World,
 };
+pub use cache::{CacheSettings, GpuCache};
 pub use render::ClearColor;
 pub use renderer::Renderer;
 pub use settings::RenderSettings;
@@ -81,24 +82,38 @@ pub fn add_systems(schedule: &mut Schedule) {
 			.run_if(resource_exists::<Renderer>),
 	);
 	schedule.add_systems((
+		cache::evict::begin_frame
+			.in_set(RenderSet::Assets)
+			.run_if(resource_exists::<GpuCache>),
 		apply_settings.in_set(RenderSet::Prepare),
 		render::render.in_set(RenderSet::Render),
+		cache::evict::evict
+			.in_set(RenderSet::Cleanup)
+			.run_if(resource_exists::<GpuCache>),
 	));
 }
 
-/// Puts the resources of the renderer into `world`.
+/// Puts the resources of the renderer into `world`: it, its `settings` and a
+/// [`GpuCache`] on its device.
 pub fn insert_resources(world: &mut World, renderer: Renderer, settings: RenderSettings) {
+	world.insert_resource(GpuCache::new(
+		renderer.device(),
+		renderer.queue(),
+		CacheSettings::default(),
+	));
 	world.insert_resource(renderer);
 	world.insert_resource(settings);
 	world.init_resource::<ClearColor>();
 }
 
 /// Gives `renderer` and its `settings` to `world`. They outlive
-/// `clear_world`. The render systems are not the world's: see [`schedule`].
+/// `clear_world`, and so does the cache. The render systems are not the
+/// world's: see [`schedule`].
 pub fn install(world: &mut zenith_world::World, renderer: Renderer, settings: RenderSettings) {
 	world.keep_resource::<Renderer>();
 	world.keep_resource::<RenderSettings>();
 	world.keep_resource::<ClearColor>();
+	world.keep_resource::<GpuCache>();
 	insert_resources(world.world_mut(), renderer, settings);
 }
 

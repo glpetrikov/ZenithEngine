@@ -48,10 +48,24 @@ pub fn mesh(project: &Project, registry: &AssetRegistry, id: AssetId) -> ZResult
 /// # Errors
 /// As [`mesh`]; `ImageDecodeFailed` for a picture that cannot be decoded.
 pub fn image(project: &Project, registry: &AssetRegistry, id: AssetId) -> ZResult<ImageData> {
+	texture(project, registry, id).map(|(image, _)| image)
+}
+
+/// The pixels of the texture `id`, and how it was imported (its filter, wrap
+/// and mipmaps, which the GPU needs too).
+///
+/// # Errors
+/// As [`image`].
+pub fn texture(project: &Project, registry: &AssetRegistry, id: AssetId) -> ZResult<(ImageData, TextureImport)> {
 	let entry = find(registry, id, AssetKind::Texture)?;
 	let bytes = project.read_bytes(&entry.path)?;
 	let texture: container::Container<TextureImport> = container::read(&bytes, AssetKind::Texture)?;
-	image::decode(&texture.source, &texture.settings)
+	let image = image::decode(&texture.source, &texture.settings).map_err(|e| match e {
+		ZenithError::ImageDecodeFailed(message) => ZenithError::ImageDecodeFailed(format!("{}: {message}", entry.path)),
+		ZenithError::InvalidAsset(message) => ZenithError::InvalidAsset(format!("{}: {message}", entry.path)),
+		other => other,
+	})?;
+	Ok((image, texture.settings))
 }
 
 /// The material `id`.

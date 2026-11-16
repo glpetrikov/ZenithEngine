@@ -183,11 +183,29 @@ ntapi with version 0.4.3 under Apache License 2.0.
 
 ipnet with version 2.12.2 under Apache License 2.0.
 
+clap with version 4.6.7 under Apache License 2.0.
+
+clap_builder with version 4.6.7 under Apache License 2.0.
+
+clap_derive with version 4.6.7 under Apache License 2.0.
+
+clap_lex with version 1.1.1 under Apache License 2.0.
+
 winapi with version 0.3.9 under Apache License 2.0.
 
 annotate-snippets with version 0.12.16 under Apache License 2.0.
 
+anstream with version 1.0.0 under Apache License 2.0.
+
+anstyle-parse with version 1.0.0 under Apache License 2.0.
+
+anstyle-query with version 1.1.5 under Apache License 2.0.
+
+anstyle-wincon with version 3.0.11 under Apache License 2.0.
+
 anstyle with version 1.0.14 under Apache License 2.0.
+
+colorchoice with version 1.0.5 under Apache License 2.0.
 
 crc32fast with version 1.5.3 under Apache License 2.0.
 
@@ -197,9 +215,13 @@ foreign-types-shared with version 0.3.1 under Apache License 2.0.
 
 foreign-types with version 0.5.0 under Apache License 2.0.
 
+is_terminal_polyfill with version 1.70.2 under Apache License 2.0.
+
 jni-sys with version 0.3.1 under Apache License 2.0.
 
 jni-sys with version 0.4.1 under Apache License 2.0.
+
+once_cell_polyfill with version 1.70.2 under Apache License 2.0.
 
 quick-error with version 2.0.1 under Apache License 2.0.
 
@@ -266,6 +288,8 @@ atomic-waker with version 1.1.2 under Apache License 2.0.
 autocfg with version 1.5.1 under Apache License 2.0.
 
 backtrace with version 0.3.76 under Apache License 2.0.
+
+base64 with version 0.13.1 under Apache License 2.0.
 
 base64 with version 0.23.1 under Apache License 2.0.
 
@@ -346,6 +370,8 @@ hashbrown with version 0.16.1 under Apache License 2.0.
 hashbrown with version 0.17.1 under Apache License 2.0.
 
 heapless with version 0.9.3 under Apache License 2.0.
+
+heck with version 0.5.0 under Apache License 2.0.
 
 hermit-abi with version 0.5.3 under Apache License 2.0.
 
@@ -471,6 +497,12 @@ wit-bindgen with version 0.57.1 under Apache License 2.0.
 
 xattr with version 1.6.1 under Apache License 2.0.
 
+gltf-derive with version 1.4.1 under Apache License 2.0.
+
+gltf-json with version 1.4.1 under Apache License 2.0.
+
+gltf with version 1.4.1 under Apache License 2.0.
+
 bit-set with version 0.10.0 under Apache License 2.0.
 
 bit-vec with version 0.9.1 under Apache License 2.0.
@@ -560,6 +592,8 @@ bytemuck_derive with version 1.12.1 under Apache License 2.0.
 zenith_editor with version 0.1.0 under Apache License 2.0.
 
 zenith_runtime with version 0.1.0 under Apache License 2.0.
+
+zenith-cli with version 0.1.0 under Apache License 2.0.
 
 zenithpack_cli with version 0.1.0 under Apache License 2.0.
 
@@ -793,6 +827,8 @@ uncased with version 0.9.10 under Apache License 2.0.
 
 unicode-ident with version 1.0.24 under Apache License 2.0.
 
+utf8parse with version 0.2.2 under Apache License 2.0.
+
 variadics_please with version 2.0.0 under Apache License 2.0.
 
 wgpu-core-deps-apple with version 30.0.1 under Apache License 2.0.
@@ -876,6 +912,8 @@ wayland-sys with version 0.31.11 under MIT License.
 ordered-float with version 5.5.0 under MIT License.
 
 dlib with version 0.5.3 under MIT License.
+
+inflections with version 1.1.1 under MIT License.
 
 kqueue-sys with version 1.1.2 under MIT License.
 
@@ -1009,6 +1047,8 @@ walkdir with version 2.5.0 under MIT License.
 
 nix with version 0.31.3 under MIT License.
 
+strsim with version 0.11.1 under MIT License.
+
 sysinfo with version 0.39.6 under MIT License.
 
 twox-hash with version 2.1.4 under MIT License.
@@ -1040,6 +1080,8 @@ nu-ansi-term with version 0.50.3 under MIT License.
 generic-array with version 0.14.7 under MIT License.
 
 quick-xml with version 0.41.0 under MIT License.
+
+urlencoding with version 2.1.3 under MIT License.
 
 option-ext with version 0.2.0 under Mozilla Public License 2.0.
 
