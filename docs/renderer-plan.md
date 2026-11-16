@@ -579,12 +579,17 @@ proposed for textures. Numbers are little-endian.
   the file.
 - The UUID sits at a fixed offset: giving a copy a new UUID is writing 16
   bytes.
-- The JSON of a model: the format of the source (`obj`, later `glb`), scale,
-  UV flip, tangent generation. The JSON of a texture: the format of the
-  source, the color space (`srgb` or `linear`), the kind (`color`, `normal`,
-  `hdr`), mips, filter, wrap.
+- The JSON of a model: the format of the source (`obj` or `glb`), scale,
+  UV flip, the material of each mesh. The JSON of a texture: the format of
+  the source, the use (`color` in sRGB, `normal`, `hdr`, `data`), mips,
+  filter, wrap. Tangents are always worked out on import, the same way for
+  every format (glTF tangents are not used).
 - The source is always one file. On importing an `.obj`, its `.mtl` and
-  textures become material and texture assets of their own.
+  textures become material and texture assets of their own; on importing a
+  glTF, its materials and pictures do (pictures in the `.glb`, in `data:`
+  URIs or in files beside the `.gltf`). A `.gltf` is kept as a `.glb`: every
+  buffer goes into the binary chunk. The nodes of its scene place its meshes
+  (their transforms are applied, mirroring ones turn the triangles back).
 - A file that starts with `version https://git-lfs` is an LFS pointer: an
   error that says to run `git lfs pull`.
 
@@ -643,17 +648,11 @@ touched.
 
 ### Git LFS
 
-An optional checkbox on creating a project (and a flag in the CLI), "set up
-Git LFS": a managed block is written to `.gitattributes`
-
-```
-*.zenithmodel   filter=lfs diff=lfs merge=lfs -text
-*.zenithtexture filter=lfs diff=lfs merge=lfs -text
-```
-
-It belongs in `zenith_filesystem` next to `sync_gitignore`, with the same
-scheme of managed entries. JSON assets do not go to LFS: they are text for
-the sake of diffs and merges.
+A project does not get a `.gitattributes` of its own: the engine writes none.
+The `.gitattributes` at the root of the repository puts `.zenithmodel` and
+`.zenithtexture` (and the source formats) into LFS; a game in a repository
+of its own sets up LFS the way it wants. JSON assets do not go to LFS: they
+are text for the sake of diffs and merges.
 
 ## 13. The editor
 
@@ -725,8 +724,8 @@ crates/zenith-renderer/src/
                     sprites.rs, tonemap.rs, output.rs
   cache/            mod.rs, pipelines.rs, meshes.rs, textures.rs,
                     materials.rs, fallback.rs, evict.rs
-  assets/           id.rs, container.rs, json.rs, registry.rs, ops.rs,
-                    import/ (obj.rs, image.rs)          // no wgpu
+  assets/           id.rs, container.rs, json.rs, registry.rs, load.rs, ops.rs,
+                    import/ (mesh.rs, obj.rs, gltf.rs, image.rs)   // no wgpu
   shaders/          *.wgsl
 ```
 
@@ -749,9 +748,22 @@ Every stage ends with something that can be checked.
    headless tests; the crate is checked for wasm32 in CI. The runtime runs on
    the new crate (it shows the clear color until stage 6); its old camera
    code is gone.
-2. **Assets.** `AssetId`, the container, JSON, the registry, duplicates, copy
-   and move, an import command in the CLI. Check: tests with no GPU, and the
-   cube of the sample is a `.zenithmodel`.
+2. **Assets.** *Done.* `AssetId`, the container, JSON (materials), the
+   registry (duplicates, moves, refresh from the watcher), the CPU import
+   (`.obj`, `.gltf` and `.glb` with tangents, pictures, HDR as floats),
+   `load` by id, the operations (import a model with its materials and
+   textures, import a texture, copy, move, new id, replace the source, export
+   the source, import a model file put into `Assets/` by hand in place with
+   the file going to the trash), `zenith-cli` on `clap` (`import`, `export`,
+   `assets`, `new-id`; the project is the one the current folder is in unless
+   `-p` gives it), and in the editor File → Import, Export and Import Loose
+   Models, with the question on open that `Settings://Editor.toml`
+   (`[assets] loose_models = "ask" | "always" | "never"`) turns off or makes
+   automatic. Check: tests with
+   no GPU, and the cube and
+   the sky of the sample are `.zenithmodel` / `.zenithtexture` assets that a
+   test reads. Not yet: the `AssetHints` of world files (with the editor), the
+   watcher wired to the registry (the editor), the asset index in a build.
 3. **`GpuCache`.** Meshes, textures, materials, pipelines, fallbacks,
    eviction. Check: headless tests.
 4. **The graph core.** `PassDesc`, the trait, the registries, JSON,
@@ -775,8 +787,7 @@ Every stage ends with something that can be checked.
     `editor.gizmos`, `editor.outline`).
 11. **The graph editor** with imnodes.
 12. **Later.** The asset index in a build, asynchronous loading, frustum
-    culling, MSAA, Git LFS in projects (independent of the renderer, can come
-    earlier), removing the old `zenith_renderer`.
+    culling, MSAA, removing the old `zenith_renderer`.
 
 ## 17. Open questions
 
@@ -788,3 +799,34 @@ Every stage ends with something that can be checked.
 - Three things to **[verify]**: `Send + Sync` of wgpu on wasm, registering an
   external texture with `dear-imgui-wgpu`, `dear-imnodes` with
   `dear-imgui-rs` 0.18.
+
+## 18. Later: finding an asset by the hash of its content
+
+Not now; after the editor works with assets.
+
+A reference to a model (or a texture) can also be a path with the hash of
+what is expected there: `Assets://Models/Cube.zenithmodel` + hash. If the file
+at the path is not that one (another file took its place, or there is
+nothing), the asset is looked for by its hash wherever it is now.
+
+- **The hash is stored, never worked out on load.** The container keeps it in
+  its header (format version 2: 32 more bytes after the length of the
+  settings), so the registry reads it with the id, from the header only. It is
+  written when the asset is made (import, copy) and when its source is
+  replaced. SHA-256 of the source bytes, from `sha2`, which the engine already
+  has.
+- **The registry keeps a second index**: hash to the assets that have it
+  (copies of one source share a hash).
+- **Lookup of a path + hash**, in this order:
+  1. the file at the path has that hash: it is the one;
+  2. another file has that hash: the asset was moved, use that file (the
+     editor can offer to fix the reference);
+  3. the file at the path is of the same kind with another hash: its source
+     was replaced, use it and warn;
+  4. nothing: the stand-in of a lost asset, as for an unknown `AssetId`.
+- **With the UUID, not instead of it.** The id stays what components refer
+  to; path + hash is for what has no id to hold: a path written in a script, a
+  reference from another project, an asset imported again from its source
+  (a new id, the same content).
+- JSON assets (materials, graphs) are edited by hand and change all the time:
+  they get no hash.

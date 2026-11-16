@@ -1,0 +1,19 @@
+{
+  "uuid": "bc8d2fc0-7c93-4431-b963-1142130f24e2",
+  "type": "material",
+  "version": 1,
+  "shader": "standard",
+  "base_color": [
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "base_color_texture": "1403ebf4-dec3-4211-8826-5257059b269a",
+  "normal_texture": "0e2f5e4d-e18f-46ca-a18e-b8508d7251ad",
+  "roughness": 0.5,
+  "metallic": 0.0,
+  "blend": "opaque",
+  "alpha_cutoff": 0.5,
+  "double_sided": false
+}

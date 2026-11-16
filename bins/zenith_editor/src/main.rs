@@ -5,6 +5,7 @@ mod gfx;
 mod panels;
 mod project;
 mod recent;
+mod settings;
 mod theme;
 mod toolbar;
 

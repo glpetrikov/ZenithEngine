@@ -428,3 +428,37 @@ fn project_is_send_and_sync() {
 	fn check<T: Send + Sync>() {}
 	check::<Project>();
 }
+
+#[test]
+fn a_folder_inside_a_project_finds_it_and_a_file_on_disk_has_a_project_path() -> TestResult {
+	let (tmp, root, project) = new_project("Game")?;
+	let deep = root.join("Assets/Models/Cube");
+	std::fs::create_dir_all(&deep)?;
+	assert_eq!(
+		Project::find_folder(&deep).as_deref(),
+		Some(root.as_path()),
+		"from below"
+	);
+	assert_eq!(Project::find_folder(&root).as_deref(), Some(root.as_path()), "itself");
+	assert_eq!(Project::find_folder(tmp.path()), None, "outside");
+
+	std::fs::write(deep.join("cube.zenithmodel"), b"x")?;
+	assert_eq!(
+		project.zpath_of(&deep.join("cube.zenithmodel")),
+		Some(z("Assets://Models/Cube/cube.zenithmodel")?)
+	);
+	assert_eq!(
+		project.zpath_of(&root.join("Assets/Worlds/../Models/Cube/cube.zenithmodel")),
+		Some(z("Assets://Models/Cube/cube.zenithmodel")?),
+		"`..` is followed"
+	);
+	std::fs::write(tmp.path().join("outside.txt"), b"x")?;
+	assert_eq!(project.zpath_of(&tmp.path().join("outside.txt")), None, "outside");
+	assert_eq!(project.zpath_of(&deep.join("missing.png")), None, "not there");
+	assert_eq!(
+		project.zpath_of(&root.join("Game.zenithproject")),
+		None,
+		"under no scheme"
+	);
+	Ok(())
+}

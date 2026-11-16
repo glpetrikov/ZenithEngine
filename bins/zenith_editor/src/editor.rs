@@ -8,11 +8,16 @@ use std::{
 use winit::event::{DeviceEvent, WindowEvent};
 use zenith_error::ZResult;
 use zenith_input::{Gamepads, Input, InputEvent, ZGamePad, ZGamePadAxis, ZGamepadKind};
+use zenith_renderer::assets::{
+	AssetRegistry,
+	ops::{self, LooseModel},
+};
 
 use crate::{
 	backup::{self, BackupInfo},
 	project::{NewWorldError, OpenProject},
 	recent::Recent,
+	settings::{self, LooseModels},
 };
 
 /// The number the emulated gamepad has: far from the ones real pads get.
@@ -47,6 +52,7 @@ pub struct Requests {
 	pub quit: bool,
 	pub backup: bool,
 	pub problems: bool,
+	pub loose_models: bool,
 }
 
 #[allow(clippy::struct_excessive_bools)] // the flags of the state of the UI
@@ -61,6 +67,9 @@ pub struct Editor {
 	pub viewport_focused: bool,
 	/// A backup of unsaved changes found in the project that was opened.
 	pub backup_offer: Option<BackupInfo>,
+	/// The model files put into `Assets/` by hand that the user is asked
+	/// about.
+	pub loose_models: Vec<LooseModel>,
 	pub new_world: NewWorldForm,
 	pub requests: Requests,
 	/// Things that went wrong and that the user has to see.
@@ -92,6 +101,7 @@ impl Editor {
 			pad: EmulatedPad::default(),
 			viewport_focused: false,
 			backup_offer: None,
+			loose_models: Vec::new(),
 			new_world: NewWorldForm::default(),
 			requests: Requests::default(),
 			problems: Vec::new(),
@@ -150,6 +160,7 @@ impl Editor {
 		}
 		self.say(format!("Opened {}", open.path.display()));
 		self.project = Some(open);
+		self.check_loose_models(false);
 		Ok(())
 	}
 
@@ -271,6 +282,170 @@ impl Editor {
 		}
 	}
 
+	// --- assets
+	// ---------------------------------------------------------------
+
+	/// File → Import: brings `files` (models, pictures) into `folder`, a
+	/// folder of the project's `Assets/` on disk. A file that cannot come in
+	/// is told to the user; the others still do.
+	pub fn import_assets(&mut self, files: &[PathBuf], folder: &Path) {
+		let Some(project) = &self.project else {
+			self.say("Open a project first");
+			return;
+		};
+		let project = &project.project;
+		let target = match project.zpath_of(folder) {
+			Some(target) if target.scheme() == "Assets" => target,
+			Some(target) => {
+				self.problem(format!(
+					"{target} is not for assets (Assets/Worlds holds the worlds): pick another folder of Assets"
+				));
+				return;
+			}
+			None => {
+				self.problem(format!(
+					"{} is not a folder of the project's Assets: the files go there",
+					folder.display()
+				));
+				return;
+			}
+		};
+		let mut registry = match AssetRegistry::scan(project) {
+			Ok(registry) => registry,
+			Err(e) => {
+				self.problem(format!("The assets of the project cannot be read: {e}"));
+				return;
+			}
+		};
+		let mut made = 0;
+		let mut failed = Vec::new();
+		for file in files {
+			let result = if is_model(file) {
+				ops::import_model(project, &mut registry, file, &target).map(|assets| assets.len())
+			} else {
+				ops::import_texture(project, &mut registry, file, &target, None).map(|_| 1)
+			};
+			match result {
+				Ok(count) => made += count,
+				Err(e) => failed.push(format!("{} is not imported: {e}", file.display())),
+			}
+		}
+		let failures = failed.len();
+		for message in failed {
+			self.problem(message);
+		}
+		match failures {
+			0 => self.say(format!("Imported {made} asset{} into {target}", plural(made))),
+			_ => self.say(format!("Imported {made}, {failures} failed")),
+		}
+	}
+
+	/// The name to offer for File → Export of the asset file `asset` (on disk,
+	/// in the project): its name with the extension of its source.
+	#[must_use]
+	pub fn export_file_name(&self, asset: &Path) -> Option<String> {
+		let project = &self.project.as_ref()?.project;
+		ops::export_file_name(project, &project.zpath_of(asset)?).ok()
+	}
+
+	/// File → Export: writes what the asset file `asset` (on disk, in the
+	/// project) was made from into `to`.
+	pub fn export_asset(&mut self, asset: &Path, to: &Path) {
+		let Some(project) = &self.project else {
+			self.say("Open a project first");
+			return;
+		};
+		let project = &project.project;
+		let Some(path) = project.zpath_of(asset) else {
+			self.problem(format!("{} is not a file of the project", asset.display()));
+			return;
+		};
+		match ops::export_asset(project, &path, to) {
+			Ok(()) => self.say(format!("Exported {path} to {}", to.display())),
+			Err(e) => self.problem(format!("{path} is not exported: {e}")),
+		}
+	}
+
+	/// Looks for model files put into `Assets/` by hand. What happens to them
+	/// is the setting of the project (see [`LooseModels`]); `asked` (File →
+	/// Import Loose Models) always asks.
+	pub fn check_loose_models(&mut self, asked: bool) {
+		let Some(project) = &self.project else { return };
+		let found = match ops::loose_models(&project.project) {
+			Ok(found) => found,
+			Err(e) => {
+				self.problem(format!("Assets/ cannot be searched for models: {e}"));
+				return;
+			}
+		};
+		let setting = if asked {
+			LooseModels::Ask
+		} else {
+			settings::loose_models(&project.project)
+		};
+		if !found.iter().any(|model| model.taken_by.is_none()) {
+			if asked {
+				self.say("No models to import in Assets");
+			}
+			return;
+		}
+		match setting {
+			LooseModels::Never => {}
+			LooseModels::Ask => {
+				self.loose_models = found;
+				self.requests.loose_models = true;
+			}
+			LooseModels::Always => {
+				self.loose_models = found;
+				self.import_loose_models();
+			}
+		}
+	}
+
+	/// "Import" in the question about the loose models: each that is not in
+	/// the way of an asset becomes one, and its file goes to the trash.
+	pub fn import_loose_models(&mut self) {
+		let models = std::mem::take(&mut self.loose_models);
+		let Some(project) = &self.project else { return };
+		let project = &project.project;
+		let mut registry = match AssetRegistry::scan(project) {
+			Ok(registry) => registry,
+			Err(e) => {
+				self.problem(format!("The assets of the project cannot be read: {e}"));
+				return;
+			}
+		};
+		let mut imported = 0;
+		let mut failed = Vec::new();
+		for model in models.iter().filter(|model| model.taken_by.is_none()) {
+			match ops::import_loose_model(project, &mut registry, &model.path) {
+				Ok(_) => imported += 1,
+				Err(e) => failed.push(format!("{} is not imported: {e}", model.path)),
+			}
+		}
+		let failures = failed.len();
+		for message in failed {
+			self.problem(message);
+		}
+		match failures {
+			0 => self.say(format!(
+				"Imported {imported} model{}, the files are in the trash",
+				plural(imported)
+			)),
+			_ => self.say(format!("Imported {imported} models, {failures} failed")),
+		}
+	}
+
+	/// "Never for this project" in the question about the loose models.
+	pub fn never_import_loose_models(&mut self) {
+		self.loose_models.clear();
+		let Some(project) = &self.project else { return };
+		match settings::set_loose_models(&project.project, LooseModels::Never) {
+			Ok(()) => self.say("Models in Assets are not imported on their own any more"),
+			Err(e) => self.problem(format!("The setting is not saved: {e}")),
+		}
+	}
+
 	pub fn problem(&mut self, message: String) {
 		zenith_log::warn!("{message}");
 		self.problems.push(message);
@@ -376,6 +551,19 @@ impl Editor {
 			value,
 		});
 	}
+}
+
+/// The pictures File → Import takes; the models are [`ops::MODEL_SOURCES`].
+pub const PICTURE_EXTENSIONS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "hdr"];
+
+fn is_model(file: &Path) -> bool {
+	file.file_name()
+		.and_then(|name| name.to_str())
+		.is_some_and(ops::is_model_source)
+}
+
+const fn plural(count: usize) -> &'static str {
+	if count == 1 { "" } else { "s" }
 }
 
 #[cfg(test)]
@@ -524,6 +712,80 @@ mod tests {
 			editor.project.as_ref().map(OpenProject::dirty_names),
 			Some(vec!["Caves/C".to_string()])
 		);
+		Ok(())
+	}
+
+	#[test]
+	fn import_brings_files_into_a_folder_of_assets_and_export_takes_the_source_out() -> TestResult {
+		let (tmp, mut editor, path) = editor_with_project()?;
+		let models = path.join("Assets/Models");
+		std::fs::create_dir_all(&models)?;
+		let square = tmp.path().join("square.obj");
+		std::fs::write(&square, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")?;
+		let broken = tmp.path().join("broken.png");
+		std::fs::write(&broken, b"not a picture")?;
+
+		editor.import_assets(&[square.clone(), broken], &models);
+		assert!(models.join("square.zenithmodel").is_file(), "the model came in");
+		assert_eq!(editor.status(), Some("Imported 1, 1 failed"));
+		assert_eq!(editor.problems.len(), 1, "the picture that is not one is told");
+
+		editor.import_assets(std::slice::from_ref(&square), tmp.path());
+		assert_eq!(editor.problems.len(), 2, "a folder outside the project is refused");
+		editor.import_assets(std::slice::from_ref(&square), &path.join("Assets/Worlds"));
+		assert!(
+			editor.problems.last().is_some_and(|p| p.contains("worlds")),
+			"and the folder of the worlds"
+		);
+
+		let into_root = tmp.path().join("tri.obj");
+		std::fs::write(
+			&into_root,
+			"v 0 0 0
+v 1 0 0
+v 0 1 0
+f 1 2 3
+",
+		)?;
+		editor.import_assets(&[into_root], &path.join("Assets"));
+		assert!(
+			path.join("Assets/tri.zenithmodel").is_file(),
+			"Assets itself is a folder of Assets"
+		);
+
+		let asset = models.join("square.zenithmodel");
+		assert_eq!(editor.export_file_name(&asset).as_deref(), Some("square.obj"));
+		let out = tmp.path().join("out.obj");
+		editor.export_asset(&asset, &out);
+		assert_eq!(std::fs::read(&out)?, std::fs::read(&square)?, "the source comes out");
+		Ok(())
+	}
+
+	#[test]
+	fn models_put_into_assets_are_asked_about_imported_or_left_as_the_project_says() -> TestResult {
+		let (tmp, _, path) = editor_with_project()?;
+		let remembered = tmp.path().join("Editor.toml");
+		std::fs::write(path.join("Assets/tri.obj"), "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n")?;
+
+		let mut editor = Editor::new(Some(remembered.clone()));
+		assert!(editor.requests.loose_models, "asked on open");
+		assert_eq!(editor.loose_models.len(), 1);
+		editor.never_import_loose_models();
+		assert_eq!(editor.loose_models, []);
+
+		let mut editor = Editor::new(Some(remembered.clone()));
+		assert!(!editor.requests.loose_models, "never: not asked again");
+		editor.check_loose_models(true);
+		assert!(editor.requests.loose_models, "but the menu still asks");
+		editor.loose_models.clear();
+
+		let project = Project::open(&path)?;
+		settings::set_loose_models(&project, LooseModels::Always)?;
+		let editor = Editor::new(Some(remembered));
+		assert!(!editor.requests.loose_models, "always: not asked");
+		assert!(path.join("Assets/tri.zenithmodel").is_file(), "imported");
+		assert!(!path.join("Assets/tri.obj").exists(), "the file is in the trash");
+		assert_eq!(editor.status(), Some("Imported 1 model, the files are in the trash"));
 		Ok(())
 	}
 

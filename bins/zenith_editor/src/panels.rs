@@ -14,7 +14,8 @@ const NEW_WORLD: &str = "New World";
 const QUIT: &str = "Unsaved changes";
 const BACKUP: &str = "Unsaved changes found";
 const PROBLEMS: &str = "Problems";
-const DIALOGS: [&str; 5] = [WELCOME, NEW_WORLD, QUIT, BACKUP, PROBLEMS];
+const LOOSE_MODELS: &str = "Models in Assets";
+const DIALOGS: [&str; 6] = [WELCOME, NEW_WORLD, QUIT, BACKUP, PROBLEMS, LOOSE_MODELS];
 const STATUSBAR_HEIGHT: f32 = 24.0;
 
 /// The whole UI of one frame.
@@ -242,6 +243,9 @@ fn dialogs(editor: &mut Editor, ui: &Ui) {
 		} else if editor.requests.problems {
 			editor.requests.problems = false;
 			ui.open_popup(PROBLEMS);
+		} else if editor.requests.loose_models {
+			editor.requests.loose_models = false;
+			ui.open_popup(LOOSE_MODELS);
 		} else if editor.requests.quit {
 			editor.requests.quit = false;
 			ui.open_popup(QUIT);
@@ -258,6 +262,7 @@ fn dialogs(editor: &mut Editor, ui: &Ui) {
 	quit(editor, ui);
 	backup_offer(editor, ui);
 	problems(editor, ui);
+	loose_models(editor, ui);
 }
 
 fn welcome(ui: &Ui) {
@@ -358,6 +363,46 @@ fn problems(editor: &mut Editor, ui: &Ui) {
 		ui.spacing();
 		if ui.button("OK") {
 			editor.problems.clear();
+			ui.close_current_popup();
+		}
+	}
+}
+
+fn loose_models(editor: &mut Editor, ui: &Ui) {
+	if let Some(_token) = ui.begin_modal_popup(LOOSE_MODELS) {
+		ui.text("These model files are in Assets but are not assets yet:");
+		for model in editor.loose_models.iter().filter(|model| model.taken_by.is_none()) {
+			ui.text(format!("  {}", model.path));
+		}
+		let skipped: Vec<_> = editor
+			.loose_models
+			.iter()
+			.filter_map(|model| Some((&model.path, model.taken_by.as_ref()?)))
+			.collect();
+		if !skipped.is_empty() {
+			ui.spacing();
+			ui.text_disabled("Left alone, the asset they would become is there already:");
+			for (path, taken_by) in skipped {
+				ui.text_disabled(format!("  {path} ({taken_by})"));
+			}
+		}
+		ui.spacing();
+		ui.text_wrapped(
+			"Import makes a .zenithmodel next to each, with its materials and textures, and moves the file to the trash of the project, where it can be restored from. The files it uses (.mtl, .bin, pictures) stay.",
+		);
+		ui.spacing();
+		if ui.button("Import") {
+			editor.import_loose_models();
+			ui.close_current_popup();
+		}
+		ui.same_line();
+		if ui.button("Not now") {
+			editor.loose_models.clear();
+			ui.close_current_popup();
+		}
+		ui.same_line();
+		if ui.button("Never for this project") {
+			editor.never_import_loose_models();
 			ui.close_current_popup();
 		}
 	}

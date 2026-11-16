@@ -185,6 +185,23 @@ impl Project {
 
 	// --- common -------------------------------------------------------------
 
+	/// Where the file of a project path is on disk: for tools that need a
+	/// path of the computer (an importer that reads the files next to a
+	/// model). `None` for a build, `Data://`, a path no scheme resolves, or
+	/// without the `fs` feature.
+	#[must_use]
+	#[cfg_attr(not(feature = "fs"), allow(clippy::missing_const_for_fn))] // it does nothing without `fs`
+	pub fn disk_path(&self, path: &ZPath) -> Option<std::path::PathBuf> {
+		#[cfg(feature = "fs")]
+		if let Self::Fs(FsProject::V1(fs)) = self
+			&& path.scheme() != DATA_SCHEME
+		{
+			return Some(fs.root.join(fs.core.resolve(path).ok()?));
+		}
+		let _ = (self, path);
+		None
+	}
+
 	fn backend(&self) -> &dyn Backend {
 		match self {
 			#[cfg(feature = "fs")]
@@ -487,6 +504,35 @@ impl Project {
 			Self::Fs(FsProject::V1(fs)) => Ok(fs),
 			_ => Err(ZenithError::Unsupported(what.to_string())),
 		}
+	}
+
+	/// The project folder `start` is in: `start` itself or the nearest folder
+	/// above it that is a project. For tools run from inside a project.
+	#[must_use]
+	pub fn find_folder(start: &Path) -> Option<std::path::PathBuf> {
+		start.ancestors().find(|dir| has_v1_flag(dir)).map(Path::to_path_buf)
+	}
+
+	/// The project path of a file on disk inside this project folder: the
+	/// reverse of resolving a [`ZPath`] (`<project>/Assets/a.png` is
+	/// `Assets://a.png`). `None` for a build, a file that is not there or is
+	/// outside the folder, or one under no scheme.
+	#[must_use]
+	pub fn zpath_of(&self, file: &Path) -> Option<ZPath> {
+		let Self::Fs(FsProject::V1(fs)) = self else {
+			return None;
+		};
+		let file = std::fs::canonicalize(file).ok()?;
+		let parts = file
+			.strip_prefix(&fs.root)
+			.ok()?
+			.components()
+			.map(|part| match part {
+				std::path::Component::Normal(name) => name.to_str(),
+				_ => None,
+			})
+			.collect::<Option<Vec<_>>>()?;
+		fs.reverse(&parts.join("/"))
 	}
 
 	// --- changing (project folders only) ------------------------------------

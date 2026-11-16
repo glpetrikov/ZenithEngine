@@ -169,6 +169,12 @@ pub enum ZenithError {
 	SaveKeyNotFound(String),
 	#[error("The value in the save is not what was asked for: {0}")]
 	SaveWrongType(String),
+
+	// === Asset errors ===
+	#[error("Invalid asset: {0}")]
+	InvalidAsset(String),
+	#[error("Asset not found: {0}")]
+	AssetNotFound(String),
 }
 
 // Public API boundary: documented, matchable variants.

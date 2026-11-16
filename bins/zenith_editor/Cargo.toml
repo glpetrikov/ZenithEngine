@@ -24,6 +24,8 @@ zenith_package = { version = "0.1.0", path = "../../crates/zenith_package" }
 zenith_filesystem = { version = "0.1.0", path = "../../crates/zenith_filesystem" }
 zenith_world = { version = "0.1.0", path = "../../crates/zenith_world" }
 zenith_input = { version = "0.1.0", path = "../../crates/zenith_input", features = ["winit", "gamepad"] }
+# File -> Import / Export: the assets of the project.
+zenith-renderer = { version = "0.1.0", path = "../../crates/zenith-renderer" }
 dirs = "7.0.0"
 rfd = "0.17.2"
 serde = { version = "1", features = ["derive"] }

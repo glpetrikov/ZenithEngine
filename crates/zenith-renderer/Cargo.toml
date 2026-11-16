@@ -15,20 +15,43 @@ wgpu = "30.0.1"
 # `RenderSettings` can be saved.
 serde = { version = "1", features = ["derive"] }
 
+# Assets: ids, JSON files (in the order they were written, for readable
+# diffs), models and pictures.
+uuid = { version = "1", default-features = false, features = ["std", "serde"] }
+getrandom = "0.2"
+serde_json = { version = "1", features = ["preserve_order"] }
+glam = { workspace = true }
+bytemuck = { version = "1.25.2", features = ["derive"] }
+tobj = { version = "4", default-features = false }
+# glTF and GLB models. `import` reads the buffers of a `.gltf` next to it.
+gltf = { version = "1.4.1", default-features = false, features = ["import", "utils", "names"] }
+# The pictures a `.gltf` names: in a `data:` URI, or a file name with `%20`s.
+base64 = "0.23"
+urlencoding = "2.1.3"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "hdr"] }
+
 zenith_error = { version = "0.1.0", path = "../zenith_error" }
 zenith_log = { version = "0.1.0", path = "../zenith_log" }
 zenith_world = { version = "0.1.0", path = "../zenith_world" }
+# Only reads and writes through a project, so it works without the `fs`
+# feature (the browser has no folders).
+zenith_filesystem = { version = "0.1.0", path = "../zenith_filesystem", default-features = false }
 
 # A browser without threads: the wgpu types are not `Send` and `Sync` there
 # unless asked, and the resources of bevy_ecs have to be. Nothing runs on
 # another thread, so nothing is shared for real.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { version = "30.0.1", features = ["fragile-send-sync-non-atomic-wasm"] }
+# Browsers have no OS entropy source: new asset ids come from `crypto`.
+getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
 pollster = "1.0.1"
 winit = "0.30.13"
 toml = "1.1.4"
+tempfile = "3"
+# The tests make projects on disk, which needs the `fs` feature.
+zenith_filesystem = { version = "0.1.0", path = "../zenith_filesystem" }
 
 [lints]
 workspace = true
