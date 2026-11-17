@@ -705,6 +705,10 @@ dear-imgui-wgpu with version 0.18.0 under Apache License 2.0.
 
 dear-imgui-winit with version 0.18.0 under Apache License 2.0.
 
+dear-imguizmo-sys with version 0.18.0 under Apache License 2.0.
+
+dear-imguizmo with version 0.18.0 under Apache License 2.0.
+
 dirs-sys with version 0.5.0 under Apache License 2.0.
 
 dirs with version 7.0.0 under Apache License 2.0.

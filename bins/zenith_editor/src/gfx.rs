@@ -3,7 +3,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use dear_imgui_rs::{ConfigFlags, Context, FontSource, Ui};
-use dear_imgui_wgpu::{FramebufferExtent, GammaMode, WgpuInitInfo, WgpuRenderer, wgpu};
+use dear_imgui_wgpu::{ExternalTextureId, FramebufferExtent, GammaMode, WgpuInitInfo, WgpuRenderer, wgpu};
 use dear_imgui_winit::{HiDpiMode, WinitPlatform};
 use winit::{
 	dpi::{LogicalSize, PhysicalSize},
@@ -138,6 +138,33 @@ impl Gfx {
 				zenith_log::warn!("The UI did not take a window event: {e}");
 				false
 			}
+		}
+	}
+
+	/// The GPU the UI is drawn with: the renderer of the world uses it too.
+	pub const fn device(&self) -> &wgpu::Device {
+		&self.device
+	}
+
+	pub const fn queue(&self) -> &wgpu::Queue {
+		&self.queue
+	}
+
+	/// Lets the UI draw `view` (a texture of the renderer) in an image.
+	pub fn register_texture(&mut self, view: &wgpu::TextureView) -> Option<ExternalTextureId> {
+		match self.renderer.register_external_texture(view) {
+			Ok(id) => Some(id),
+			Err(e) => {
+				zenith_log::warn!("The UI cannot show a texture: {e}");
+				None
+			}
+		}
+	}
+
+	/// The texture behind `id` was made again.
+	pub fn update_texture(&mut self, id: ExternalTextureId, view: &wgpu::TextureView) {
+		if let Err(e) = self.renderer.update_external_texture(id, view) {
+			zenith_log::warn!("The UI cannot show a texture that changed: {e}");
 		}
 	}
 

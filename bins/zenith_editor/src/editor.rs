@@ -17,6 +17,7 @@ use crate::{
 	backup::{self, BackupInfo},
 	project::{NewWorldError, OpenProject},
 	recent::Recent,
+	scene_view::SceneView,
 	settings::{self, LooseModels},
 };
 
@@ -58,6 +59,12 @@ pub struct Requests {
 #[allow(clippy::struct_excessive_bools)] // the flags of the state of the UI
 pub struct Editor {
 	pub project: Option<OpenProject>,
+	/// What the Viewport shows.
+	pub scene: SceneView,
+	/// The world the Viewport and the Hierarchy show.
+	pub active_world: Option<String>,
+	/// The seconds the last frame took.
+	pub dt: f32,
 	recent_file: Option<PathBuf>,
 	pub input: Input,
 	gamepads: Option<Gamepads>,
@@ -95,6 +102,9 @@ impl Editor {
 		};
 		let mut editor = Self {
 			project: None,
+			scene: SceneView::default(),
+			active_world: None,
+			dt: 0.0,
 			recent_file,
 			input: Input::default(),
 			gamepads,
@@ -136,6 +146,9 @@ impl Editor {
 	/// The error of opening the project; the one that was open stays.
 	pub fn open_project(&mut self, path: &Path) -> ZResult<()> {
 		let open = OpenProject::open(path)?;
+		// The renderer goes out of the worlds that are about to be dropped.
+		self.scene.release(self.project.as_mut());
+		self.active_world = None;
 		for problem in &open.load_errors {
 			self.problems
 				.push(format!("The world {} cannot be read: {}", problem.name, problem.error));
@@ -493,6 +506,47 @@ impl Editor {
 		}
 	}
 
+	/// The world the Viewport shows: the one that was chosen, else the first.
+	pub fn shown_world(&mut self) -> Option<String> {
+		let project = self.project.as_ref()?;
+		if self
+			.active_world
+			.as_ref()
+			.is_none_or(|name| !project.worlds.contains_key(name))
+		{
+			self.active_world = project.worlds.keys().next().cloned();
+		}
+		self.active_world.clone()
+	}
+
+	/// Draws the world into the texture of the Viewport, before the UI that
+	/// shows it.
+	pub fn render_viewport(&mut self, gfx: &mut crate::gfx::Gfx) {
+		let Some(name) = self.shown_world() else { return };
+		if let Some(project) = &mut self.project {
+			self.scene.render(gfx, project, &name);
+		}
+	}
+
+	/// Edit → Replace Source: puts another file into the model or picture
+	/// `asset` (on disk, in the project). What uses it gets the new one: the
+	/// renderer sees the file change.
+	pub fn replace_source(&mut self, asset: &Path, source: &Path) {
+		let Some(project) = &self.project else {
+			self.say("Open a project first");
+			return;
+		};
+		let project = &project.project;
+		let Some(path) = project.zpath_of(asset) else {
+			self.problem(format!("{} is not a file of the project", asset.display()));
+			return;
+		};
+		match ops::replace_source(project, &path, source) {
+			Ok(()) => self.say(format!("{path} now comes from {}", source.display())),
+			Err(e) => self.problem(format!("The source of {path} is not replaced: {e}")),
+		}
+	}
+
 	/// Ends a frame of input: the real gamepads are read (while the Viewport
 	/// has the focus), then what happened in the frame becomes the past.
 	pub fn end_frame(&mut self, dt: f32) {
@@ -758,6 +812,46 @@ f 1 2 3
 		let out = tmp.path().join("out.obj");
 		editor.export_asset(&asset, &out);
 		assert_eq!(std::fs::read(&out)?, std::fs::read(&square)?, "the source comes out");
+		Ok(())
+	}
+
+	#[test]
+	fn replacing_a_source_changes_the_asset_and_keeps_its_place() -> TestResult {
+		let (tmp, mut editor, path) = editor_with_project()?;
+		let models = path.join("Assets/Models");
+		std::fs::create_dir_all(&models)?;
+		let square = tmp.path().join("square.obj");
+		std::fs::write(
+			&square,
+			"v 0 0 0
+v 1 0 0
+v 0 1 0
+f 1 2 3
+",
+		)?;
+		editor.import_assets(std::slice::from_ref(&square), &models);
+		let asset = models.join("square.zenithmodel");
+		let before = std::fs::read(&asset)?;
+
+		let bigger = tmp.path().join("bigger.obj");
+		std::fs::write(
+			&bigger,
+			"v 0 0 0
+v 2 0 0
+v 0 2 0
+v 2 2 0
+f 1 2 3
+f 2 4 3
+",
+		)?;
+		editor.replace_source(&asset, &bigger);
+		assert!(editor.problems.is_empty(), "{:?}", editor.problems);
+		assert_ne!(std::fs::read(&asset)?, before, "the asset holds the new source");
+		let name = editor.export_file_name(&asset);
+		assert_eq!(name.as_deref(), Some("square.obj"), "it is the same asset");
+
+		editor.replace_source(&tmp.path().join("outside.zenithmodel"), &bigger);
+		assert_eq!(editor.problems.len(), 1, "a file outside the project is refused");
 		Ok(())
 	}
 

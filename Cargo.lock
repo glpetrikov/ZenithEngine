@@ -1080,6 +1080,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "dear-imguizmo"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6856ce90723833c886e57ae950d0704410641942a4503122af00510c5b23cdbe"
+dependencies = [
+ "bitflags 2.13.2",
+ "dear-imgui-rs",
+ "dear-imgui-sys",
+ "dear-imguizmo-sys",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "dear-imguizmo-sys"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a97f06f20ffdac7e3e7ba07dbe3874ccc0979e49bc7e4bf5586ffaf55b4e0e71"
+dependencies = [
+ "cc",
+ "dear-imgui-build-support",
+ "dear-imgui-sys",
+ "mint",
+]
+
+[[package]]
 name = "deranged"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5192,11 +5217,14 @@ dependencies = [
 name = "zenith_editor"
 version = "0.1.0"
 dependencies = [
+ "bevy_ecs",
  "ctrlc",
  "dear-imgui-rs",
  "dear-imgui-wgpu",
  "dear-imgui-winit",
+ "dear-imguizmo",
  "dirs",
+ "glam 0.34.1",
  "pollster 1.0.1",
  "rfd",
  "serde",
@@ -5205,6 +5233,7 @@ dependencies = [
  "web-time",
  "winit",
  "zenith-renderer",
+ "zenith_components",
  "zenith_error",
  "zenith_filesystem",
  "zenith_input",

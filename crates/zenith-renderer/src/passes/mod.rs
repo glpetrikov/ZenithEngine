@@ -3,6 +3,7 @@
 //! [`register`] puts them in a [`PassRegistry`]; `zenith-renderer` does it
 //! for its own registry at start.
 
+pub mod editor;
 pub mod inputs;
 pub mod opaque;
 pub mod output;
@@ -29,4 +30,7 @@ pub fn register(passes: &mut PassRegistry) {
 	passes.register::<opaque::Opaque>();
 	passes.register::<tonemap::Tonemap>();
 	passes.register::<output::Output>();
+	passes.register::<editor::Grid>();
+	passes.register::<editor::Gizmos>();
+	passes.register::<editor::Outline>();
 }

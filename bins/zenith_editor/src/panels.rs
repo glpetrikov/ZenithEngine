@@ -6,7 +6,7 @@ use zenith_input::{ZGamePad, ZGamePadAxis, ZStick};
 
 use crate::{
 	editor::{EMULATED_PAD, Editor},
-	toolbar,
+	toolbar, viewport_panel,
 };
 
 const WELCOME: &str = "Welcome";
@@ -23,22 +23,11 @@ pub fn draw(editor: &mut Editor, ui: &Ui) {
 	toolbar::draw_toolbar(editor, ui);
 	dockspace(ui);
 	statusbar(ui);
-	hierarhy(ui);
-	viewport(editor, ui);
+	viewport_panel::hierarchy(editor, ui);
+	viewport_panel::viewport(editor, ui);
 	input_debug(editor, ui);
-	worlds(editor, ui);
+	viewport_panel::worlds(editor, ui);
 	dialogs(editor, ui);
-}
-
-fn hierarhy(ui: &Ui) {
-	ui.window("Hierarchy")
-		.size([260.0, 300.0], Condition::FirstUseEver)
-		.position([30.0, 60.0], Condition::FirstUseEver)
-		.build(|| {
-			if let Some(_node) = ui.tree_node("Hierarchy") {
-				ui.selectable("Entity1");
-			}
-		});
 }
 
 fn statusbar(ui: &Ui) {
@@ -65,23 +54,6 @@ fn statusbar(ui: &Ui) {
 			ui.text_disabled("Zenith Engine 0.1.0");
 			ui.same_line();
 		});
-}
-
-/// The place the render will go. It is the only panel that gets the input of
-/// the game, and only while it has the focus.
-fn viewport(editor: &mut Editor, ui: &Ui) {
-	let mut focused = false;
-	ui.window("Viewport")
-		.size([640.0, 360.0], Condition::FirstUseEver)
-		.position([30.0, 60.0], Condition::FirstUseEver)
-		.build(|| {
-			focused = ui.is_window_focused();
-			ui.text_disabled("The render goes here");
-			if focused {
-				ui.text_disabled("Focused: the keyboard and the mouse go to the game");
-			}
-		});
-	editor.set_viewport_focus(focused);
 }
 
 fn input_debug(editor: &mut Editor, ui: &Ui) {
@@ -205,27 +177,6 @@ fn emulated_pad(editor: &mut Editor, ui: &Ui) {
 			editor.set_pad_axis(axis, value);
 		}
 	}
-}
-
-/// The worlds of the project, `*` marks the ones with changes.
-fn worlds(editor: &Editor, ui: &Ui) {
-	ui.window("Worlds")
-		.size([260.0, 300.0], Condition::FirstUseEver)
-		.position([30.0, 440.0], Condition::FirstUseEver)
-		.build(|| {
-			let Some(project) = &editor.project else {
-				ui.text_disabled("No project is open");
-				return;
-			};
-			ui.text(project.path.display().to_string());
-			ui.separator();
-			if project.worlds.is_empty() {
-				ui.text_disabled("No worlds yet: File > New World");
-			}
-			for (name, entry) in &project.worlds {
-				ui.text(if entry.dirty { format!("* {name}") } else { name.clone() });
-			}
-		});
 }
 
 // --- dialogs

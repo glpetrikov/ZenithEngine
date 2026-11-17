@@ -22,19 +22,22 @@ pub const SHADOW: &str = "Zenith/shadow";
 pub const SKY: &str = "Zenith/sky";
 /// Sprites.
 pub const SPRITE: &str = "Zenith/sprite";
+/// Lines (the grid, the gizmos and the outline of the editor).
+pub const LINES: &str = "Zenith/lines";
 /// The structs the shaders of the passes share.
 pub const COMMON: &str = "Zenith/common";
 /// What stands in for a shader of a material that is missing or broken.
 pub const MAGENTA: &str = "Zenith/magenta";
 
 /// The engine's copies, by name.
-pub const ENGINE: [(&str, &str); 7] = [
+pub const ENGINE: [(&str, &str); 8] = [
 	(COMMON, include_str!("common.wesl")),
 	(STANDARD, include_str!("standard.wesl")),
 	(TONEMAP, include_str!("tonemap.wesl")),
 	(SHADOW, include_str!("shadow.wesl")),
 	(SKY, include_str!("sky.wesl")),
 	(SPRITE, include_str!("sprite.wesl")),
+	(LINES, include_str!("lines.wesl")),
 	(MAGENTA, include_str!("magenta.wesl")),
 ];
 

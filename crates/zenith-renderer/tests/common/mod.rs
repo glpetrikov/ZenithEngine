@@ -158,3 +158,58 @@ impl Scene {
 		[bytes[0], bytes[1], bytes[2], bytes[3]]
 	}
 }
+
+impl Scene {
+	/// Every pixel of the target, row by row.
+	pub fn image(&self) -> Vec<[u8; 4]> {
+		let renderer = self.world.world().resource::<Renderer>();
+		let target = self
+			.world
+			.world()
+			.resource::<RenderTargets>()
+			.get(self.target)
+			.expect("the target");
+		let device = renderer.device();
+		// A row of SIZE pixels is a multiple of the alignment of the copy.
+		let row = SIZE * 4;
+		assert_eq!(row % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT, 0, "the rows are padded");
+		let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+			label: Some("read back"),
+			size: u64::from(row * SIZE),
+			usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+			mapped_at_creation: false,
+		});
+		let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+		encoder.copy_texture_to_buffer(
+			target.texture.as_image_copy(),
+			wgpu::TexelCopyBufferInfo {
+				buffer: &buffer,
+				layout: wgpu::TexelCopyBufferLayout {
+					offset: 0,
+					bytes_per_row: Some(row),
+					rows_per_image: Some(SIZE),
+				},
+			},
+			wgpu::Extent3d {
+				width: SIZE,
+				height: SIZE,
+				depth_or_array_layers: 1,
+			},
+		);
+		renderer.queue().submit([encoder.finish()]);
+		buffer.map_async(wgpu::MapMode::Read, .., |result| result.expect("map the buffer"));
+		device
+			.poll(wgpu::PollType::wait_indefinitely())
+			.expect("wait for the GPU");
+		let bytes = buffer.get_mapped_range(..).expect("read the buffer");
+		bytes.as_chunks::<4>().0.to_vec()
+	}
+
+	/// Looks at the origin from above and behind, with `graph`.
+	pub fn look_from_above(&mut self, graph: Option<zenith_renderer::graph::GraphId>) {
+		let mut extra = self.world.world_mut().resource_mut::<ExtraViews>();
+		extra.0[0].position = DVec3::new(0.0, 2.0, 4.0);
+		extra.0[0].rotation = Quat::from_rotation_x(-0.45);
+		extra.0[0].graph = graph;
+	}
+}

@@ -23,10 +23,20 @@ impl GraphId {
 	pub const BUILTIN: Self = Self(AssetId::from_bytes([
 		0xa8, 0x99, 0x40, 0x19, 0x68, 0xfe, 0x4b, 0x16, 0xa2, 0x2e, 0x92, 0xae, 0x91, 0x4b, 0xca, 0x9f,
 	]));
+
+	/// The graph the viewport of the editor runs: the built-in one with the
+	/// grid, the gizmos and the outline (`editor_graph.json`).
+	pub const EDITOR: Self = Self(AssetId::from_bytes([
+		0xe7, 0xd1, 0xc3, 0xa2, 0x5b, 0x94, 0x4f, 0x0e, 0x8a, 0x16, 0x3c, 0x2d, 0x9b, 0x7f, 0x4e, 0x51,
+	]));
 }
 
 /// The text of the built-in graph.
 pub const BUILTIN_GRAPH: &str = include_str!("builtin_graph.json");
+
+/// The text of the graph of the editor: the built-in one with its own passes
+/// (`editor_graph.json`).
+pub const EDITOR_GRAPH: &str = include_str!("editor_graph.json");
 
 /// A graph of the registry: what it is, and what runs.
 pub struct GraphEntry {
@@ -89,6 +99,14 @@ impl GraphRegistry {
 		Ok(self.set(GraphDesc::parse(BUILTIN_GRAPH)?, passes))
 	}
 
+	/// Puts the graph of the editor in.
+	///
+	/// # Errors
+	/// The text of the graph cannot be read (a bug of the engine).
+	pub fn set_editor(&mut self, passes: &PassRegistry) -> ZResult<&[Diagnostic]> {
+		Ok(self.set(GraphDesc::parse(EDITOR_GRAPH)?, passes))
+	}
+
 	/// Compiles every graph again (the passes changed: a plugin, a script).
 	pub fn recompile(&mut self, passes: &PassRegistry) {
 		let descs: Vec<GraphDesc> = self.graphs.values().map(|entry| entry.desc.clone()).collect();
@@ -145,6 +163,21 @@ mod tests {
 	#[test]
 	fn the_built_in_graph_has_its_own_id() -> ZResult<()> {
 		assert_eq!(GraphId(GraphDesc::parse(BUILTIN_GRAPH)?.uuid), GraphId::BUILTIN);
+		Ok(())
+	}
+
+	#[test]
+	fn the_editor_graph_has_its_own_id_and_compiles() -> ZResult<()> {
+		assert_eq!(GraphId(GraphDesc::parse(EDITOR_GRAPH)?.uuid), GraphId::EDITOR);
+		let mut passes = PassRegistry::new();
+		crate::passes::register(&mut passes);
+		let mut graphs = GraphRegistry::new();
+		assert_eq!(graphs.set_editor(&passes)?, []);
+		assert!(
+			graphs
+				.get(GraphId::EDITOR)
+				.is_some_and(|entry| entry.compiled.is_some())
+		);
 		Ok(())
 	}
 }

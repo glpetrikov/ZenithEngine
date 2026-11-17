@@ -332,5 +332,8 @@ fn builtin_graphs() -> (GraphRegistry, PassRegistry) {
 	if let Err(e) = graphs.set_builtin(&passes) {
 		zenith_log::error!("The built-in render graph cannot be read: {e}");
 	}
+	if let Err(e) = graphs.set_editor(&passes) {
+		zenith_log::error!("The render graph of the editor cannot be read: {e}");
+	}
 	(graphs, passes)
 }

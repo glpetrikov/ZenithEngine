@@ -14,6 +14,8 @@ winit = "0.30.13"
 dear-imgui-rs = "0.18.0"
 dear-imgui-winit = "0.18.0"
 dear-imgui-wgpu = "0.18.0"
+# The transform gizmo over the viewport; matrices go in as plain arrays.
+dear-imguizmo = { version = "0.18.0", default-features = false }
 pollster = "1.0.1"
 # Ctrl+C (and SIGTERM, closing the console) end the editor the way closing the window does.
 ctrlc = { version = "3", features = ["termination"] }
@@ -23,6 +25,9 @@ zenith_log = { version = "0.1.0", path = "../../crates/zenith_log" }
 zenith_package = { version = "0.1.0", path = "../../crates/zenith_package" }
 zenith_filesystem = { version = "0.1.0", path = "../../crates/zenith_filesystem" }
 zenith_world = { version = "0.1.0", path = "../../crates/zenith_world" }
+zenith_components = { version = "0.1.0", path = "../../crates/zenith_components" }
+bevy_ecs = { workspace = true }
+glam = { workspace = true }
 zenith_input = { version = "0.1.0", path = "../../crates/zenith_input", features = ["winit", "gamepad"] }
 # File -> Import / Export: the assets of the project.
 zenith-renderer = { version = "0.1.0", path = "../../crates/zenith-renderer" }

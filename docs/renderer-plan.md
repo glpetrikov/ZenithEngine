@@ -898,7 +898,35 @@ Every stage ends with something that can be checked.
     (the editor does, stage 11); no compiled-WGSL builds yet.
 11. **The editor: viewport.** The texture in ImGui, the editor camera, hot
     reload (of shaders too), replacing a source, the editor passes
-    (`editor.grid`, `editor.gizmos`, `editor.outline`).
+    (`editor.grid`, `editor.gizmos`, `editor.outline`). Also ImGuizmo
+    (the transform gizmo: move, rotate, scale of the selected entity, drawn
+    by ImGui over the viewport texture, not a render pass; it needs the view
+    and projection matrices of the editor camera, which the editor already
+    has).
+
+    *Done:* the renderer has `GraphId::EDITOR` (`editor_graph.json`: the
+    built-in graph plus `editor.grid`, `editor.gizmos`, `editor.outline`, all
+    drawing lines with `Zenith/lines` over the scene with a depth test). The
+    grid is lines on `y = 0` that fade out; the gizmos are the lines of the
+    `GizmoLines` resource (the editor puts the marks of lights and cameras
+    there); the outline is the box of each model in `EditorSelection` (the
+    bounds are kept in `GpuMesh`), not a silhouette. `uninstall` /
+    `install_again` move the renderer with its cache from one world to
+    another. In `zenith_editor`: `scene_view` draws the shown world into a
+    texture through the shared device and registers it with `dear-imgui-wgpu`
+    (resized to the panel); `camera` is the editor camera (right mouse button
+    and WASD/QE to fly, wheel, `F` to focus); `viewport_panel` has the
+    Viewport, the Hierarchy and the list of worlds, and the ImGuizmo gizmo
+    (`dear-imguizmo` 0.18, `W`/`E`/`R`, local or world axes) whose result is
+    written back into `Transform` and marks the world as changed. The editor
+    writes the engine's shaders into a project once, and watches
+    `Assets/` with `Project::watch`: a changed shader sets `ReloadShaders`, a
+    changed asset is invalidated in the cache, a new or removed one makes the
+    registry read again. File → Replace Source uses `ops::replace_source`;
+    the watcher does the rest. Left out: picking by a click in the picture,
+    the Game panel, a silhouette outline; the window was not run by hand
+    (only the parts without a window are tested), and a project with no
+    world shows nothing in the Viewport.
 12. **The graph editor** with imnodes.
 13. **Scriptable render passes** (section 20), after the scripting, made by Gleb, can call
     into the engine. Check: a fullscreen effect written as a script and a

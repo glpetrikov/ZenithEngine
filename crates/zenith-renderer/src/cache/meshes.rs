@@ -28,6 +28,8 @@ pub struct GpuMesh {
 	pub vertices: wgpu::Buffer,
 	pub indices: wgpu::Buffer,
 	pub submeshes: Vec<GpuSubMesh>,
+	/// The box around the vertices: its smallest and its largest corner.
+	pub bounds: ([f32; 3], [f32; 3]),
 	bytes: u64,
 }
 
@@ -90,6 +92,7 @@ impl GpuMesh {
 		indices: &[u32],
 		submeshes: Vec<GpuSubMesh>,
 	) -> Self {
+		let bounds = bounds_of(vertices);
 		let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some(&format!("{label} vertices")),
 			contents: bytemuck::cast_slice(vertices),
@@ -105,6 +108,7 @@ impl GpuMesh {
 			vertices,
 			indices,
 			submeshes,
+			bounds,
 		}
 	}
 
@@ -118,4 +122,17 @@ impl GpuMesh {
 	pub const fn bytes(&self) -> u64 {
 		self.bytes
 	}
+}
+
+/// The smallest box that holds every vertex.
+fn bounds_of(vertices: &[Vertex]) -> ([f32; 3], [f32; 3]) {
+	let mut min = [f32::MAX; 3];
+	let mut max = [f32::MIN; 3];
+	for vertex in vertices {
+		for axis in 0..3 {
+			min[axis] = min[axis].min(vertex.position[axis]);
+			max[axis] = max[axis].max(vertex.position[axis]);
+		}
+	}
+	(min, max)
 }

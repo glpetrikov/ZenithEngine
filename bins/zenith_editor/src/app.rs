@@ -55,6 +55,8 @@ impl EditorApp {
 		let now = Instant::now();
 		let dt = now.duration_since(*last_frame).as_secs_f32();
 		*last_frame = now;
+		editor.dt = dt;
+		editor.render_viewport(gfx);
 		if let Err(e) = gfx.frame(|ui| panels::draw(editor, ui)) {
 			zenith_log::error!("The frame failed: {e}");
 			self.failure = Some(e);

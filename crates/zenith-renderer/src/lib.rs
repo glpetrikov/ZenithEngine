@@ -127,22 +127,35 @@ pub fn insert_resources(world: &mut World, renderer: Renderer, settings: RenderS
 	world.insert_resource(renderer);
 	world.insert_resource(settings);
 	world.init_resource::<ClearColor>();
+	world.init_resource::<extract::ExtraViews>();
+	world.init_resource::<targets::RenderTargets>();
+	init_frame_resources(world);
+}
+
+/// The resources the systems of a frame expect to be there.
+fn init_frame_resources(world: &mut World) {
 	world.init_resource::<extract::ExtractedViews>();
 	world.init_resource::<extract::ExtractedMeshes>();
 	world.init_resource::<extract::ExtractedSprites>();
 	world.init_resource::<extract::ExtractedLights>();
-	world.init_resource::<extract::ExtraViews>();
 	world.init_resource::<prepare::PreparedViews>();
 	world.init_resource::<prepare::DrawLists>();
 	world.init_resource::<prepare::SpriteLists>();
 	world.init_resource::<prepare::ReloadShaders>();
-	world.init_resource::<targets::RenderTargets>();
+	world.init_resource::<passes::editor::GizmoLines>();
+	world.init_resource::<passes::editor::EditorSelection>();
 }
 
 /// Gives `renderer` and its `settings` to `world`. They outlive
 /// `clear_world`, and so does the cache. The render systems are not the
 /// world's: see [`schedule`].
 pub fn install(world: &mut zenith_world::World, renderer: Renderer, settings: RenderSettings) {
+	keep_resources(world);
+	insert_resources(world.world_mut(), renderer, settings);
+}
+
+/// Makes what the renderer keeps survive `clear_world`.
+fn keep_resources(world: &mut zenith_world::World) {
 	world.keep_resource::<Renderer>();
 	world.keep_resource::<RenderSettings>();
 	world.keep_resource::<ClearColor>();
@@ -160,7 +173,6 @@ pub fn install(world: &mut zenith_world::World, renderer: Renderer, settings: Re
 	world.keep_resource::<prepare::SpriteLists>();
 	world.keep_resource::<prepare::ReloadShaders>();
 	world.keep_resource::<targets::RenderTargets>();
-	insert_resources(world.world_mut(), renderer, settings);
 }
 
 /// A change of [`RenderSettings`] reaches the renderer.
@@ -189,4 +201,77 @@ pub fn install_project(
 	world.world_mut().insert_resource(ProjectRes(project));
 	world.world_mut().insert_resource(registry);
 	Ok(())
+}
+
+/// The renderer and what it keeps for as long as the host lives.
+///
+/// That is its GPU, its cache, its targets and its views. [`uninstall`] takes
+/// it out of one world and [`install_again`] puts it in another, so the editor
+/// can draw the world it has open without the GPU and the loaded assets
+/// starting over.
+pub struct Installed {
+	renderer: Renderer,
+	settings: RenderSettings,
+	cache: GpuCache,
+	clear: ClearColor,
+	targets: targets::RenderTargets,
+	extra_views: extract::ExtraViews,
+}
+
+impl Installed {
+	/// The renderer inside.
+	pub const fn renderer(&self) -> &Renderer {
+		&self.renderer
+	}
+}
+
+/// Takes what [`install`] gave out of `world`. `None` if it has none of it.
+pub fn uninstall(world: &mut zenith_world::World) -> Option<Installed> {
+	let ecs = world.world_mut();
+	let cache = ecs.remove_resource::<GpuCache>()?;
+	let Some(renderer) = ecs.remove_resource::<Renderer>() else {
+		ecs.insert_resource(cache);
+		return None;
+	};
+	let installed = Installed {
+		renderer,
+		cache,
+		settings: ecs.remove_resource::<RenderSettings>().unwrap_or_default(),
+		clear: ecs.remove_resource::<ClearColor>().unwrap_or_default(),
+		targets: ecs.remove_resource::<targets::RenderTargets>().unwrap_or_default(),
+		extra_views: ecs.remove_resource::<extract::ExtraViews>().unwrap_or_default(),
+	};
+	// What the frame held is of no use to another world, and has buffers.
+	ecs.remove_resource::<extract::ExtractedViews>();
+	ecs.remove_resource::<extract::ExtractedMeshes>();
+	ecs.remove_resource::<extract::ExtractedSprites>();
+	ecs.remove_resource::<extract::ExtractedLights>();
+	ecs.remove_resource::<prepare::PreparedViews>();
+	ecs.remove_resource::<prepare::DrawLists>();
+	ecs.remove_resource::<prepare::SpriteLists>();
+	ecs.remove_resource::<passes::editor::GizmoLines>();
+	ecs.remove_resource::<passes::editor::EditorSelection>();
+	Some(installed)
+}
+
+/// Puts what [`uninstall`] took into `world`, as [`install`] would have. The
+/// project of the world is not part of it: see [`install_project`].
+pub fn install_again(world: &mut zenith_world::World, installed: Installed) {
+	let Installed {
+		renderer,
+		settings,
+		cache,
+		clear,
+		targets,
+		extra_views,
+	} = installed;
+	keep_resources(world);
+	let ecs = world.world_mut();
+	ecs.insert_resource(cache);
+	ecs.insert_resource(renderer);
+	ecs.insert_resource(settings);
+	ecs.insert_resource(clear);
+	ecs.insert_resource(targets);
+	ecs.insert_resource(extra_views);
+	init_frame_resources(ecs);
 }

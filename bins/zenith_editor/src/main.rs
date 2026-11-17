@@ -1,13 +1,16 @@
 mod app;
 mod backup;
+mod camera;
 mod editor;
 mod gfx;
 mod panels;
 mod project;
 mod recent;
+mod scene_view;
 mod settings;
 mod theme;
 mod toolbar;
+mod viewport_panel;
 
 use std::sync::atomic::Ordering;
 

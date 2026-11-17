@@ -51,6 +51,36 @@ fn export(editor: &mut Editor) {
 	}
 }
 
+/// File → Replace Source: an asset of the project, then the file that takes the
+/// place of what it was made from.
+fn replace_source(editor: &mut Editor) {
+	let Some(assets) = editor.project.as_ref().map(|p| p.path.join("Assets")) else {
+		return;
+	};
+	let Some(asset) = rfd::FileDialog::new()
+		.set_title("Replace the source of")
+		.set_directory(&assets)
+		.add_filter(
+			"Models and pictures",
+			&[AssetKind::Model.extension(), AssetKind::Texture.extension()],
+		)
+		.pick_file()
+	else {
+		return;
+	};
+	let Some(source) = rfd::FileDialog::new()
+		.set_title("Take the new source from")
+		.add_filter(
+			"Models and pictures",
+			&[&MODEL_SOURCES[..], &PICTURE_EXTENSIONS[..]].concat(),
+		)
+		.pick_file()
+	else {
+		return;
+	};
+	editor.replace_source(&asset, &source);
+}
+
 pub fn draw_toolbar(editor: &mut Editor, ui: &Ui) {
 	ui.main_menu_bar(|| {
 		ui.text("ZenithEngine");
@@ -78,6 +108,9 @@ pub fn draw_toolbar(editor: &mut Editor, ui: &Ui) {
 			}
 			if ui.menu_item_enabled_selected("Export...", None::<&str>, false, has_project) {
 				export(editor);
+			}
+			if ui.menu_item_enabled_selected("Replace Source...", None::<&str>, false, has_project) {
+				replace_source(editor);
 			}
 			if ui.menu_item_enabled_selected("Import Loose Models...", None::<&str>, false, has_project) {
 				editor.check_loose_models(true);

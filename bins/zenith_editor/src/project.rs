@@ -4,6 +4,7 @@ use std::{
 	collections::BTreeMap,
 	fmt,
 	path::{Path, PathBuf},
+	sync::Arc,
 };
 
 use zenith_error::{ZResult, ZenithError};
@@ -65,7 +66,7 @@ impl std::error::Error for NewWorldError {}
 /// A folder project and the worlds in it, by name: the path below `Worlds/`
 /// without `.zenith` (`Level1`, `Caves/Deep`).
 pub struct OpenProject {
-	pub project: Project,
+	pub project: Arc<Project>,
 	pub path: PathBuf,
 	pub worlds: BTreeMap<String, WorldEntry>,
 	/// The worlds that were in `Worlds/` but could not be read.
@@ -80,7 +81,7 @@ impl OpenProject {
 	/// The error of [`Project::open`], or of listing `Worlds/`.
 	pub fn open(path: impl AsRef<Path>) -> ZResult<Self> {
 		let path = path.as_ref().to_path_buf();
-		let project = Project::open(&path)?;
+		let project = Arc::new(Project::open(&path)?);
 		let mut names = Vec::new();
 		scan(&project, "", 0, &mut names)?;
 		let mut worlds = BTreeMap::new();
