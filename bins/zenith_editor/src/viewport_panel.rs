@@ -8,6 +8,7 @@ use glam::{Mat4, Vec2, Vec3};
 use crate::{
 	camera::FlyInput,
 	editor::Editor,
+	panels,
 	scene_view::{self, GizmoOperation},
 };
 
@@ -39,7 +40,7 @@ fn fly_input(ui: &Ui) -> FlyInput {
 /// gets the input of the game, and only while it has the focus.
 pub fn viewport(editor: &mut Editor, ui: &Ui) {
 	let mut focused = false;
-	ui.window("Viewport")
+	ui.window(&*panels::VIEWPORT)
 		.size([640.0, 360.0], Condition::FirstUseEver)
 		.position([30.0, 60.0], Condition::FirstUseEver)
 		.flags(WindowFlags::NO_SCROLLBAR | WindowFlags::NO_SCROLL_WITH_MOUSE)
@@ -169,7 +170,7 @@ fn gizmo(editor: &mut Editor, ui: &Ui, corner: [f32; 2], size: [f32; 2]) {
 
 /// The entities of the world that is shown; a click selects one.
 pub fn hierarchy(editor: &mut Editor, ui: &Ui) {
-	ui.window("Hierarchy")
+	ui.window(&*panels::HIERARCHY)
 		.size([260.0, 300.0], Condition::FirstUseEver)
 		.position([30.0, 60.0], Condition::FirstUseEver)
 		.build(|| {
@@ -202,7 +203,7 @@ pub fn hierarchy(editor: &mut Editor, ui: &Ui) {
 /// The worlds of the project, `*` marks the ones with changes. A click shows
 /// one in the Viewport.
 pub fn worlds(editor: &mut Editor, ui: &Ui) {
-	ui.window("Worlds")
+	ui.window(&*panels::WORLDS)
 		.size([260.0, 300.0], Condition::FirstUseEver)
 		.position([30.0, 440.0], Condition::FirstUseEver)
 		.build(|| {

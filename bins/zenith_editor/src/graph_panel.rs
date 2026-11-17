@@ -750,7 +750,10 @@ mod tests {
 
 	#[test]
 	fn the_panel_works_on_the_graphs_of_the_renderer() -> TestResult {
-		// One test: there is one UI context at a time.
+		// There is one UI context at a time.
+		let _one_context = crate::panels::UI_LOCK
+			.lock()
+			.unwrap_or_else(std::sync::PoisonError::into_inner);
 		let Some((device, queue)) = gpu() else {
 			return Ok(());
 		};

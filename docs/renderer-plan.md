@@ -975,9 +975,11 @@ Every stage ends with something that can be checked.
     the Game panel, a silhouette outline; the window was not run by hand
     (only the parts without a window are tested), and a project with no
     world shows nothing in the Viewport.
-12. **The graph editor** with imnodes. *Done:* the panel Render Graph (Window menu): a list of the graphs of the renderer and of the project (`.zenithgraph` assets, loaded on a click), nodes and pins made from `PassDesc` (a pin is colored by what its slot carries, a title by the category of its pass), parameters as ImGui widgets made from `ParamDesc` right in the node, links by dragging (checked: output to input, the same kind of slot, not to itself; Ctrl-drag detaches), delete with the Delete key, adding a node from a menu on right click (by category), every edit goes into `Renderer::set_graph`, which compiles it, so the errors and warnings of the compiler are listed under the nodes and the nodes with errors are red; the last version that compiled keeps running. Save writes a project graph back, Save As puts a copy with a new id into `Assets/Graphs`; "Show in Viewport" draws the Viewport with the graph being edited; "Main graph" makes it the main one. Node positions come from the file, nodes without one are laid out in columns by depth, and the positions imnodes holds are written back. The pieces without a window (pins, links, layout, parameters, a UI run with no window) are tested; the panel was not run by hand. Left out: undo, copy and paste of nodes, a view of the textures of a graph (stage 13), renaming a graph.
-13. **Line rendering and debug views.** A line renderer in the engine (not only for the editor): world-space lines with a thickness, a color and an optional depth test, batched, as an API for games and tools (`DebugDraw`: line, polyline, box, sphere, circle, arrow, frustum, grid) and as the `zenith.lines` pass; the editor passes (grid, gizmos, outline) move onto it. Debug views: a node `zenith.debug_view` that shows a buffer of the graph instead of the picture, with a mode and a palette: depth (a color ramp from near to far, linear or logarithmic, with the range as parameters), normals, roughness, velocity, entity id (a color per id), overdraw, lights per cluster (a heat map), shadow cascades (a color per cascade), mip level, wireframe. A Debug view menu in the Viewport chooses the mode; every texture slot of any graph can be viewed from the graph editor with a click on its pin. Check: the depth of the sample scene as colors that change with distance, and the lights-per-cluster heat map once stage 16 is there.
-14. **The editor: panels.** Details, Hierarchy, the file panel and the
+12. **The graph editor** with imnodes. *Done:* the panel Render Graph (Window menu): a list of the graphs of the renderer and of the project (`.zenithgraph` assets, loaded on a click), nodes and pins made from `PassDesc` (a pin is colored by what its slot carries, a title by the category of its pass), parameters as ImGui widgets made from `ParamDesc` right in the node, links by dragging (checked: output to input, the same kind of slot, not to itself; Ctrl-drag detaches), delete with the Delete key, adding a node from a menu on right click (by category), every edit goes into `Renderer::set_graph`, which compiles it, so the errors and warnings of the compiler are listed under the nodes and the nodes with errors are red; the last version that compiled keeps running. Save writes a project graph back, Save As puts a copy with a new id into `Assets/Graphs`; "Show in Viewport" draws the Viewport with the graph being edited; "Main graph" makes it the main one. Node positions come from the file, nodes without one are laid out in columns by depth, and the positions imnodes holds are written back. The pieces without a window (pins, links, layout, parameters, a UI run with no window) are tested; the panel was not run by hand. Left out: undo, copy and paste of nodes, a view of the textures of a graph (stage 15), renaming a graph.
+13. **PBR: the surface model, as soon as possible.** Cook-Torrance (GGX, Smith visibility, Schlick Fresnel) with energy-conserving diffuse, so plastic is plastic (a dielectric: a dull base color and a small white highlight) and metal is metal (the highlight takes the color of the metal, no diffuse); roughness and metallic as numbers and as textures (the packed metallic-roughness texture of glTF), occlusion and emissive maps, a normal scale; image based lighting by the split-sum method (a GGX-prefiltered environment with roughness in the mips, irradiance as spherical harmonics, a BRDF lookup), specular occlusion and horizon fade. See section 24. Check: a row of spheres, roughness from 0 to 1 across and metallic 0 and 1 in two rows, under the sky and a sun, that looks like the reference pictures of the same test in other engines.
+14. **PBR: detail from textures.** Texture slots and import settings per kind (sRGB for color, linear for data, channel packing into one texture), UV scale and offset per material, tiling detail maps, parallax occlusion mapping from a height map, triplanar mapping, vertex colors, and the extra layers: clear coat, anisotropy, sheen, transmission (with stage 20). Check: a brick wall with a height map that has depth when looked at from the side, and a floor that does not look tiled from afar.
+15. **Line rendering and debug views.** A line renderer in the engine (not only for the editor): world-space lines with a thickness, a color and an optional depth test, batched, as an API for games and tools (`DebugDraw`: line, polyline, box, sphere, circle, arrow, frustum, grid) and as the `zenith.lines` pass; the editor passes (grid, gizmos, outline) move onto it. Debug views: a node `zenith.debug_view` that shows a buffer of the graph instead of the picture, with a mode and a palette: depth (a color ramp from near to far, linear or logarithmic, with the range as parameters), normals, roughness, velocity, entity id (a color per id), overdraw, lights per cluster (a heat map), shadow cascades (a color per cascade), mip level, wireframe. A Debug view menu in the Viewport chooses the mode; every texture slot of any graph can be viewed from the graph editor with a click on its pin. Check: the depth of the sample scene as colors that change with distance, and the lights-per-cluster heat map once stage 18 is there.
+16. **The editor: panels.** Details, Hierarchy, the file panel and the
     selection in the Viewport, in the UE-like layout (see "The panels" in
     section 13). Order: the shared selection and the parent/child component,
     then the Hierarchy, the Details made from the component registry,
@@ -985,18 +987,18 @@ Every stage ends with something that can be checked.
     remembered folders. Check: a model is dragged from the file panel into the
     world, picked in the Viewport, its material changed in the Details, the
     world saved, and after a restart the same folders are open.
-15. **Scriptable render passes** (section 20), after the scripting, made by Gleb, can call
+17. **Scriptable render passes** (section 20), after the scripting, made by Gleb, can call
     into the engine. Check: a fullscreen effect written as a script and a
     WESL file in the project, put into the graph in the graph editor.
-16. **Clustered forward and the buffers.** Compute passes and buffer slots in the graph, frame buffers with history, the depth pre-pass with the thin G-buffer (`depth`, `normal`, `velocity`, `entity_id`), `light_cull`, lights in storage buffers, `SpotLight`, MSAA. Check: 500 point lights in a scene give the same picture as the loop over all of them, and the frame is faster.
-17. **Shadows and ambient light.** Cascaded maps, spot and point shadows in an atlas, soft edges, contact shadows, a better bias; prefiltered environment, spherical harmonics, BRDF lookup. Check: a shadow of a cube from each kind of light, no shimmering when the camera moves.
-18. **Post-processing.** SSAO, fog, bloom, glare, lens flare, anamorphic streaks, ghost-type lens flare (section 23), vignette, automatic exposure, FXAA and TAA, more tone mappers, color grading, outline by `entity_id`, picking in the Viewport by the same buffer. Check: each as a node of the graph, off when left out, and the editor graph shows the silhouette of the selection.
-19. **Atmosphere, volumetric fog and decals.** Atmospheric scattering (lookup tables), height fog, froxel volumetric fog with temporal reprojection, the decal pass. Check: a light shaft through a window, the cost shown in the frame time stays under a set budget.
-20. **Software and Hardware graphs.** The `profile` and `platforms` of a graph, `requires` of a pass, the graph set of a project, `builtin_hardware`, ray traced shadows and reflections, the path tracer (Hardware, and the compute one as Software). Check: the same scene in both profiles, and a machine without ray tracing falls back with a log line.
-21. **Later.** A sample scene to show the engine: a floor, a wall and a sun, a character that can walk around (like the Hazel one), with shadows and the sky, as the project the editor opens first and the check for the lighting stages.  The asset index in a build, asynchronous loading, culling
+18. **Clustered forward and the buffers.** Compute passes and buffer slots in the graph, frame buffers with history, the depth pre-pass with the thin G-buffer (`depth`, `normal`, `velocity`, `entity_id`), `light_cull`, lights in storage buffers, `SpotLight`, MSAA. Check: 500 point lights in a scene give the same picture as the loop over all of them, and the frame is faster.
+19. **Shadows and ambient light.** Cascaded maps, spot and point shadows in an atlas, soft edges, contact shadows, a better bias; prefiltered environment, spherical harmonics, BRDF lookup. Check: a shadow of a cube from each kind of light, no shimmering when the camera moves.
+20. **Post-processing.** SSAO, fog, bloom, glare, lens flare, anamorphic streaks, ghost-type lens flare (section 23), vignette, automatic exposure, FXAA and TAA, more tone mappers, color grading, outline by `entity_id`, picking in the Viewport by the same buffer. Check: each as a node of the graph, off when left out, and the editor graph shows the silhouette of the selection.
+21. **Atmosphere, volumetric fog and decals.** Atmospheric scattering (lookup tables), height fog, froxel volumetric fog with temporal reprojection, the decal pass. Check: a light shaft through a window, the cost shown in the frame time stays under a set budget.
+22. **Software and Hardware graphs.** The `profile` and `platforms` of a graph, `requires` of a pass, the graph set of a project, `builtin_hardware`, ray traced shadows and reflections, the path tracer (Hardware, and the compute one as Software). Check: the same scene in both profiles, and a machine without ray tracing falls back with a log line.
+23. **Later.** A sample scene to show the engine: a floor, a wall and a sun, a character that can walk around (like the Hazel one), with shadows and the sky, as the project the editor opens first and the check for the lighting stages.  The asset index in a build, asynchronous loading, culling
     (frustum first, then occlusion; see "Culling"), the parameters of custom shaders read by reflection
     (section 19), removing the old `zenith_renderer`.
-22. **The big ones, in pieces** (each piece useful alone): virtual geometry
+24. **The big ones, in pieces** (each piece useful alone): virtual geometry
     (Nanite-like), global illumination (Lumen-like), ReSTIR for the path
     tracer, depth of field with bokeh, motion blur, Gaussian splatting.
     See their sections at the end of section 23.
@@ -1152,7 +1154,7 @@ can change how the engine draws, and can add shaders of its own.
 
 ## 20. Later: scriptable render passes (SRP)
 
-**[decided]** Later, after the scripting is done (stage 15 of section 16; Gleb writes the scripting and this part, not the renderer work): render passes written
+**[decided]** Later, after the scripting is done (stage 17 of section 16; Gleb writes the scripting and this part, not the renderer work): render passes written
 in the scripting language of the engine (Gleb's part), not in Rust, that the
 graph uses like any other pass.
 
@@ -1290,12 +1292,12 @@ State: **done**, **planned** (with the stage) or **later**.
 | Kind | What | State |
 | --- | --- | --- |
 | Directional, one map | orthographic, PCF | done |
-| Cascaded shadow maps | 3 to 4 cascades fitted to the camera frustum, a blend between cascades, a texel-snapped matrix against shimmering; SDSM fitting as an option | planned, stage 17 |
-| Spot light | one perspective map | planned, stage 17 |
-| Point light | six faces, in an atlas (no cube arrays on the web) | planned, stage 17 |
-| Soft edge | PCF with a rotated Poisson disk, and PCSS (the radius follows the distance to the blocker); the filter is a setting of the light: hardware PCF, Poisson PCF, PCSS | **decided**, stage 17 |
-| Contact shadows | a short screen-space ray march toward the light, over small details | planned, stage 17 |
-| Shadow bias | constant, slope-scaled and normal offset together, and receiver plane bias for the wide kernels; all are settings of the light | **decided**, stage 17 |
+| Cascaded shadow maps | 3 to 4 cascades fitted to the camera frustum, a blend between cascades, a texel-snapped matrix against shimmering; SDSM fitting as an option | planned, stage 19 |
+| Spot light | one perspective map | planned, stage 19 |
+| Point light | six faces, in an atlas (no cube arrays on the web) | planned, stage 19 |
+| Soft edge | PCF with a rotated Poisson disk, and PCSS (the radius follows the distance to the blocker); the filter is a setting of the light: hardware PCF, Poisson PCF, PCSS | **decided**, stage 19 |
+| Contact shadows | a short screen-space ray march toward the light, over small details | planned, stage 19 |
+| Shadow bias | constant, slope-scaled and normal offset together, and receiver plane bias for the wide kernels; all are settings of the light | **decided**, stage 19 |
 | Static shadow cache | maps of lights that did not move are kept | later |
 
 The shadow maps are packed into one atlas with a list per light, so the
@@ -1306,47 +1308,47 @@ number of shadowed lights is a budget, not a limit of the shader.
 | Effect | State |
 | --- | --- |
 | Image based lighting from the environment picture | done (diffuse and specular from the same picture) |
-| Prefiltered specular (roughness in the mips), irradiance as spherical harmonics, BRDF lookup | planned, stage 17 |
+| Prefiltered specular (roughness in the mips), irradiance as spherical harmonics, BRDF lookup | planned, stage 19 |
 | Reflection probes (box-projected) | later |
-| SSAO, as GTAO (depth and normal) | planned, stage 18 |
+| SSAO, as GTAO (depth and normal) | planned, stage 20 |
 | Screen-space reflections (hierarchical depth march) | later |
-| Specular occlusion from AO | planned, stage 18 |
+| Specular occlusion from AO | planned, stage 20 |
 
 **Anti-aliasing**
 
 | Effect | State |
 | --- | --- |
-| MSAA (2x, 4x, 8x on the forward passes) | **decided**, stage 16 (a setting, the depth and the buffers resolve) |
-| SSAA (a render scale above 1) | **decided**, stage 16 (with the resolution scale of the frame buffers) |
-| FXAA | **decided**, stage 18 (the cheap one for the web) |
-| SMAA (1x and T2x) | **decided**, stage 18 |
-| CMAA2 | **decided**, stage 18 |
-| TAA (jitter, velocity, history, clamp and sharpen) | **decided**, stage 18 |
+| MSAA (2x, 4x, 8x on the forward passes) | **decided**, stage 18 (a setting, the depth and the buffers resolve) |
+| SSAA (a render scale above 1) | **decided**, stage 18 (with the resolution scale of the frame buffers) |
+| FXAA | **decided**, stage 20 (the cheap one for the web) |
+| SMAA (1x and T2x) | **decided**, stage 20 |
+| CMAA2 | **decided**, stage 20 |
+| TAA (jitter, velocity, history, clamp and sharpen) | **decided**, stage 20 |
 
 **Post-processing** (all as nodes of the graph, in this order in the default
 graph):
 
 | Effect | Notes | State |
 | --- | --- | --- |
-| Fog | exponential height fog, a color or the sky | planned, stage 18 |
-| Bloom | downsample and upsample chain (no big blur), a threshold and an intensity | planned, stage 18 |
-| Automatic exposure | a histogram of the scene luminance, eye adaptation over time | planned, stage 18 |
+| Fog | exponential height fog, a color or the sky | planned, stage 20 |
+| Bloom | downsample and upsample chain (no big blur), a threshold and an intensity | planned, stage 20 |
+| Automatic exposure | a histogram of the scene luminance, eye adaptation over time | planned, stage 20 |
 | Depth of field | circle of confusion from depth, a bokeh gather | later |
 | Motion blur | from the velocity buffer | later |
-| Tone mapping | ACES, Reinhard, none; AgX and Khronos PBR Neutral to add | done / planned, stage 18 |
-| Color grading | a 3D lookup table and the usual sliders (contrast, saturation, white balance) | planned, stage 18 |
+| Tone mapping | ACES, Reinhard, none; AgX and Khronos PBR Neutral to add | done / planned, stage 20 |
+| Color grading | a 3D lookup table and the usual sliders (contrast, saturation, white balance) | planned, stage 20 |
 | Decals | boxes projected onto the depth and the normal | later |
-| Outline | silhouette from `entity_id`, editor selection first | planned, stage 18 |
+| Outline | silhouette from `entity_id`, editor selection first | planned, stage 20 |
 
 **Other**
 
 | Effect | State |
 | --- | --- |
-| Atmospheric scattering (the sky, the haze with distance, the color of the sun), section 22 | planned, stage 19 |
-| Volumetric fog and light shafts | froxels, section 22 | planned, stage 19 |
+| Atmospheric scattering (the sky, the haze with distance, the color of the sun), section 22 | planned, stage 21 |
+| Volumetric fog and light shafts | froxels, section 22 | planned, stage 21 |
 | Order independent transparency (weighted blended) | later, if sorting is not enough |
 | Particles (compute, billboards) | later |
-| Path tracing, ray traced shadows, reflections, GI | the Hardware profile and a slow Software path tracer, section 22 | planned, stage 20 |
+| Path tracing, ray traced shadows, reflections, GI | the Hardware profile and a slow Software path tracer, section 22 | planned, stage 22 |
 | Global illumination | not planned; baked lightmaps or probes are a later question |
 
 Every effect is a node with parameters in the graph, so it is off by being
@@ -1378,7 +1380,7 @@ clustered (one more dimension) without touching the passes that read it.
   ones sharp. Cascade splits are a mix of linear and logarithmic.
 - SDSM: the splits fitted to the depth that is really on the screen (a
   depth reduction in compute finds the nearest and the farthest pixel, the
-  cascades are made to fit that). Planned for stage 17 as an option over the
+  cascades are made to fit that). Planned for stage 19 as an option over the
   plain CSM.
 - Point lights: six faces (cube) or an atlas of six squares; the web has no
   cube arrays, so an atlas. Dual paraboloid is cheaper but has artefacts.
@@ -1387,7 +1389,7 @@ clustered (one more dimension) without touching the passes that read it.
 **Filtering the edge**
 - Hardware PCF: the comparison sampler does 2 x 2 for free. Done.
 - PCF with a kernel (Poisson disk, rotated by a noise): the edge gets soft
-  and noisy-but-smooth. Stage 17.
+  and noisy-but-smooth. Stage 19.
 - PCSS: first finds the blockers, then sets the radius by the distance, so a
   shadow is sharp at the foot and soft far away. Costs a lot of taps.
 - VSM, ESM, EVSM, MSM: store moments, so the map can be blurred and sampled
@@ -1400,7 +1402,7 @@ clustered (one more dimension) without touching the passes that read it.
 
 **Without a map**
 - Contact shadows: a few steps of a ray in the depth buffer toward the light.
-  Catches what the map is too coarse for. Stage 17.
+  Catches what the map is too coarse for. Stage 19.
 - Screen-space shadows are the same thing for the whole light.
 - Distance field shadows and capsule shadows (UE): need a distance field of
   the meshes. Later, maybe.
@@ -1470,7 +1472,7 @@ It is not hard if it is made in the cheap way. What is cheap:
 
 The web can do it: 3D storage textures with `rgba16float` are allowed for
 writing in WebGPU. It needs the compute pass, the frame buffers with history
-and the shadow atlas, so it comes after stages 16 and 17 (stage 19).
+and the shadow atlas, so it comes after stages 16 and 17 (stage 21).
 Parameters: density, height falloff, scattering color, anisotropy, the
 distance, the cell counts, and per light a "volumetric" intensity.
 
@@ -1501,7 +1503,7 @@ How it fits the graphs:
   one. The camera may name a graph (it wins); then the main graph of the
   profile; then the built-in graph of the profile.
 - The built-in graphs are `builtin_software` (what we have, growing with the
-  stages) and `builtin_hardware` (stage 20). The editor graph is the same
+  stages) and `builtin_hardware` (stage 22). The editor graph is the same
   idea: `editor_software`, `editor_hardware`.
 - The graph editor shows the profile and marks nodes that the other profile
   cannot run.
@@ -1567,7 +1569,7 @@ What a transparent material can do, from cheap to costly:
    moved along the refracted direction by the normal and the index of
    refraction. Roughness picks a blurrier mip (frosted glass). Cheap, looks
    right for bottles and windows; it cannot show what is not on the screen or
-   what is in front of the glass. Stage 18 (it needs the frame buffers and the
+   what is in front of the glass. Stage 20 (it needs the frame buffers and the
    copy of the color).
 4. **Dispersion**: the index of refraction depends on the color, so the
    colors bend by different amounts. In screen space it is done by sampling
@@ -1579,7 +1581,7 @@ What a transparent material can do, from cheap to costly:
    screen space or a thickness-based glow; real in the path tracer.
 6. **Real refraction**: light follows the glass, bends at each surface and may
    bounce inside. Needs ray tracing: the Hardware profile and the software
-   path tracer, stage 20.
+   path tracer, stage 22.
 
 **A prism that turns white light into a rainbow.** Dispersion is the same
 effect: the index of refraction of glass is a bit larger for blue than for
@@ -1604,7 +1606,7 @@ what is wanted:
   (bidirectional tracing, photon mapping or light tracing). That is a
   separate piece of work after the path tracer works, and the result is a
   slow picture that converges over seconds, not a real-time effect. It is
-  noted as **later**, after stage 20.
+  noted as **later**, after stage 22.
 
 So: rainbows in the glass, soon and cheap; a rainbow on the wall, as a fake
 at once or physically much later.
@@ -1618,14 +1620,14 @@ them, each as its own node (or one node with switches).
 
 | Effect | What it looks like | Cause | How it is made | State |
 | --- | --- | --- | --- | --- |
-| **Bloom** | a soft glow around bright areas | light scattering in the eye or the lens | a chain of downsamples and upsamples of the bright part, added back | planned, stage 18 |
-| **Glare / starburst** | rays or a star from a bright point | diffraction at the aperture blades and the lashes | a streak filter: the bright part is smeared along a few directions (4, 6, 8 rays, a rotation) | planned, stage 18 |
-| **Anamorphic streak** | one long horizontal (often blue) line | the cylindrical lens of a cinema camera | a streak filter along X only, tinted | planned, stage 18 |
-| **Lens flare: ghosts** | a row of colored discs on the line through the screen center | reflections between the lens elements | the bright part is mirrored through the center and repeated with a tint (screen space), or sprites placed along the line | planned, stage 18 |
-| **Lens flare: halo** | a ring around the center | the same, the ring is the shape of the aperture | a ring sampled from the mirrored bright part | planned, stage 18 |
+| **Bloom** | a soft glow around bright areas | light scattering in the eye or the lens | a chain of downsamples and upsamples of the bright part, added back | planned, stage 20 |
+| **Glare / starburst** | rays or a star from a bright point | diffraction at the aperture blades and the lashes | a streak filter: the bright part is smeared along a few directions (4, 6, 8 rays, a rotation) | planned, stage 20 |
+| **Anamorphic streak** | one long horizontal (often blue) line | the cylindrical lens of a cinema camera | a streak filter along X only, tinted | planned, stage 20 |
+| **Lens flare: ghosts** | a row of colored discs on the line through the screen center | reflections between the lens elements | the bright part is mirrored through the center and repeated with a tint (screen space), or sprites placed along the line | planned, stage 20 |
+| **Lens flare: halo** | a ring around the center | the same, the ring is the shape of the aperture | a ring sampled from the mirrored bright part | planned, stage 20 |
 | **Bokeh** | bright discs (or polygons) in the blur of what is out of focus | the aperture shape in the depth of field | a gather or scatter blur by the circle of confusion; the shape is a texture or a polygon of N blades | with the depth of field, later |
-| **Light shafts / god rays** | beams in dust or mist | scattering along the ray | section 22 (screen space or froxel fog) | planned, stage 19 |
-| **Sun disc and corona** | a bright disc with a halo | the sun itself | in the atmosphere node (section 22) | planned, stage 19 |
+| **Light shafts / god rays** | beams in dust or mist | scattering along the ray | section 22 (screen space or froxel fog) | planned, stage 21 |
+| **Sun disc and corona** | a bright disc with a halo | the sun itself | in the atmosphere node (section 22) | planned, stage 21 |
 | **Flare sprites** | the same as lens flare but from a game object, hidden by what stands in front | an artist's choice | a sprite at the light's screen position, scaled by an occlusion test (a few depth samples) | later |
 
 Anything that adds light needs the scene in **HDR** (we have that), and the
@@ -1639,18 +1641,18 @@ What the lists of modern techniques name, with what we do about each.
 | Technique | What it is | Plan |
 | --- | --- | --- |
 | Motion blur | smear along the velocity | later, after TAA (needs the same buffer) |
-| Depth of field and bokeh | blur by the distance from the focus plane, with bright discs | later, after stage 18 |
+| Depth of field and bokeh | blur by the distance from the focus plane, with bright discs | later, after stage 20 |
 | Subsurface scattering | light that enters a material and leaves nearby (skin, wax, leaves) | screen-space blur of the diffuse light for raster, later; true in the path tracer |
 | Iridescence / thin film | rainbow on soap, oil, beetles, heated metal | a material parameter (thickness and index of the film), the shader computes the interference per color; cheap, planned with the material work |
 | Dispersion | the rainbow in glass | section 22 |
 | Caustics | patterns of light from glass and water | section 22: a fake for water (animated texture projected by the light), the real one later in the Hardware profile |
 | Displacement | the surface really moved by a height map | needs tessellation or a dense mesh; later |
 | Parallax occlusion mapping | the look of relief on a flat surface by a ray in the height map | a material option, later; cheaper than displacement |
-| Decals | section 22 | stage 19 |
+| Decals | section 22 | stage 21 |
 | Global illumination (Lumen-like radiance cache) | many bounces of light with no ray tracing | later; the cheap steps are probes with irradiance (DDGI style) and screen-space GI; a big job, not before the Hardware profile |
 | ReSTIR | picks the important lights among millions by resampling over space and time | later, only for the Hardware path tracer; the clustered grid covers the raster side |
-| Spectral rendering | light as wavelengths, not as RGB | an option of the path tracer in stage 20 (it is what makes a real prism and the colors of gems right) |
-| Nanite (virtual geometry) | clusters of triangles with their own LOD, drawn by compute | not planned; the first step is meshlets, LODs by hand, then frustum culling (stage 21) |
+| Spectral rendering | light as wavelengths, not as RGB | an option of the path tracer in stage 22 (it is what makes a real prism and the colors of gems right) |
+| Nanite (virtual geometry) | clusters of triangles with their own LOD, drawn by compute | not planned; the first step is meshlets, LODs by hand, then frustum culling (stage 23) |
 | Mesh shaders | the GPU decides which triangles to draw before the rasterizer | not in WebGPU; not planned |
 | 3D Gaussian splatting | a scene made of millions of translucent colored ellipsoids from photos | feasible (we would only draw ready files; making them needs training, which is not ours): a compute sort plus a splat pass, an asset type `.zenithsplat`; later, as an addition |
 
@@ -1665,9 +1667,9 @@ What the lists of modern techniques name, with what we do about each.
 
 ### Added back, and the big ones for later
 
-- **Vignette**: a node of stage 18 (a darkening toward the corners, with a
+- **Vignette**: a node of stage 20 (a darkening toward the corners, with a
   radius, a softness and a color).
-- **Denoiser**: classic and not neural, in stage 20 with the path tracer (an
+- **Denoiser**: classic and not neural, in stage 22 with the path tracer (an
   a-trous filter guided by the normal, the depth and the albedo, plus a
   temporal part like SVGF). The ray traced shadows and reflections use the
   same node.
@@ -1681,14 +1683,14 @@ pixel in the last frame (time), and casts a shadow ray only to the survivor.
 Many lights cost about as much as a few.
 
 Where it is useful here:
-- the Hardware path tracer and the ray traced shadows (stage 20) in a scene
+- the Hardware path tracer and the ray traced shadows (stage 22) in a scene
   with many small lights: lamps along a street, neon signs, a city at night,
   emissive meshes as lights (a screen, lava, a fire made of many sparks);
 - direct light from **emissive triangles**, which the raster path cannot
   treat as lights at all;
 - later the same idea for indirect light (ReSTIR GI), as the way to make
   the path tracer usable in real time.
-It needs per-pixel history (the frame buffers with history of stage 16), the
+It needs per-pixel history (the frame buffers with history of stage 18), the
 G-buffer (normal, depth, velocity) and a denoiser behind it. The raster path
 does not need it: the clustered light grid is the answer there.
 
@@ -1708,7 +1710,7 @@ passes of work**, each one useful alone:
 4. occlusion culling with the hierarchical depth;
 5. the compute rasterizer for tiny triangles, and streaming of clusters.
 It needs compute, indirect drawing and storage buffers (WebGPU has them);
-no mesh shaders. After stage 21.
+no mesh shaders. After stage 23.
 
 ### Lumen-like global illumination (possible, later)
 
@@ -1727,7 +1729,7 @@ in steps, each one useful alone and each a node of the graph:
 5. **Reflections** from the same cache, so metals and wet floors are lit by
    the room, not only by the sky.
 It is the biggest piece of the list and sits after the Hardware profile
-(stage 20) and the denoiser; stages 1 and 2 may come earlier.
+(stage 22) and the denoiser; stages 1 and 2 may come earlier.
 
 ### Culling (later)
 
@@ -1745,6 +1747,113 @@ clips it. The kinds, in the order they pay off:
 | Portals / PVS | rooms that cannot be seen | for indoor levels only; not planned |
 | Cluster culling | parts of a model | with the virtual geometry above |
 
-It is stage 21 work: frustum culling first (simple and the biggest win),
+It is stage 23 work: frustum culling first (simple and the biggest win),
 then the depth pyramid and occlusion culling, which share their work with the
 virtual geometry.
+
+## 24. PBR
+
+### What there is today
+
+`standard.wesl` shades with Lambert for the diffuse part and **Blinn-Phong**
+for the highlight; the shininess is made from the roughness, and the Fresnel
+term is a guess. `roughness` and `metallic` exist, but only as two numbers
+per material, and they do the right thing only roughly: `metallic` takes the
+diffuse away and colors the highlight, and that is all. The material has a
+base color (and its texture) and a normal map; it has no texture for
+roughness and metallic, no occlusion, no emissive. The sky gives the ambient
+light as a blurry look at the picture (a high mip level), which is not
+prefiltered, and the picture of a sky is imported without mips, so the
+ambient light is sharp. The vertices already carry the tangent and the
+bitangent, and the shader still takes the frame of the normal map from
+derivatives.
+
+So the engine has the *parameters* of PBR and none of its *model*: plastic and
+metal look different, but not right, and a rough surface does not look like
+a rough one.
+
+### Stage 13: the model (small to medium)
+
+1. **The BRDF**: GGX distribution, height-correlated Smith visibility,
+   Schlick Fresnel with `F0 = mix(0.04, base_color, metallic)`; the diffuse
+   part is Lambert, scaled by `(1 - F)` and `(1 - metallic)` so that the
+   energy is kept. One function used by the directional lights and the point
+   lights (and later by the clustered lights and the spot lights).
+2. **Material fields and textures** (the format is changed, the version of
+   `MaterialData` goes up, and old files still read): `metallic_roughness`
+   texture (glTF layout: roughness in G, metallic in B), `occlusion` texture
+   (R, often in the same picture), `emissive` color and texture and an
+   intensity, `normal_scale`, `occlusion_strength`. The importer of glTF fills
+   them. `roughness` and `metallic` stay as multipliers.
+3. **Image based lighting (split sum)**:
+   - **Prefiltered specular**: the environment picture is filtered by GGX
+     into the mips of a texture, a level per roughness. It is made by a render
+     pass (the compute passes come with stage 18, and this must not wait), once
+     when the sky is loaded.
+   - **Diffuse irradiance** as 9 spherical harmonics coefficients, computed on
+     the CPU when the sky is loaded (the picture is small enough) and put into
+     the scene uniform.
+   - **BRDF lookup** (a 2D table of the scale and the bias of the Fresnel by
+     roughness and view angle): made once by a render pass at the start (or the
+     analytic approximation of Karis first).
+   - **Specular occlusion** from the occlusion map and a horizon fade, so a
+     reflection does not show through a crevice.
+4. **Tangents from the vertices** (the frame of the mesh) in place of the
+   derivatives, so a normal map does not change with the size of the triangle.
+5. The sky node and the environment data carry the prefiltered picture and the
+   coefficients; the sky is drawn from the original picture.
+
+The cost is mostly one shader rewrite, a bigger material, and two small
+render passes at load. It is a few hundred lines and needs no new part of the
+graph. The risk is in the details (a table that is a little off makes metal
+too dark or too bright), so the check is a **row of spheres**, the usual test:
+roughness from 0 to 1 along a row, a dielectric row and a metal row, under a
+sky and a sun, compared with the same test in other renderers.
+
+### Stage 14: detail from textures (medium)
+
+- **Slots and import**: every texture slot of a material says how its picture
+  is read (sRGB for a color, linear for data), and the importer can **pack**
+  channels: separate roughness, metallic and occlusion pictures become one
+  texture (ORM), as the engines do, to save samples and memory.
+- **UV transform** per material (scale, offset, rotation), so one texture can
+  tile a floor, and **detail maps**: a second albedo/normal at a higher
+  frequency that fades in near the camera, so a floor has detail up close and
+  does not look like a repeated tile far away. A **triplanar** option for
+  terrain and rocks with no UV.
+- **Height**: a height map for **parallax occlusion mapping** (a short ray
+  march in the height map, a few steps, with a distance fade): a wall of
+  bricks has depth when looked at from the side. Real displacement needs
+  tessellation and is later.
+- **Vertex colors** as a multiplier and as a mask between two materials.
+- **Extra layers**, each with a few parameters and a few lines of shader:
+  **clear coat** (a second thin specular lobe: car paint, varnished wood),
+  **anisotropy** (brushed metal, hair), **sheen** (cloth), **transmission and
+  thickness** (glass; the refraction itself comes with the post-processing
+  stage), and the glTF extensions that carry them (`KHR_materials_*`).
+- A material editor panel: sliders and texture slots, a preview sphere.
+
+### The sample scene (a floor, a wall and a sun)
+
+The scene that gave the Hazel demo its look is made of a few things, and we
+will have them in this order:
+1. PBR with image based lighting (stage 13): the floor and the wall stop
+   looking like painted plastic, the sky lights them and reflects in them.
+2. A tiling floor and a brick wall with a normal map, a roughness map and a
+   height map (stage 14).
+3. A sun with **shadows** (stage 19, cascades and soft edges): without them
+   the scene is flat.
+4. HDR sky and the tone mapping (the first we have) and **bloom** (stage 20).
+5. The atmosphere for the sunset (stage 21), optional.
+
+What it will look like with 1 and 2 only: a convincing lit floor and wall with
+a sky reflecting in the glossy parts and a sun with a hard single-map shadow
+(the one we have now); with 3 it starts to look like the demos of other
+engines; with 4 it has the glow and the contrast. "Walking in it" is not the
+renderer: it needs a character, input and collision, which belong to the
+game side (scripting and physics) and are not in this plan; a camera that
+walks (no collision) is enough for the demo.
+
+The textures for it (a brick wall, a floor, a sky) are free CC0 ones; they
+have to be put into the sample project by hand or with permission to
+download them.

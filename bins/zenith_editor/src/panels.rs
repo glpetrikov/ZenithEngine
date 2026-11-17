@@ -1,6 +1,8 @@
 //! The panels and the dialogs of the editor.
 
-use dear_imgui_rs::{Condition, DockNodeFlags, Ui, WindowFlags};
+use std::sync::LazyLock;
+
+use dear_imgui_rs::{Condition, DockLayout, DockLayoutApply, DockNodeFlags, DockSplit, Ui, WindowFlags, WindowKey};
 use web_time::{SystemTime, UNIX_EPOCH};
 use zenith_input::{ZGamePad, ZGamePadAxis, ZStick};
 
@@ -17,6 +19,18 @@ const PROBLEMS: &str = "Problems";
 const LOOSE_MODELS: &str = "Models in Assets";
 const DIALOGS: [&str; 6] = [WELCOME, NEW_WORLD, QUIT, BACKUP, PROBLEMS, LOOSE_MODELS];
 const STATUSBAR_HEIGHT: f32 = 24.0;
+
+/// A key of a panel: the layout of the dock and the saved layout find the
+/// panel by it, so the title may change.
+#[allow(clippy::expect_used)] // the names are fixed here and valid
+fn panel_key(id: &str, title: &str) -> WindowKey {
+	WindowKey::new(id, title).expect("the key of a panel is valid")
+}
+
+pub static VIEWPORT: LazyLock<WindowKey> = LazyLock::new(|| panel_key("viewport", "Viewport"));
+pub static HIERARCHY: LazyLock<WindowKey> = LazyLock::new(|| panel_key("hierarchy", "Hierarchy"));
+pub static WORLDS: LazyLock<WindowKey> = LazyLock::new(|| panel_key("worlds", "Worlds"));
+pub static INPUT: LazyLock<WindowKey> = LazyLock::new(|| panel_key("input", "Input"));
 
 /// The whole UI of one frame.
 pub fn draw(editor: &mut Editor, ui: &Ui) {
@@ -58,7 +72,7 @@ fn statusbar(ui: &Ui) {
 }
 
 fn input_debug(editor: &mut Editor, ui: &Ui) {
-	ui.window("Input")
+	ui.window(&*INPUT)
 		.size([380.0, 460.0], Condition::FirstUseEver)
 		.position([700.0, 60.0], Condition::FirstUseEver)
 		.build(|| {
@@ -207,6 +221,13 @@ fn dialogs(editor: &mut Editor, ui: &Ui) {
 		} else if editor.welcome_open {
 			editor.welcome_open = false;
 			ui.open_popup(WELCOME);
+		}
+	}
+	// A dialog is drawn under the docked panels unless it is brought to the
+	// front every frame: the panels take the front back when they are drawn.
+	for name in DIALOGS {
+		if ui.is_popup_open(name) {
+			ui.set_window_focus(Some(name));
 		}
 	}
 	welcome(ui);
@@ -395,10 +416,170 @@ fn dockspace(ui: &Ui) {
 		)
 		.build(|| {
 			let content = ui.content_region_avail();
+			// The root ID is needed: without it no dockspace is made, and the
+			// docked panels hang on a node that follows no window.
+			let root = ui.get_id("ZenithDockspaceRoot");
+			// The first start (no saved layout): Hierarchy on the left, Input
+			// on the right, the Viewport in the middle and the Worlds under it.
+			let layout = DockLayout::split(
+				DockSplit::Right,
+				0.2,
+				DockLayout::tabs([&*INPUT]),
+				DockLayout::split(
+					DockSplit::Left,
+					0.2,
+					DockLayout::tabs([&*HIERARCHY]),
+					DockLayout::split(
+						DockSplit::Down,
+						0.25,
+						DockLayout::tabs([&*WORLDS]),
+						DockLayout::tabs([&*VIEWPORT]),
+					),
+				),
+			);
 			let _ = ui
 				.dockspace()
 				.current_window(content)
+				.root_id(root)
+				.layout(&layout, DockLayoutApply::IfMissing)
 				.flags(DockNodeFlags::empty())
 				.build();
 		});
+}
+
+/// The tests that make a UI context take turns: there is one at a time.
+#[cfg(test)]
+pub static UI_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+mod tests {
+	use dear_imgui_rs::MouseButton;
+	use dear_imgui_wgpu::{WgpuInitInfo, WgpuRenderer, wgpu};
+
+	use super::*;
+
+	type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+	fn gpu() -> Option<(wgpu::Device, wgpu::Queue)> {
+		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+		let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).ok()?;
+		pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).ok()
+	}
+
+	#[test]
+	fn the_menu_opens_when_it_is_clicked() -> TestResult {
+		let _one_context = UI_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+		let Some((device, queue)) = gpu() else {
+			return Ok(());
+		};
+		let mut context = dear_imgui_rs::Context::create();
+		let _ = context.set_ini_filename(None::<std::path::PathBuf>);
+		let flags = context.io().config_flags() | dear_imgui_rs::ConfigFlags::DOCKING_ENABLE;
+		context.io_mut().set_config_flags(flags);
+		let mut backend = WgpuRenderer::new(
+			WgpuInitInfo::new(device, queue, wgpu::TextureFormat::Rgba8UnormSrgb),
+			&mut context,
+		)?;
+		let mut editor = Editor::new(None);
+		editor.graph.init(&context);
+		editor.welcome_open = false;
+
+		let mut opened_at = None;
+		let mut run =
+			|context: &mut dear_imgui_rs::Context, editor: &mut Editor| -> Result<bool, Box<dyn std::error::Error>> {
+				context.io_mut().set_display_size([1280.0, 720.0]);
+				context.io_mut().set_delta_time(1.0 / 60.0);
+				let frame = context.try_begin_frame()?;
+				draw(editor, frame.ui());
+				let open = frame.ui().is_popup_open_with_flags(
+					"",
+					dear_imgui_rs::PopupQueryFlags::ANY_POPUP_ID | dear_imgui_rs::PopupQueryFlags::ANY_POPUP_LEVEL,
+				);
+				let pending = frame.render(backend.renderer_consumer()?);
+				drop(backend.reconcile_frame(pending)?);
+				Ok(open)
+			};
+		for _ in 0..5 {
+			run(&mut context, &mut editor)?;
+		}
+		// Click along the menu bar until a menu opens.
+		for x in (40..400).step_by(10) {
+			context.io_mut().add_mouse_pos_event([x as f32, 10.0]);
+			run(&mut context, &mut editor)?;
+			context.io_mut().add_mouse_button_event(MouseButton::Left, true);
+			run(&mut context, &mut editor)?;
+			context.io_mut().add_mouse_button_event(MouseButton::Left, false);
+			if run(&mut context, &mut editor)? {
+				opened_at = Some(x);
+				break;
+			}
+		}
+		assert!(opened_at.is_some(), "no menu opened by a click in the menu bar");
+		editor.graph.shutdown();
+		backend.shutdown(&mut context)?;
+		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod welcome_tests {
+	use dear_imgui_rs::MouseButton;
+	use dear_imgui_wgpu::{WgpuInitInfo, WgpuRenderer, wgpu};
+
+	use super::*;
+
+	#[test]
+	fn the_welcome_dialog_can_be_closed_with_its_button() -> Result<(), Box<dyn std::error::Error>> {
+		let _one_context = UI_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+		let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+		let Some(adapter) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).ok()
+		else {
+			return Ok(());
+		};
+		let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))?;
+		let mut context = dear_imgui_rs::Context::create();
+		let _ = context.set_ini_filename(None::<std::path::PathBuf>);
+		let flags = context.io().config_flags() | dear_imgui_rs::ConfigFlags::DOCKING_ENABLE;
+		context.io_mut().set_config_flags(flags);
+		let mut backend = WgpuRenderer::new(
+			WgpuInitInfo::new(device, queue, wgpu::TextureFormat::Rgba8UnormSrgb),
+			&mut context,
+		)?;
+		let mut editor = Editor::new(None);
+		editor.graph.init(&context);
+		let any = dear_imgui_rs::PopupQueryFlags::ANY_POPUP_ID | dear_imgui_rs::PopupQueryFlags::ANY_POPUP_LEVEL;
+		let mut run =
+			|context: &mut dear_imgui_rs::Context, editor: &mut Editor| -> Result<bool, Box<dyn std::error::Error>> {
+				context.io_mut().set_display_size([1280.0, 720.0]);
+				context.io_mut().set_delta_time(1.0 / 60.0);
+				let frame = context.try_begin_frame()?;
+				draw(editor, frame.ui());
+				let open = frame.ui().is_popup_open_with_flags("", any);
+				let pending = frame.render(backend.renderer_consumer()?);
+				drop(backend.reconcile_frame(pending)?);
+				Ok(open)
+			};
+		for _ in 0..5 {
+			run(&mut context, &mut editor)?;
+		}
+		assert!(run(&mut context, &mut editor)?, "the welcome dialog is open");
+		let mut closed = false;
+		'search: for y in (250..450).step_by(10) {
+			for x in (500..800).step_by(10) {
+				context.io_mut().add_mouse_pos_event([x as f32, y as f32]);
+				run(&mut context, &mut editor)?;
+				context.io_mut().add_mouse_button_event(MouseButton::Left, true);
+				run(&mut context, &mut editor)?;
+				context.io_mut().add_mouse_button_event(MouseButton::Left, false);
+				if !run(&mut context, &mut editor)? {
+					closed = true;
+					break 'search;
+				}
+			}
+		}
+		assert!(closed, "no click closed the welcome dialog");
+		editor.graph.shutdown();
+		backend.shutdown(&mut context)?;
+		Ok(())
+	}
 }

@@ -88,7 +88,7 @@ impl ApplicationHandler for EditorApp {
 		if self.gfx.is_some() {
 			return;
 		}
-		let layout = dirs::data_local_dir().map(|dir| dir.join("ZenithEngine").join("EditorLayout.ini"));
+		let layout = dirs::data_local_dir().map(|dir| dir.join("ZenithEngine").join("EditorLayout.v2.ini"));
 		match Gfx::new(event_loop, layout) {
 			Ok(gfx) => self.gfx = Some(gfx),
 			Err(e) => {
