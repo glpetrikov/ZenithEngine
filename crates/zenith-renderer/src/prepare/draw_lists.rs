@@ -37,6 +37,22 @@ pub struct InstanceData {
 }
 
 impl InstanceData {
+	/// How the vertex shader reads an instance (slot 1, after the mesh):
+	/// `@location(5..=8)` the model matrix, `9..=11` the normal matrix.
+	pub const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+		array_stride: size_of::<Self>() as wgpu::BufferAddress,
+		step_mode: wgpu::VertexStepMode::Instance,
+		attributes: &wgpu::vertex_attr_array![
+			5 => Float32x4,
+			6 => Float32x4,
+			7 => Float32x4,
+			8 => Float32x4,
+			9 => Float32x4,
+			10 => Float32x4,
+			11 => Float32x4,
+		],
+	};
+
 	pub fn of(mesh: &ExtractedMesh, camera: DVec3) -> Self {
 		let model =
 			Mat4::from_scale_rotation_translation(mesh.scale, mesh.rotation, (mesh.position - camera).as_vec3());

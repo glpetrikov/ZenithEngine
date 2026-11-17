@@ -219,6 +219,12 @@ fn gpu_world() -> Option<(zenith_world::World, Schedule, zenith_renderer::target
 	let mut world = zenith_world::World::new("w");
 	let renderer = Renderer::from_device(device, queue, FORMAT);
 	install(&mut world, renderer, RenderSettings::default());
+	// These tests are about the clearing of targets: no graph draws over it.
+	world
+		.world_mut()
+		.resource_mut::<Renderer>()
+		.graphs_mut()
+		.remove(zenith_renderer::graph::GraphId::BUILTIN);
 	let target = {
 		let device = world.world().resource::<Renderer>().device().clone();
 		world

@@ -829,12 +829,20 @@ Every stage ends with something that can be checked.
    the lights buffer and the environment (stage 8), the sprite draw lists
    (stage 9), cameras into render textures (stage 7), and no graph runs until
    the first passes exist (stage 6): a view is only cleared.
-6. **The first passes**: `zenith.input_camera`, `zenith.input_meshes`,
-   `zenith.opaque`, `zenith.tonemap`, `zenith.output` and the built-in graph
-   of the five. The passes ask for their shaders by name (`Zenith/standard`)
-   through `ShaderSources`, which gives the engine's copies until stage 10.
-   Check: a headless render into a texture, and the runtime draws the world
-   with one camera.
+6. **The first passes.** *Done.* `zenith.input_camera`, `zenith.input_meshes`
+   (parameter `phase`), `zenith.opaque` (HDR color and depth, one fixed light
+   in `standard.wgsl` until stage 8), `zenith.tonemap` (aces, reinhard, none;
+   exposure) and `zenith.output`, with the built-in graph of the five
+   compiled at the start of `Renderer`. The passes ask for their shaders by
+   name (`Zenith/standard`, `Zenith/tonemap`) through `ShaderSources`
+   (`GpuCache::named_shader`), which gives the engine's copies until stage
+   10. A mesh or a material that is still loading is not drawn.
+   `PrepareContext::texture` lets a pass make a bind group of a texture of
+   the graph in `prepare`. The runtime registers the components and gives the
+   world its project (`install_project`). Check: tests draw the sample cube
+   into a texture on a real adapter (the background, the cube in the middle,
+   a cube behind the camera not seen). A world needs a `Camera` entity to
+   be drawn: the runtime draws nothing of a world without one.
 7. **Cameras and targets.** `order`, `viewport`, `clear`, `RenderTargets`,
    `Camera.graph`. Check: two cameras on one window, a third into a texture.
 8. **The rest of the 3D passes**, carrying over what the old renderer

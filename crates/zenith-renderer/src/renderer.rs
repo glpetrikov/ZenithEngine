@@ -68,6 +68,7 @@ impl Renderer {
 		let surface = SurfaceState::new(surface, &adapter, &device, width, height, settings)
 			.ok_or_else(|| ZenithError::NoSuitableSurfaceFormat("the surface has no 8-bit color format".into()))?;
 
+		let (graphs, passes) = builtin_graphs();
 		Ok(Self {
 			output_format: surface.view_format(),
 			instance: Some(instance),
@@ -77,8 +78,8 @@ impl Renderer {
 			surface: Some(surface),
 			settings: settings.clone(),
 			frame: 0,
-			graphs: GraphRegistry::new(),
-			passes: PassRegistry::new(),
+			graphs,
+			passes,
 			pool: TexturePool::new(),
 			reported_lost: false,
 		})
@@ -89,6 +90,7 @@ impl Renderer {
 	/// into textures, and `output_format` is the format of those. The settings
 	/// that open the GPU mean nothing to it.
 	pub fn from_device(device: wgpu::Device, queue: wgpu::Queue, output_format: wgpu::TextureFormat) -> Self {
+		let (graphs, passes) = builtin_graphs();
 		Self {
 			instance: None,
 			adapter: None,
@@ -98,8 +100,8 @@ impl Renderer {
 			settings: RenderSettings::default(),
 			output_format,
 			frame: 0,
-			graphs: GraphRegistry::new(),
-			passes: PassRegistry::new(),
+			graphs,
+			passes,
 			pool: TexturePool::new(),
 			reported_lost: false,
 		}
@@ -320,4 +322,15 @@ pub(crate) struct RendererParts<'a> {
 	pub output_format: wgpu::TextureFormat,
 	pub surface_size: Option<(u32, u32)>,
 	pub frame: u64,
+}
+
+/// The passes of the engine, and the built-in graph compiled with them.
+fn builtin_graphs() -> (GraphRegistry, PassRegistry) {
+	let mut passes = PassRegistry::new();
+	crate::passes::register(&mut passes);
+	let mut graphs = GraphRegistry::new();
+	if let Err(e) = graphs.set_builtin(&passes) {
+		zenith_log::error!("The built-in render graph cannot be read: {e}");
+	}
+	(graphs, passes)
 }

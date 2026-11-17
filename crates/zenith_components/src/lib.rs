@@ -20,7 +20,7 @@ pub struct Name {
 #[derive(Component, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct IsActive {
-	active: bool,
+	pub active: bool,
 }
 
 #[derive(Component, Debug, Clone, Serialize, Deserialize)]

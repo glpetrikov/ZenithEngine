@@ -128,6 +128,7 @@ pub struct PrepareContext<'a> {
 	pub frame: u64,
 	slots: Slots<'a>,
 	textures: &'a [Option<TextureInfo>],
+	views: &'a [Option<wgpu::TextureView>],
 	data: &'a mut Values,
 	notes: &'a mut Values,
 	bind_groups: &'a mut BindGroupCache,
@@ -143,6 +144,11 @@ impl PrepareContext<'_> {
 	/// The size of the texture of `slot`, in pixels.
 	pub fn texture_size(&self, slot: &str) -> Option<(u32, u32)> {
 		self.texture_info(slot).map(|info| info.size)
+	}
+
+	/// The texture of `slot`, to put in a bind group made in `prepare`.
+	pub fn texture(&self, slot: &str) -> Option<&wgpu::TextureView> {
+		self.views.get(self.slots.get(slot)?.resource.0)?.as_ref()
 	}
 
 	fn texture_info(&self, slot: &str) -> Option<TextureInfo> {
@@ -495,6 +501,7 @@ impl CompiledGraph {
 					outputs: &node.outputs,
 				},
 				textures: &textures,
+				views: &views,
 				data: &mut data,
 				notes: &mut notes,
 				bind_groups: &mut node.bind_groups,

@@ -32,7 +32,10 @@ use web_time::{Duration, Instant};
 use zenith_error::ZResult;
 use zenith_filesystem::Project;
 
-use crate::assets::{AssetId, AssetKind, AssetRegistry, load};
+use crate::{
+	assets::{AssetId, AssetKind, AssetRegistry, load},
+	shaders::ShaderSources,
+};
 
 /// Where an asset is in the cache.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -144,6 +147,8 @@ pub struct GpuCache {
 	now: Instant,
 	/// What the ready assets take of the GPU, in bytes.
 	memory: u64,
+	/// Where the shaders by name come from.
+	sources: ShaderSources,
 }
 
 impl GpuCache {
@@ -174,6 +179,7 @@ impl GpuCache {
 			settings,
 			now: Instant::now(),
 			memory: 0,
+			sources: ShaderSources::default(),
 		}
 	}
 
@@ -429,6 +435,22 @@ impl GpuCache {
 
 	pub const fn pipelines_mut(&mut self) -> &mut Pipelines {
 		&mut self.pipelines
+	}
+
+	/// The shaders by name.
+	pub const fn sources(&self) -> &ShaderSources {
+		&self.sources
+	}
+
+	pub const fn sources_mut(&mut self) -> &mut ShaderSources {
+		&mut self.sources
+	}
+
+	/// The shader `name` from [`GpuCache::sources`], made the first time it
+	/// is asked for (and again if its text changed). `None`: no such shader.
+	pub fn named_shader(&mut self, name: &str) -> Option<ShaderId> {
+		let source = self.sources.get(name)?;
+		Some(self.pipelines.shader(name, source))
 	}
 
 	/// See [`Pipelines::shader`].

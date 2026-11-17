@@ -23,6 +23,7 @@ pub mod prepare;
 pub mod render;
 pub mod renderer;
 pub mod settings;
+pub mod shaders;
 pub mod surface;
 pub mod targets;
 
@@ -163,4 +164,22 @@ fn apply_settings(settings: Option<Res<RenderSettings>>, mut renderer: ResMut<Re
 	{
 		renderer.apply_settings(&settings);
 	}
+}
+
+/// Gives `world` the project the assets are read from, and the list of its
+/// assets. They outlive `clear_world` too. Call it again to read the assets
+/// anew.
+///
+/// # Errors
+/// The project's error if its assets cannot be listed.
+pub fn install_project(
+	world: &mut zenith_world::World,
+	project: std::sync::Arc<zenith_filesystem::Project>,
+) -> zenith_error::ZResult<()> {
+	let registry = assets::AssetRegistry::scan(&project)?;
+	world.keep_resource::<ProjectRes>();
+	world.keep_resource::<assets::AssetRegistry>();
+	world.world_mut().insert_resource(ProjectRes(project));
+	world.world_mut().insert_resource(registry);
+	Ok(())
 }

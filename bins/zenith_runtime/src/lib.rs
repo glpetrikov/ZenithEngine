@@ -41,6 +41,7 @@ const WORLD_FILE: &str = "Worlds://world.zenith";
 /// not a world file.
 fn load_world(project: &zenith_filesystem::Project) -> ZResult<World> {
 	let mut world = World::new("world");
+	zenith_renderer::register_components(world.registry_mut());
 	let path = zenith_filesystem::ZPath::new(WORLD_FILE)?;
 	if project.exists(&path)? {
 		world.restore_bytes(&project.read_bytes(&path)?)?;
@@ -110,7 +111,7 @@ impl FpsCounter {
 
 pub struct State {
 	window: Arc<Window>,
-	project: zenith_filesystem::Project,
+	project: Arc<zenith_filesystem::Project>,
 	/// The world the game runs in; it holds the input and the renderer.
 	world: World,
 	/// The systems that draw the world. The runtime runs them after the game;
@@ -159,6 +160,8 @@ impl State {
 		let mut world = load_world(&project)?;
 		let saved_overrides = load_input(&project, &mut world)?;
 		zenith_renderer::install(&mut world, renderer, settings);
+		let project = Arc::new(project);
+		zenith_renderer::install_project(&mut world, Arc::clone(&project))?;
 
 		Ok(Self {
 			window,
