@@ -865,8 +865,14 @@ Every stage ends with something that can be checked.
    a light lights a face, a light from behind does not, a point light, a
    cube's shadow on a wall, the sky where nothing else is. Not checked in a
    picture: the blended pass (the sample project has no blending material).
-9. **2D**: `zenith.input_sprites`, `zenith.sprites` and the orthographic
-   camera.
+9. **2D.** *Done.* `zenith.input_sprites` and `zenith.sprites` are in the
+   built-in graph, after `transparent`. A sprite is a quad (`sprite.wgsl`) that
+   faces +Z of its entity, tinted by `color`, cut out of the texture by
+   `uv_rect`. They are sorted by `order`, then far to near, then by texture
+   (`prepare_sprite_lists`, a buffer of its own). They blend, do not write
+   depth, and are hidden by what is nearer when `depth_test` is on. A 2D
+   camera is a camera with `Orthographic`. Checks on a real adapter: where a
+   sprite stands and where it does not, moving it, the order, `uv_rect`.
 10. **Shaders in the project** (section 19): `Shaders://`, the engine's
     shaders written into new projects and into old ones on open, the version
     line and "the engine has a newer one", loading from the project, WESL

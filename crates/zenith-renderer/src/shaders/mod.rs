@@ -15,13 +15,16 @@ pub const TONEMAP: &str = "Zenith/tonemap";
 pub const SHADOW: &str = "Zenith/shadow";
 /// The sky.
 pub const SKY: &str = "Zenith/sky";
+/// Sprites.
+pub const SPRITE: &str = "Zenith/sprite";
 
 /// The engine's copies, by name.
-const ENGINE: [(&str, &str); 4] = [
+const ENGINE: [(&str, &str); 5] = [
 	(STANDARD, include_str!("standard.wgsl")),
 	(TONEMAP, include_str!("tonemap.wgsl")),
 	(SHADOW, include_str!("shadow.wgsl")),
 	(SKY, include_str!("sky.wgsl")),
+	(SPRITE, include_str!("sprite.wgsl")),
 ];
 
 /// The text of shaders, by name.

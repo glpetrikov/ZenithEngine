@@ -7,14 +7,16 @@
     { "id": 1, "pass": "zenith.input_camera", "editor": { "pos": [-480, 0] } },
     { "id": 2, "pass": "zenith.input_meshes", "params": { "phase": "opaque" }, "editor": { "pos": [-480, 120] } },
     { "id": 3, "pass": "zenith.opaque", "params": { "clear_color": [0.1, 0.2, 0.5, 1.0] }, "editor": { "pos": [200, 120] } },
-    { "id": 4, "pass": "zenith.tonemap", "params": { "operator": "aces", "exposure": 1.0 }, "editor": { "pos": [1100, 120] } },
-    { "id": 5, "pass": "zenith.output", "editor": { "pos": [1400, 120] } },
+    { "id": 4, "pass": "zenith.tonemap", "params": { "operator": "aces", "exposure": 1.0 }, "editor": { "pos": [1400, 120] } },
+    { "id": 5, "pass": "zenith.output", "editor": { "pos": [1700, 120] } },
     { "id": 6, "pass": "zenith.input_lights", "params": { "ambient": [0.25, 0.25, 0.25, 1.0] }, "editor": { "pos": [-480, 260] } },
     { "id": 7, "pass": "zenith.input_environment", "editor": { "pos": [-480, 380] } },
     { "id": 8, "pass": "zenith.shadow", "params": { "size": 2048, "distance": 40.0, "bias": 0.03 }, "editor": { "pos": [-120, -120] } },
     { "id": 9, "pass": "zenith.sky", "params": { "intensity": 1.0 }, "editor": { "pos": [500, 120] } },
     { "id": 10, "pass": "zenith.input_meshes", "params": { "phase": "transparent" }, "editor": { "pos": [-480, 500] } },
-    { "id": 11, "pass": "zenith.transparent", "editor": { "pos": [800, 120] } }
+    { "id": 11, "pass": "zenith.transparent", "editor": { "pos": [800, 120] } },
+    { "id": 12, "pass": "zenith.input_sprites", "editor": { "pos": [-480, 620] } },
+    { "id": 13, "pass": "zenith.sprites", "params": { "depth_test": true }, "editor": { "pos": [1100, 120] } }
   ],
   "links": [
     { "from": [1, "camera"], "to": [3, "camera"] },
@@ -36,7 +38,11 @@
     { "from": [3, "depth"], "to": [11, "depth"] },
     { "from": [9, "color"], "to": [11, "color"] },
     { "from": [10, "meshes"], "to": [11, "meshes"] },
-    { "from": [11, "color"], "to": [4, "hdr"] },
+    { "from": [3, "depth"], "to": [13, "depth"] },
+    { "from": [1, "camera"], "to": [13, "camera"] },
+    { "from": [12, "sprites"], "to": [13, "sprites"] },
+    { "from": [11, "color"], "to": [13, "color"] },
+    { "from": [13, "color"], "to": [4, "hdr"] },
     { "from": [4, "color"], "to": [5, "color"] }
   ]
 }

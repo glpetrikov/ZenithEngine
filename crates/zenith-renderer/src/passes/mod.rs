@@ -24,6 +24,8 @@ pub fn register(passes: &mut PassRegistry) {
 	passes.register::<shadow::Shadow>();
 	passes.register::<sky::Sky>();
 	passes.register::<transparent::Transparent>();
+	passes.register::<inputs::InputSprites>();
+	passes.register::<sprites::Sprites>();
 	passes.register::<opaque::Opaque>();
 	passes.register::<tonemap::Tonemap>();
 	passes.register::<output::Output>();

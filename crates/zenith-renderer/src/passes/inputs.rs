@@ -14,7 +14,7 @@ use crate::{
 		ExecContext, ParamDesc, ParamMap, PassAction, PassCategory, PassDesc, PrepareContext, RenderPass,
 		pass::{OutputDesc, data},
 	},
-	prepare::{CameraUniform, DrawLists, LightsUniform, MeshList, PreparedViews},
+	prepare::{CameraUniform, DrawLists, LightsUniform, MeshList, PreparedViews, SpriteList, SpriteLists},
 };
 
 /// The data of `zenith.input_camera`: the view the graph runs for.
@@ -243,6 +243,45 @@ impl RenderPass for InputEnvironment {
 			intensity,
 		};
 		ctx.set_data("environment", data);
+		PassAction::Run
+	}
+
+	fn exec(&self, _: &mut ExecContext<'_>) -> ZResult<()> {
+		Ok(())
+	}
+}
+
+/// The data of `zenith.input_sprites`: the sprites of the view.
+#[derive(Clone, Debug)]
+pub struct SpritesData {
+	pub list: SpriteList,
+	/// The buffer the batches count their instances in. `None` when nothing
+	/// is drawn.
+	pub instances: Option<wgpu::Buffer>,
+}
+
+/// Gives the sprites the view draws.
+#[derive(Default)]
+pub struct InputSprites;
+
+impl RenderPass for InputSprites {
+	fn describe() -> PassDesc {
+		PassDesc::new("zenith.input_sprites", "Sprites", PassCategory::Input)
+			.output(OutputDesc::data("sprites", data::SPRITES))
+	}
+
+	fn prepare(&mut self, ctx: &mut PrepareContext<'_>) -> PassAction {
+		let Some(lists) = ctx.world.get_resource::<SpriteLists>() else {
+			return PassAction::Skip;
+		};
+		let Some(list) = lists.get(ctx.view.key) else {
+			return PassAction::Skip;
+		};
+		let data = SpritesData {
+			list: list.clone(),
+			instances: lists.instance_buffer().cloned(),
+		};
+		ctx.set_data("sprites", data);
 		PassAction::Run
 	}
 

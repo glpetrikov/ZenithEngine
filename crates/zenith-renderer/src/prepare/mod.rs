@@ -6,9 +6,11 @@
 pub mod assets;
 pub mod draw_lists;
 pub mod lights;
+pub mod sprite_lists;
 pub mod views;
 
 pub use assets::ProjectRes;
 pub use draw_lists::{DrawLists, InstanceData, MeshBatch, MeshList, ViewDrawLists};
 pub use lights::LightsUniform;
+pub use sprite_lists::{SpriteBatch, SpriteInstance, SpriteList, SpriteLists};
 pub use views::{CameraUniform, PreparedView, PreparedViews};

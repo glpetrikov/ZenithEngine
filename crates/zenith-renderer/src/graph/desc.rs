@@ -199,8 +199,8 @@ mod tests {
 	#[test]
 	fn the_built_in_graph_is_read_and_written_back_as_it_was() -> ZResult<()> {
 		let graph = GraphDesc::parse(BUILTIN)?;
-		assert_eq!(graph.nodes.len(), 11);
-		assert_eq!(graph.links.len(), 21);
+		assert_eq!(graph.nodes.len(), 13);
+		assert_eq!(graph.links.len(), 25);
 		assert_eq!(
 			graph.links.first().map(|link| link.from.clone()),
 			Some(SlotRef::new(NodeId(1), "camera"))
@@ -229,7 +229,7 @@ mod tests {
 	fn editing_keeps_one_link_per_input_and_ids_unused() -> ZResult<()> {
 		let mut graph = GraphDesc::parse(BUILTIN)?;
 		let fog = graph.add_node("plugin.fog", [0.0, 0.0]);
-		assert_eq!(fog, NodeId(12));
+		assert_eq!(fog, NodeId(14));
 		graph.connect(SlotRef::new(fog, "color"), SlotRef::new(NodeId(5), "color"));
 		assert_eq!(
 			graph
@@ -242,7 +242,7 @@ mod tests {
 		);
 		graph.remove_node(fog);
 		assert!(graph.links.iter().all(|link| link.from.0 != fog));
-		assert_eq!(graph.links.len(), 20);
+		assert_eq!(graph.links.len(), 24);
 		Ok(())
 	}
 
