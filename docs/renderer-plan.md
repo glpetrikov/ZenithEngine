@@ -850,10 +850,21 @@ Every stage ends with something that can be checked.
    and the `prepare_targets` system (the texture is made on first use and
    remade when the size changes). Check: two cameras with viewports on one
    target, a third into a texture, on a real adapter.
-8. **The rest of the 3D passes**, carrying over what the old renderer
-   does: `zenith.input_lights`, `zenith.input_environment`, `zenith.sky`,
-   lighting, normal mapping, environment reflections, `zenith.transparent`,
-   `zenith.shadow`.
+8. **The rest of the 3D passes.** *Done.* `zenith.input_lights` (up to 4
+   directional and 16 point lights, relative to the camera, an `ambient`
+   parameter), `zenith.input_environment`, `zenith.sky`, `zenith.shadow` (one
+   directional light, a box of `distance` around the camera, PCF, the matrices
+   go as a `ShadowInfo` note on the map), `zenith.transparent` (blended, far to
+   near, no depth write). `standard.wgsl` has Lambert plus Blinn-Phong from
+   the roughness, normal maps (the frame from derivatives, so meshes need no
+   tangents), the environment as an equirectangular picture (a high mip level
+   for the ambient light, a level by roughness for the reflection; a texture
+   imported without mipmaps gives a sharp ambient light). Group 0 is shared by
+   `opaque` and `transparent` (`passes/scene.rs`), unlinked optional inputs
+   get stand-ins. The built-in graph has all of it. Checks on a real adapter:
+   a light lights a face, a light from behind does not, a point light, a
+   cube's shadow on a wall, the sky where nothing else is. Not checked in a
+   picture: the blended pass (the sample project has no blending material).
 9. **2D**: `zenith.input_sprites`, `zenith.sprites` and the orthographic
    camera.
 10. **Shaders in the project** (section 19): `Shaders://`, the engine's

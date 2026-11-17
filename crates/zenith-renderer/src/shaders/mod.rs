@@ -11,11 +11,17 @@ use std::collections::HashMap;
 pub const STANDARD: &str = "Zenith/standard";
 /// The tone mapping of an HDR picture.
 pub const TONEMAP: &str = "Zenith/tonemap";
+/// The depth of the meshes seen from a light.
+pub const SHADOW: &str = "Zenith/shadow";
+/// The sky.
+pub const SKY: &str = "Zenith/sky";
 
 /// The engine's copies, by name.
-const ENGINE: [(&str, &str); 2] = [
+const ENGINE: [(&str, &str); 4] = [
 	(STANDARD, include_str!("standard.wgsl")),
 	(TONEMAP, include_str!("tonemap.wgsl")),
+	(SHADOW, include_str!("shadow.wgsl")),
+	(SKY, include_str!("sky.wgsl")),
 ];
 
 /// The text of shaders, by name.

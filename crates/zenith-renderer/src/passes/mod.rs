@@ -6,6 +6,7 @@
 pub mod inputs;
 pub mod opaque;
 pub mod output;
+pub mod scene;
 pub mod shadow;
 pub mod sky;
 pub mod sprites;
@@ -18,6 +19,11 @@ use crate::graph::PassRegistry;
 pub fn register(passes: &mut PassRegistry) {
 	passes.register::<inputs::InputCamera>();
 	passes.register::<inputs::InputMeshes>();
+	passes.register::<inputs::InputLights>();
+	passes.register::<inputs::InputEnvironment>();
+	passes.register::<shadow::Shadow>();
+	passes.register::<sky::Sky>();
+	passes.register::<transparent::Transparent>();
 	passes.register::<opaque::Opaque>();
 	passes.register::<tonemap::Tonemap>();
 	passes.register::<output::Output>();

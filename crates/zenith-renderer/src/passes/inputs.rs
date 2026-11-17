@@ -9,11 +9,12 @@
 use zenith_error::ZResult;
 
 use crate::{
+	extract::{ExtractedLights, ExtractedViews},
 	graph::{
 		ExecContext, ParamDesc, ParamMap, PassAction, PassCategory, PassDesc, PrepareContext, RenderPass,
 		pass::{OutputDesc, data},
 	},
-	prepare::{CameraUniform, DrawLists, MeshList, PreparedViews},
+	prepare::{CameraUniform, DrawLists, LightsUniform, MeshList, PreparedViews},
 };
 
 /// The data of `zenith.input_camera`: the view the graph runs for.
@@ -113,6 +114,135 @@ impl RenderPass for InputMeshes {
 			instances: lists.instance_buffer().cloned(),
 		};
 		ctx.set_data("meshes", data);
+		PassAction::Run
+	}
+
+	fn exec(&self, _: &mut ExecContext<'_>) -> ZResult<()> {
+		Ok(())
+	}
+}
+
+/// The data of `zenith.input_lights`: the lights of the view.
+#[derive(Clone, Debug)]
+pub struct LightsData {
+	/// The uniform buffer of the lights ([`LightsUniform`]).
+	pub buffer: wgpu::Buffer,
+	/// The same on the CPU (the shadow pass reads the light it fits to).
+	pub uniform: LightsUniform,
+}
+
+/// What a view keeps between frames: its own buffer of lights.
+#[derive(Default)]
+struct ViewLights(Option<wgpu::Buffer>);
+
+/// Gives the lights of the view, relative to its camera.
+pub struct InputLights {
+	ambient: [f32; 3],
+}
+
+impl Default for InputLights {
+	fn default() -> Self {
+		Self {
+			ambient: DEFAULT_AMBIENT,
+		}
+	}
+}
+
+const DEFAULT_AMBIENT: [f32; 3] = [0.25, 0.25, 0.25];
+
+impl RenderPass for InputLights {
+	fn describe() -> PassDesc {
+		PassDesc::new("zenith.input_lights", "Lights", PassCategory::Input)
+			.output(OutputDesc::data("lights", data::LIGHTS))
+			.param(
+				ParamDesc::color(
+					"ambient",
+					[DEFAULT_AMBIENT[0], DEFAULT_AMBIENT[1], DEFAULT_AMBIENT[2], 1.0],
+				)
+				.tooltip("Light that comes from everywhere, besides the environment"),
+			)
+	}
+
+	fn set_params(&mut self, params: &ParamMap) -> ZResult<()> {
+		let [r, g, b, _] = params.vec4("ambient").unwrap_or([0.25, 0.25, 0.25, 1.0]);
+		self.ambient = [r, g, b];
+		Ok(())
+	}
+
+	fn prepare(&mut self, ctx: &mut PrepareContext<'_>) -> PassAction {
+		let Some(position) = ctx
+			.world
+			.get_resource::<PreparedViews>()
+			.and_then(|views| views.get(ctx.view.key))
+			.map(|view| view.position)
+		else {
+			return PassAction::Skip;
+		};
+		let Some(lights) = ctx.world.get_resource::<ExtractedLights>() else {
+			return PassAction::Skip;
+		};
+		let uniform = LightsUniform::build(lights, position, self.ambient);
+		let device = ctx.device;
+		let buffer = ctx
+			.view_state::<ViewLights>()
+			.0
+			.get_or_insert_with(|| {
+				device.create_buffer(&wgpu::BufferDescriptor {
+					label: Some("Zenith Lights"),
+					size: size_of::<LightsUniform>() as u64,
+					usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+					mapped_at_creation: false,
+				})
+			})
+			.clone();
+		ctx.queue.write_buffer(&buffer, 0, bytemuck::bytes_of(&uniform));
+		ctx.set_data("lights", LightsData { buffer, uniform });
+		PassAction::Run
+	}
+
+	fn exec(&self, _: &mut ExecContext<'_>) -> ZResult<()> {
+		Ok(())
+	}
+}
+
+/// The data of `zenith.input_environment`: the sky of the view.
+#[derive(Clone, Debug)]
+pub struct EnvironmentData {
+	/// The equirectangular picture, all of its mip levels. `None` while it is
+	/// not loaded.
+	pub texture: Option<wgpu::TextureView>,
+	/// The number of mip levels of the picture.
+	pub mip_levels: u32,
+	pub intensity: f32,
+}
+
+/// Gives the sky of the view (the `Environment` of its camera).
+#[derive(Default)]
+pub struct InputEnvironment;
+
+impl RenderPass for InputEnvironment {
+	fn describe() -> PassDesc {
+		PassDesc::new("zenith.input_environment", "Environment", PassCategory::Input)
+			.output(OutputDesc::data("environment", data::ENVIRONMENT))
+	}
+
+	fn prepare(&mut self, ctx: &mut PrepareContext<'_>) -> PassAction {
+		let key = ctx.view.key;
+		let Some((sky, intensity)) = ctx
+			.world
+			.get_resource::<ExtractedViews>()
+			.and_then(|views| views.0.iter().find(|view| view.key() == key))
+			.and_then(|view| view.environment)
+		else {
+			return PassAction::Skip;
+		};
+		let texture = ctx.cache.texture(sky);
+		let data = EnvironmentData {
+			texture: texture.map(|texture| texture.view.clone()),
+			mip_levels: texture.map_or(1, |texture| texture.texture.mip_level_count()),
+			intensity,
+		};
+		ctx.set_data("environment", data);
 		PassAction::Run
 	}
 
