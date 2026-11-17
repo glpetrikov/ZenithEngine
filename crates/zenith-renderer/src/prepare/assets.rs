@@ -1,2 +1,52 @@
-//! `prepare_assets`: loads what the frame needs into the `GpuCache` and marks
-//! it as used.
+//! `prepare_assets`: asks the `GpuCache` for what the frame draws, loads some
+//! of it and marks it as used.
+
+use std::sync::Arc;
+
+use bevy_ecs::{
+	resource::Resource,
+	system::{Res, ResMut},
+};
+use zenith_filesystem::Project;
+
+use crate::{
+	assets::AssetRegistry,
+	cache::GpuCache,
+	extract::{ExtractedMeshes, ExtractedSprites, ExtractedViews},
+};
+
+/// The project the assets are read from.
+#[derive(Resource, Clone)]
+pub struct ProjectRes(pub Arc<Project>);
+
+/// Requests what the frame draws and loads some of it.
+///
+/// The cache loads what is missing within its time budget; what is not loaded
+/// yet is drawn with a stand-in. Without a project or its registry nothing can
+/// be loaded: everything is drawn with stand-ins.
+#[allow(clippy::needless_pass_by_value)] // a system takes its parameters by value
+pub fn prepare_assets(
+	meshes: Res<ExtractedMeshes>,
+	sprites: Res<ExtractedSprites>,
+	views: Res<ExtractedViews>,
+	project: Option<Res<ProjectRes>>,
+	registry: Option<Res<AssetRegistry>>,
+	mut cache: ResMut<GpuCache>,
+) {
+	for mesh in &meshes.0 {
+		cache.request_mesh(mesh.mesh);
+		cache.request_material(mesh.material);
+	}
+	for sprite in &sprites.0 {
+		cache.request_texture(sprite.texture);
+	}
+	for view in &views.0 {
+		if let Some((sky, _)) = view.environment {
+			cache.request_texture(sky);
+		}
+	}
+	if let (Some(project), Some(registry)) = (project, registry) {
+		let budget = cache.settings().load_budget;
+		cache.load(&project.0, &registry, Some(budget));
+	}
+}

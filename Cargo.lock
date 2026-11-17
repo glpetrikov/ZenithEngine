@@ -4941,9 +4941,12 @@ dependencies = [
  "web-time",
  "wgpu",
  "winit",
+ "zenith_components",
  "zenith_error",
  "zenith_filesystem",
  "zenith_log",
+ "zenith_registry",
+ "zenith_types",
  "zenith_world",
 ]
 

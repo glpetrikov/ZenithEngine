@@ -38,6 +38,10 @@ web-time = "1.1.0"
 zenith_error = { version = "0.1.0", path = "../zenith_error" }
 zenith_log = { version = "0.1.0", path = "../zenith_log" }
 zenith_world = { version = "0.1.0", path = "../zenith_world" }
+# The components of the renderer are registered like the others.
+zenith_components = { version = "0.1.0", path = "../zenith_components" }
+zenith_registry = { version = "0.1.0", path = "../zenith_registry" }
+zenith_types = { version = "0.1.0", path = "../zenith_types" }
 # Only reads and writes through a project, so it works without the `fs`
 # feature (the browser has no folders).
 zenith_filesystem = { version = "0.1.0", path = "../zenith_filesystem", default-features = false }

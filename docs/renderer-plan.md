@@ -815,7 +815,20 @@ Every stage ends with something that can be checked.
    only, data and textures from pass to pass, a skipped pass). The contract
    of section 10 exists in code from here on. Not yet: the built-in graph
    compiles only once its passes exist (stage 6).
-5. **ECS.** Components, extract, prepare, the `render` system.
+5. **ECS.** *Done.* The components (`Model`, `Sprite`, `Camera`,
+   `DirectionalLight`, `PointLight`, `Environment`) with
+   `register_components`; the `Extracted*` resources and `extract_*` systems
+   (inactive entities and cameras into a texture are left out, the views of
+   the host come from `ExtraViews`, the views are ordered); `RenderTargets`;
+   `prepare_assets` (requests what the frame draws, loads within the budget),
+   `prepare_views` (matrices relative to the camera, one uniform buffer per
+   view), `prepare_draw_lists` (opaque by material and mesh, transparent far
+   to near, all instances of the frame in one buffer); the `render` system,
+   which runs the graph of every view and clears a target by its first camera.
+   `Renderer` holds the graphs, the passes and the texture pool. Not yet:
+   the lights buffer and the environment (stage 8), the sprite draw lists
+   (stage 9), cameras into render textures (stage 7), and no graph runs until
+   the first passes exist (stage 6): a view is only cleared.
 6. **The first passes**: `zenith.input_camera`, `zenith.input_meshes`,
    `zenith.opaque`, `zenith.tonemap`, `zenith.output` and the built-in graph
    of the five. The passes ask for their shaders by name (`Zenith/standard`)
@@ -843,7 +856,7 @@ Every stage ends with something that can be checked.
     reload (of shaders too), replacing a source, the editor passes
     (`editor.grid`, `editor.gizmos`, `editor.outline`).
 12. **The graph editor** with imnodes.
-13. **Scriptable render passes** (section 20), once the scripting can call
+13. **Scriptable render passes** (section 20), after the scripting, made by Gleb, can call
     into the engine. Check: a fullscreen effect written as a script and a
     WESL file in the project, put into the graph in the graph editor.
 14. **Later.** The asset index in a build, asynchronous loading, frustum
@@ -1001,7 +1014,7 @@ can change how the engine draws, and can add shaders of its own.
 
 ## 20. Later: scriptable render passes (SRP)
 
-**[decided]** Later, after the graph editor (stage 13 of section 16): render passes written
+**[decided]** Later, after the scripting is done (stage 13 of section 16; Gleb writes the scripting and this part, not the renderer work): render passes written
 in the scripting language of the engine (Gleb's part), not in Rust, that the
 graph uses like any other pass.
 

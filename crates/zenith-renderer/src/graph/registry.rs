@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
 use zenith_error::ZResult;
 
 use super::{
@@ -13,7 +14,8 @@ use super::{
 use crate::assets::AssetId;
 
 /// A graph: the id of its asset.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct GraphId(pub AssetId);
 
 impl GraphId {

@@ -14,7 +14,7 @@ pub mod registry;
 
 pub use compile::{CompiledGraph, Diagnostic, Severity, compile};
 pub use desc::{GraphDesc, LinkDesc, NodeDesc, NodeId, SlotRef};
-pub use exec::{ExecContext, Frame, InitContext, PrepareContext, ViewInfo, ViewKey};
+pub use exec::{ExecContext, Frame, InitContext, PrepareContext, ViewInfo, ViewKey, viewport_pixels};
 pub use pass::{
 	Access, FormatRule, InputDesc, OutputDesc, OutputSource, ParamDesc, ParamMap, ParamType, ParamValue, PassAction,
 	PassCategory, PassDesc, PassRegistry, RenderPass, SizeRule, SlotKind, TextureDesc,

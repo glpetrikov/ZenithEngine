@@ -19,7 +19,7 @@ use crate::cache::GpuCache;
 
 /// A view, for the state a pass keeps per view: the same number every frame
 /// for the same camera.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ViewKey(pub u64);
 
 /// What a graph is run for.
@@ -38,20 +38,26 @@ pub struct ViewInfo<'a> {
 	pub clear: Option<wgpu::Color>,
 }
 
+/// The part of a target of `target_size` that `viewport` (x, y, width, height
+/// in 0..1; `None`: all of it) covers, in pixels; at least 1 a side.
+#[allow(clippy::cast_sign_loss)] // the shares are clamped to 0..1 first
+pub fn viewport_pixels(target_size: (u32, u32), viewport: Option<[f32; 4]>) -> [u32; 4] {
+	let (width, height) = target_size;
+	let [x, y, w, h] = viewport.unwrap_or([0.0, 0.0, 1.0, 1.0]);
+	let px = |share: f32, of: u32| ((share.clamp(0.0, 1.0) * of as f32).round() as u32).min(of);
+	let (x, y) = (px(x, width), px(y, height));
+	[
+		x,
+		y,
+		px(w, width).clamp(1, width.saturating_sub(x).max(1)),
+		px(h, height).clamp(1, height.saturating_sub(y).max(1)),
+	]
+}
+
 impl ViewInfo<'_> {
 	/// The viewport in pixels: x, y, width, height; at least 1 a side.
-	#[allow(clippy::cast_sign_loss)] // the shares are clamped to 0..1 first
 	pub fn viewport_pixels(&self) -> [u32; 4] {
-		let (width, height) = self.target_size;
-		let [x, y, w, h] = self.viewport.unwrap_or([0.0, 0.0, 1.0, 1.0]);
-		let px = |share: f32, of: u32| ((share.clamp(0.0, 1.0) * of as f32).round() as u32).min(of);
-		let (x, y) = (px(x, width), px(y, height));
-		[
-			x,
-			y,
-			px(w, width).clamp(1, width.saturating_sub(x).max(1)),
-			px(h, height).clamp(1, height.saturating_sub(y).max(1)),
-		]
+		viewport_pixels(self.target_size, self.viewport)
 	}
 
 	/// The size the textures of the graph are made for: that of the viewport.

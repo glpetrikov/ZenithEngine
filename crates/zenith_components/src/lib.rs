@@ -46,3 +46,14 @@ impl Default for Transform {
 }
 
 // TODO: add anywhere "enabled" flag
+
+impl IsActive {
+	pub const fn new(active: bool) -> Self {
+		Self { active }
+	}
+
+	/// An entity without this component counts as active.
+	pub const fn is_active(&self) -> bool {
+		self.active
+	}
+}

@@ -5,6 +5,7 @@ use bevy_ecs::resource::Resource;
 use zenith_error::{ZResult, ZenithError};
 
 use crate::{
+	graph::{Diagnostic, GraphDesc, GraphRegistry, PassRegistry, TexturePool},
 	settings::RenderSettings,
 	surface::{Acquired, SurfaceFrame, SurfaceState},
 };
@@ -24,6 +25,10 @@ pub struct Renderer {
 	settings: RenderSettings,
 	output_format: wgpu::TextureFormat,
 	frame: u64,
+	/// The graphs and the passes they are made of, and the textures they use.
+	graphs: GraphRegistry,
+	passes: PassRegistry,
+	pool: TexturePool,
 	/// So a lost surface is reported once, not every frame.
 	reported_lost: bool,
 }
@@ -72,6 +77,9 @@ impl Renderer {
 			surface: Some(surface),
 			settings: settings.clone(),
 			frame: 0,
+			graphs: GraphRegistry::new(),
+			passes: PassRegistry::new(),
+			pool: TexturePool::new(),
 			reported_lost: false,
 		})
 	}
@@ -90,7 +98,47 @@ impl Renderer {
 			settings: RenderSettings::default(),
 			output_format,
 			frame: 0,
+			graphs: GraphRegistry::new(),
+			passes: PassRegistry::new(),
+			pool: TexturePool::new(),
 			reported_lost: false,
+		}
+	}
+
+	pub const fn graphs(&self) -> &GraphRegistry {
+		&self.graphs
+	}
+
+	pub const fn graphs_mut(&mut self) -> &mut GraphRegistry {
+		&mut self.graphs
+	}
+
+	pub const fn passes(&self) -> &PassRegistry {
+		&self.passes
+	}
+
+	/// The passes graphs are made of. Passes added after a graph was compiled
+	/// reach it with [`GraphRegistry::recompile`].
+	pub const fn passes_mut(&mut self) -> &mut PassRegistry {
+		&mut self.passes
+	}
+
+	/// Puts `desc` among the graphs and compiles it with the passes the
+	/// renderer has. Returns what compiling found.
+	pub fn set_graph(&mut self, desc: GraphDesc) -> &[Diagnostic] {
+		self.graphs.set(desc, &self.passes)
+	}
+
+	/// What a frame needs of the renderer at once, borrowed apart.
+	pub(crate) fn parts(&mut self) -> RendererParts<'_> {
+		RendererParts {
+			device: &self.device,
+			queue: &self.queue,
+			graphs: &mut self.graphs,
+			pool: &mut self.pool,
+			output_format: self.output_format,
+			surface_size: self.surface.as_ref().map(SurfaceState::size),
+			frame: self.frame,
 		}
 	}
 
@@ -261,4 +309,15 @@ fn log_adapter(info: &wgpu::AdapterInfo) {
 	zenith_log::info!("GPU: {} ({:?})", info.name, info.device_type);
 	zenith_log::info!("Backend: {:?}", info.backend);
 	zenith_log::info!("Driver: {} {}", info.driver, info.driver_info);
+}
+
+/// The parts of a [`Renderer`] a frame uses, borrowed apart.
+pub(crate) struct RendererParts<'a> {
+	pub device: &'a wgpu::Device,
+	pub queue: &'a wgpu::Queue,
+	pub graphs: &'a mut GraphRegistry,
+	pub pool: &'a mut TexturePool,
+	pub output_format: wgpu::TextureFormat,
+	pub surface_size: Option<(u32, u32)>,
+	pub frame: u64,
 }

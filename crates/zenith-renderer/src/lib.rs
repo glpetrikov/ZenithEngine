@@ -33,6 +33,8 @@ use bevy_ecs::{
 	world::World,
 };
 pub use cache::{CacheSettings, GpuCache};
+pub use components::register_components;
+pub use prepare::ProjectRes;
 pub use render::ClearColor;
 pub use renderer::Renderer;
 pub use settings::RenderSettings;
@@ -85,8 +87,25 @@ pub fn add_systems(schedule: &mut Schedule) {
 		cache::evict::begin_frame
 			.in_set(RenderSet::Assets)
 			.run_if(resource_exists::<GpuCache>),
+		(
+			extract::extract_cameras,
+			extract::extract_meshes,
+			extract::extract_sprites,
+			extract::extract_lights,
+		)
+			.in_set(RenderSet::Extract),
 		apply_settings.in_set(RenderSet::Prepare),
-		render::render.in_set(RenderSet::Render),
+		(
+			prepare::assets::prepare_assets.run_if(resource_exists::<GpuCache>),
+			prepare::views::prepare_views,
+			prepare::draw_lists::prepare_draw_lists.run_if(resource_exists::<GpuCache>),
+		)
+			.chain()
+			.after(apply_settings)
+			.in_set(RenderSet::Prepare),
+		render::render
+			.in_set(RenderSet::Render)
+			.run_if(resource_exists::<GpuCache>),
 		cache::evict::evict
 			.in_set(RenderSet::Cleanup)
 			.run_if(resource_exists::<GpuCache>),
@@ -104,6 +123,14 @@ pub fn insert_resources(world: &mut World, renderer: Renderer, settings: RenderS
 	world.insert_resource(renderer);
 	world.insert_resource(settings);
 	world.init_resource::<ClearColor>();
+	world.init_resource::<extract::ExtractedViews>();
+	world.init_resource::<extract::ExtractedMeshes>();
+	world.init_resource::<extract::ExtractedSprites>();
+	world.init_resource::<extract::ExtractedLights>();
+	world.init_resource::<extract::ExtraViews>();
+	world.init_resource::<prepare::PreparedViews>();
+	world.init_resource::<prepare::DrawLists>();
+	world.init_resource::<targets::RenderTargets>();
 }
 
 /// Gives `renderer` and its `settings` to `world`. They outlive
@@ -114,6 +141,17 @@ pub fn install(world: &mut zenith_world::World, renderer: Renderer, settings: Re
 	world.keep_resource::<RenderSettings>();
 	world.keep_resource::<ClearColor>();
 	world.keep_resource::<GpuCache>();
+	// What the frame holds is made again every frame, but the systems expect
+	// it to be there, and the views of the host and the targets are not the
+	// world's.
+	world.keep_resource::<extract::ExtractedViews>();
+	world.keep_resource::<extract::ExtractedMeshes>();
+	world.keep_resource::<extract::ExtractedSprites>();
+	world.keep_resource::<extract::ExtractedLights>();
+	world.keep_resource::<extract::ExtraViews>();
+	world.keep_resource::<prepare::PreparedViews>();
+	world.keep_resource::<prepare::DrawLists>();
+	world.keep_resource::<targets::RenderTargets>();
 	insert_resources(world.world_mut(), renderer, settings);
 }
 
