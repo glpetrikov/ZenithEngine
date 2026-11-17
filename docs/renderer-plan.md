@@ -55,6 +55,7 @@ what the contract gives.
 | Cache eviction | By time unused, not by reference count | proposed |
 | WebGL2 | Not supported; drop the `webgl` feature of wgpu | proposed |
 | Shaders | Files of the project (`Shaders://`), loaded from there; the engine writes its own into it | decided |
+| Shader language | WESL, compiled to WGSL by the `wesl` crate | decided |
 | Custom shaders | A material names its shader; the shader follows the contract of section 19 | decided |
 | Scriptable render passes | Later, after the graph editor, through the contract of section 10 | decided |
 
@@ -210,8 +211,11 @@ one. Each view gets its own buffer or its own range, never a shared one.
 ### Description and execution are apart
 
 - `GraphDesc`: plain data (nodes, links, parameters, positions in the editor).
-  It is what JSON holds and what the editor edits. Inside is a
-  `petgraph::StableGraph` (indices stay when a node is removed).
+  It is what JSON holds and what the editor edits: lists of nodes and links,
+  with node ids that are never reused. (No `petgraph`: the one algorithm
+  needed, a topological sort, is a few lines.) What the engine does not know
+  (a field, a node of a pass that is not registered) is kept and written
+  back.
 - `CompiledGraph`: the pass instances, the order, the table of resources, the
   pool of transient textures. It comes from
   `compile(&GraphDesc, &PassRegistry)`.
@@ -294,8 +298,9 @@ Inputs that come later, each with the first pass that needs it:
    or passes an input on (pass-through: the same resource, a new version).
    When passes A read a version and pass B writes it, an implicit edge A to B
    is added.
-4. Topological sort (`petgraph::algo::toposort`), ties broken by node id so
-   the order is deterministic. A cycle is an error.
+4. Topological sort, ties broken by node id so the order is deterministic. A
+   cycle is an error. Two passes drawing into the same version of a texture
+   are an error too: neither comes after the other.
 5. Drop the passes the `Output` node does not depend on.
 6. Lifetimes: resources with the same description and lifetimes that do not
    overlap share one physical texture.
@@ -345,8 +350,10 @@ in the file, so it must never be renamed.
 
 ### Transient resources
 
-- The graph owns a pool: `HashMap<TextureKey, Vec<PooledTexture>>`, the key
-  being (format, size, samples, usage).
+- A pool of transient textures, `HashMap<TextureKey, Vec<PooledTexture>>`,
+  the key being (format, size, samples, usage). One pool for all the graphs
+  (the renderer owns it, stage 5): a view takes what it needs and gives it
+  back when it is done, so the next view takes the same textures.
 - The size is a rule: `View { scale }` (a share of the size of the view),
   `Absolute(w, h)` or `FromParam("name")`.
 - The format: `Fixed(..)`, `Hdr` (`Rgba16Float`), `Depth` (`Depth32Float`) or
@@ -361,6 +368,9 @@ in the file, so it must never be renamed.
   the first camera on that target this frame and `clear = Color`, else `Load`.
 - The `viewport` of a camera is set automatically (viewport and scissor) when
   a pass draws into the target of the camera.
+- A pass that returns `Skip` does not leave what it creates as garbage: the
+  graph clears it (color to transparent black, depth to 1; the target of the
+  view only if this camera clears it).
 
 ### Execution
 
@@ -707,8 +717,7 @@ texture.
   through a comparison sampler, HDR is `Rgba16Float`.
 - The surface format: a browser stores non-sRGB and gives an sRGB view
   through `view_formats`. The logic is in the old `pick_surface_format`.
-- Shaders are WGSL only, with no preprocessor but the `#import` of section
-  19.
+- Shaders are WESL compiled to WGSL (section 19); the GPU only gets WGSL.
 - No threads: everything is on one thread, and the time budget of asset
   loading matters here most. Time comes from `web-time`.
 - Drop the `webgl` feature of wgpu.
@@ -733,7 +742,7 @@ crates/zenith-renderer/src/
                     materials.rs, fallback.rs, evict.rs
   assets/           id.rs, container.rs, json.rs, registry.rs, load.rs, ops.rs,
                     import/ (mesh.rs, obj.rs, gltf.rs, image.rs)   // no wgpu
-  shaders/          *.wgsl: the engine's copies, written into a project
+  shaders/          *.wesl: the engine's copies, written into a project
                     (section 19)
 ```
 
@@ -786,10 +795,22 @@ Every stage ends with something that can be checked.
    broken asset, invalidation, eviction, the budget, pipelines against the
    documented layouts, mipmaps read back). Not yet: `prepare_assets`, which
    asks for what extract found (stage 5).
-4. **The graph core.** `PassDesc`, the trait, the registries, JSON,
-   compilation, the pool, execution. Names in the descriptions are owned
-   (`Cow<'static, str>`), for the script passes of section 20. Check: compile
-   tests with no GPU. The contract of section 10 exists in code from here on.
+4. **The graph core.** *Done.* `PassDesc` with its slots and parameters
+   (names are `Cow<'static, str>`, for the script passes of section 20), the
+   `RenderPass` trait, `PassRegistry` (types known at compile time and ones
+   registered at run time), `GraphDesc` and its JSON with editing (add and
+   remove a node, link and unlink), compilation in six steps, the pool,
+   execution with the three contexts (data, notes, bind groups cached by
+   what is in them, state per view, attachments whose load the graph
+   decides, the viewport of the camera), `GraphRegistry` (the last version
+   that compiled keeps running; own graph → main → built-in). `init` runs
+   before the first frame of a compiled graph. Check: compile tests with no
+   GPU (order with implicit edges, left-out nodes, dropped links, cycles, two
+   writers, the output, aliasing, parameters), and run tests on a GPU with
+   passes made for the test (the clear of the target by the first camera
+   only, data and textures from pass to pass, a skipped pass). The contract
+   of section 10 exists in code from here on. Not yet: the built-in graph
+   compiles only once its passes exist (stage 6).
 5. **ECS.** Components, extract, prepare, the `render` system.
 6. **The first passes**: `zenith.input_camera`, `zenith.input_meshes`,
    `zenith.opaque`, `zenith.tonemap`, `zenith.output` and the built-in graph
@@ -807,10 +828,12 @@ Every stage ends with something that can be checked.
    camera.
 10. **Shaders in the project** (section 19): `Shaders://`, the engine's
     shaders written into new projects and into old ones on open, the version
-    line and "the engine has a newer one", loading from the project,
-    `#import`, checking with `naga`, the stand-ins of a missing or broken
-    shader, custom shaders named by materials. Check: a project whose
-    `Zenith/standard.wgsl` was changed draws with the change; a broken one
+    line and "the engine has a newer one", loading from the project, WESL
+    compiled with `wesl` (imports through the project, conditions in the
+    pipeline key), checking with `naga`, the stand-ins of a missing or broken
+    shader, custom shaders named by materials. The engine's shaders written
+    before this stage move to `.wesl` here. Check: a project whose
+    `Zenith/standard.wesl` was changed draws with the change; a broken one
     draws with the engine's copy and a warning.
 11. **The editor: viewport.** The texture in ImGui, the editor camera, hot
     reload (of shaders too), replacing a source, the editor passes
@@ -818,7 +841,7 @@ Every stage ends with something that can be checked.
 12. **The graph editor** with imnodes.
 13. **Scriptable render passes** (section 20), once the scripting can call
     into the engine. Check: a fullscreen effect written as a script and a
-    WGSL file in the project, put into the graph in the graph editor.
+    WESL file in the project, put into the graph in the graph editor.
 14. **Later.** The asset index in a build, asynchronous loading, frustum
     culling, MSAA, the parameters of custom shaders read by reflection
     (section 19), removing the old `zenith_renderer`.
@@ -832,9 +855,10 @@ Every stage ends with something that can be checked.
 - Several materials for the sub-meshes of one model.
 - A shader found by its name (a path in `Shaders://`) or by a UUID like the
   other assets (in a `// zenith-shader:` line, or a `.zenithshader` JSON
-  beside the `.wgsl`). The name is proposed: simpler, and what WGSL tools
-  leave alone; the cost is that moving a shader breaks the materials that
-  name it, unless the editor rewrites them.
+  beside the `.wesl`). The name is proposed: simpler, what shader tools leave
+  alone, and the path WESL imports by anyway; the cost is that moving a
+  shader breaks the materials and imports that name it, unless the editor
+  rewrites them.
 - The scripting language of the script passes, and how it calls into the
   engine (Gleb).
 - Three things to **[verify]**: `Send + Sync` of wgpu on wasm, registering an
@@ -882,15 +906,21 @@ can change how the engine draws, and can add shaders of its own.
 
 - `Assets/Shaders/`, with a scheme of its own, `Shaders://` (like
   `Worlds://`, which is `Assets/Worlds`). **[proposed]**
-- Plain `.wgsl` files: text, for diffs and merges, and for any editor with
-  WGSL highlighting. Nothing goes to LFS.
-- The engine's shaders are under `Shaders://Zenith/` (`Zenith/standard.wgsl`,
-  `Zenith/sky.wgsl`, `Zenith/tonemap.wgsl`, `Zenith/mipmap.wgsl`, ...); the
+- **[decided]** The shaders are written in **WESL** (WebGPU Extended Shading
+  Language): WGSL with modules (`import`) and conditional compilation
+  (`@if`). `.wesl` files, text, for diffs and merges. Nothing goes to LFS.
+  The engine compiles them to WGSL with the `wesl` crate (0.6, MIT or
+  Apache-2.0) when it loads them; wgpu only ever sees WGSL. Plain WGSL is
+  valid WESL, so a `.wgsl` file in `Shaders://` is read too.
+- The engine's shaders are under `Shaders://Zenith/` (`Zenith/standard.wesl`,
+  `Zenith/sky.wesl`, `Zenith/tonemap.wesl`, `Zenith/mipmap.wesl`, ...); the
   game's own are anywhere else in `Shaders://`.
 - A shader is found by its name: its path in `Shaders://` without the
-  extension (`Zenith/standard`). Not by a UUID: a WGSL file has no place for
-  one that the WGSL tools would leave alone, and a name is what a material
-  and a pass write. Moving a shader is renaming it. **[proposed]** (the open
+  extension (`Zenith/standard`), the same path WESL imports it by
+  (`import package::Zenith::common::Camera;`, `Shaders://` being the
+  package root). Not by a UUID: a shader file has no place for one that the
+  shader tools would leave alone, and a name is what a material, a pass and
+  an `import` write. Moving a shader is renaming it. **[proposed]** (the open
   question is in section 17)
 
 ### How the engine's shaders get there
@@ -916,14 +946,22 @@ can change how the engine draws, and can add shaders of its own.
   engine's copies; from here on it reads the project. The passes ask by name
   from stage 6 on, so this stage changes where the text comes from, not the
   passes.
-- Shared code: a line `#import "Zenith/common"` is replaced by the text of
-  that shader, once per shader, before compiling. Nothing else of a
-  preprocessor (no `#define`, no `#if`): the variants a pass needs are
-  separate entry points or separate files. **[proposed]**
-- Compiling: the WGSL is checked with `naga` (`wgpu::naga`) before
-  `create_shader_module`, so an error in a project file does not reach the
-  device's error handler (which panics). The error, with its file and line,
-  goes to the log and the editor.
+- Shared code is WESL modules: `Zenith/common` holds the structs of the
+  camera, the lights and the material, and the shaders import what they use.
+  The resolver of the `wesl` compiler reads the modules through the project
+  (`Shaders://`), so it works in an archive and on the web.
+- Variants are WESL conditions, not files: `@if(shadows)`, `@if(normal_map)`.
+  The conditions a pipeline is compiled with are part of its key (the
+  `ShaderId` stands for a name and a set of conditions), so one file gives
+  the variants a pass needs.
+- Compiling: WESL to WGSL with `wesl`, then the WGSL is checked with `naga`
+  (`wgpu::naga`) before `create_shader_module`, so an error in a project file
+  does not reach the device's error handler (which panics). The error, with
+  its file and line in the `.wesl`, goes to the log and the editor.
+- A built game may get the shaders already compiled to WGSL by
+  `zenith_build`, so it carries no compiler (smaller, on the web most of
+  all). Until then the runtime compiles them. **[verify]** that `wesl`
+  builds for wasm32 and what it adds to its size.
 - A shader that is missing or does not compile: the engine's built-in copy
   stands in, like a lost asset, with one warning; if it is not an engine
   shader, the magenta shader. A broken edit while the game runs keeps the
@@ -949,7 +987,7 @@ can change how the engine draws, and can add shaders of its own.
 - Group 1 of a custom shader: the layout of `cache/materials.rs` (a uniform
   and two textures) in the first version. Later the shader says what it
   takes: a `struct MaterialParams` and textures named in group 1, read from
-  the WGSL by `naga`'s reflection. The material file then has
+  the compiled WGSL by `naga`'s reflection. The material file then has
   `"params": { "rim_color": [1, 0.5, 0, 1] }` and
   `"textures": { "ramp": "<uuid>" }`, and the material inspector of the editor
   builds its widgets from the same reflection. **[proposed]**
@@ -977,7 +1015,7 @@ graph uses like any other pass.
   `dispatch` for compute later). No raw wgpu, no resource made in `exec`.
 - The cost of a script is paid per pass, not per draw: `draw_list` runs the
   draws of a whole slot natively.
-- Its shaders are custom shaders of section 19, so a script pass plus a WGSL
+- Its shaders are custom shaders of section 19, so a script pass plus a WESL
   file in `Shaders://` is a new effect with no Rust and no rebuild of the
   engine.
 - What is decided before it: the scripting language and how it calls into
