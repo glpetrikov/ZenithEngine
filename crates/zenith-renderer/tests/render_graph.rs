@@ -327,6 +327,51 @@ fn a_link_between_different_kinds_is_dropped() {
 }
 
 #[test]
+fn a_cycle_is_named_without_what_only_comes_after_it() {
+	// 1 -> 2 -> 1, and 3 after them: 3 is stuck too, but is not on the cycle.
+	let desc = graph(
+		&[(1, "test.mix"), (2, "test.read"), (3, "test.output")],
+		&[
+			((1, "color"), (2, "color")),
+			((2, "out"), (1, "a")),
+			((1, "color"), (3, "color")),
+		],
+	);
+	let Err(diagnostics) = compile(&desc, &passes()) else {
+		panic!("a cycle compiled");
+	};
+	let [found] = diagnostics.as_slice() else {
+		panic!("one diagnostic, not {diagnostics:?}");
+	};
+	assert_eq!(found.related.len(), 2, "{found:?}");
+	assert!(found.related.contains(&NodeId(1)) && found.related.contains(&NodeId(2)));
+	assert!(found.message.contains('→'), "the path: {}", found.message);
+	assert_eq!(found.node, found.related.first().copied());
+
+	// Two cycles apart: one is reported, whole.
+	let two = graph(
+		&[
+			(1, "test.mix"),
+			(2, "test.read"),
+			(3, "test.read"),
+			(4, "test.read"),
+			(5, "test.output"),
+		],
+		&[
+			((1, "color"), (2, "color")),
+			((2, "out"), (1, "a")),
+			((3, "out"), (4, "color")),
+			((4, "out"), (3, "color")),
+			((1, "color"), (5, "color")),
+		],
+	);
+	let Err(diagnostics) = compile(&two, &passes()) else {
+		panic!("cycles compiled");
+	};
+	assert_eq!(diagnostics.len(), 1);
+}
+
+#[test]
 fn a_broken_graph_says_why() {
 	let passes = passes();
 	let no_output = graph(&[(1, "test.target")], &[]);

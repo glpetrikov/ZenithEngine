@@ -212,8 +212,10 @@ one. Each view gets its own buffer or its own range, never a shared one.
 
 - `GraphDesc`: plain data (nodes, links, parameters, positions in the editor).
   It is what JSON holds and what the editor edits: lists of nodes and links,
-  with node ids that are never reused. (No `petgraph`: the one algorithm
-  needed, a topological sort, is a few lines.) What the engine does not know
+  with node ids that are never reused. (No `petgraph`: a topological sort
+  with ties broken by id, and a depth-first search that names the nodes of a
+  cycle, are some forty lines; `toposort` of petgraph does not promise the
+  order of ties.) What the engine does not know
   (a field, a node of a pass that is not registered) is kept and written
   back.
 - `CompiledGraph`: the pass instances, the order, the table of resources, the
@@ -299,7 +301,9 @@ Inputs that come later, each with the first pass that needs it:
    When passes A read a version and pass B writes it, an implicit edge A to B
    is added.
 4. Topological sort, ties broken by node id so the order is deterministic. A
-   cycle is an error. Two passes drawing into the same version of a texture
+   cycle is an error that names its nodes (`#1 → #2 → #1`, and
+   `Diagnostic::related` lists them for the editor to mark), not what only
+   comes after it. Two passes drawing into the same version of a texture
    are an error too: neither comes after the other.
 5. Drop the passes the `Output` node does not depend on.
 6. Lifetimes: resources with the same description and lifetimes that do not

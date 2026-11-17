@@ -46,6 +46,9 @@ pub struct Diagnostic {
 	pub node: Option<NodeId>,
 	pub severity: Severity,
 	pub message: String,
+	/// Other nodes it is about (the nodes of a cycle, in order), for the
+	/// editor to mark too.
+	pub related: Vec<NodeId>,
 }
 
 impl std::fmt::Display for Diagnostic {
@@ -280,6 +283,7 @@ impl<'a> Compiler<'a> {
 			node,
 			severity: Severity::Warning,
 			message,
+			related: Vec::new(),
 		});
 	}
 
@@ -288,6 +292,7 @@ impl<'a> Compiler<'a> {
 			node,
 			severity: Severity::Error,
 			message,
+			related: Vec::new(),
 		});
 	}
 
@@ -424,8 +429,14 @@ impl<'a> Compiler<'a> {
 	fn sort(&mut self, edges: &BTreeSet<(NodeId, NodeId)>, message: &str) -> Option<Vec<NodeId>> {
 		match sort(self.nodes.keys().copied(), edges) {
 			Ok(order) => Some(order),
-			Err(cycle) => {
-				self.error(None, format!("{message} {}", list(&cycle)));
+			Err(stuck) => {
+				let cycle = find_cycle(&stuck, edges);
+				self.diagnostics.push(Diagnostic {
+					node: cycle.first().copied(),
+					severity: Severity::Error,
+					message: format!("{message} {}", describe_cycle(&cycle)),
+					related: cycle,
+				});
 				None
 			}
 		}
@@ -544,7 +555,7 @@ impl<'a> Compiler<'a> {
 		}
 		self.sort(
 			&edges,
-			"these nodes read a texture before another draws into it, and need what that one drew:",
+			"a pass must read a texture before another draws into it, and also needs what that one made (a cycle):",
 		)
 	}
 
@@ -710,6 +721,49 @@ fn sort(nodes: impl Iterator<Item = NodeId>, edges: &BTreeSet<(NodeId, NodeId)>)
 	}
 }
 
-fn list(nodes: &[NodeId]) -> String {
-	nodes.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
+/// A cycle among `stuck` (the nodes [`sort`] could not order, which are on a
+/// cycle or after one): its nodes in the order of the edges, so that the last
+/// one has an edge to the first. Depth-first, with a node in one of three
+/// states: not seen, on the path, done; an edge to a node on the path closes a
+/// cycle.
+fn find_cycle(stuck: &[NodeId], edges: &BTreeSet<(NodeId, NodeId)>) -> Vec<NodeId> {
+	let successors = |id: NodeId| -> Vec<NodeId> {
+		edges
+			.range((id, NodeId(0))..=(id, NodeId(u32::MAX)))
+			.map(|&(_, to)| to)
+			.filter(|to| stuck.contains(to))
+			.collect()
+	};
+	let mut done: BTreeSet<NodeId> = BTreeSet::new();
+	for &start in stuck {
+		if done.contains(&start) {
+			continue;
+		}
+		// The path from `start`, each node with the successors still to visit.
+		let mut path: Vec<(NodeId, Vec<NodeId>)> = vec![(start, successors(start))];
+		while let Some((node, next)) = path.last_mut() {
+			let node = *node;
+			let Some(to) = next.pop() else {
+				done.insert(node);
+				path.pop();
+				continue;
+			};
+			if let Some(at) = path.iter().position(|(id, _)| *id == to) {
+				return path[at..].iter().map(|(id, _)| *id).collect();
+			}
+			if !done.contains(&to) {
+				path.push((to, successors(to)));
+			}
+		}
+	}
+	// Not reached for nodes `sort` gave up on; the nodes themselves are the
+	// best that can be said.
+	stuck.to_vec()
+}
+
+/// `#1 → #2 → #1`.
+fn describe_cycle(cycle: &[NodeId]) -> String {
+	let mut path: Vec<String> = cycle.iter().map(ToString::to_string).collect();
+	path.extend(cycle.first().map(ToString::to_string));
+	path.join(" → ")
 }
