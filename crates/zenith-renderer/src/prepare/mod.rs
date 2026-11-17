@@ -9,7 +9,7 @@ pub mod lights;
 pub mod sprite_lists;
 pub mod views;
 
-pub use assets::ProjectRes;
+pub use assets::{ProjectRes, ReloadShaders};
 pub use draw_lists::{DrawLists, InstanceData, MeshBatch, MeshList, ViewDrawLists};
 pub use lights::LightsUniform;
 pub use sprite_lists::{SpriteBatch, SpriteInstance, SpriteList, SpriteLists};

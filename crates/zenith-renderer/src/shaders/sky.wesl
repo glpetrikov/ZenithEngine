@@ -1,12 +1,7 @@
+// zenith-shader: Zenith/sky 1
 // The sky: an equirectangular picture, seen in the direction each pixel looks.
 
-struct Camera {
-	view: mat4x4<f32>,
-	proj: mat4x4<f32>,
-	view_proj: mat4x4<f32>,
-	inv_view_proj: mat4x4<f32>,
-	viewport: vec4<f32>,
-}
+import package::Zenith::common::Camera;
 
 struct Params {
 	intensity: f32,

@@ -1,3 +1,4 @@
+// zenith-shader: Zenith/tonemap 1
 // Brings an HDR picture into the range of the screen.
 
 struct Params {

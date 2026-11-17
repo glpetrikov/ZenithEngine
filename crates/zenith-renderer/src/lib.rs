@@ -97,6 +97,7 @@ pub fn add_systems(schedule: &mut Schedule) {
 			.in_set(RenderSet::Extract),
 		apply_settings.in_set(RenderSet::Prepare),
 		(
+			prepare::assets::load_shaders.run_if(resource_exists::<GpuCache>),
 			prepare::assets::prepare_assets.run_if(resource_exists::<GpuCache>),
 			targets::prepare_targets,
 			prepare::views::prepare_views,
@@ -134,6 +135,7 @@ pub fn insert_resources(world: &mut World, renderer: Renderer, settings: RenderS
 	world.init_resource::<prepare::PreparedViews>();
 	world.init_resource::<prepare::DrawLists>();
 	world.init_resource::<prepare::SpriteLists>();
+	world.init_resource::<prepare::ReloadShaders>();
 	world.init_resource::<targets::RenderTargets>();
 }
 
@@ -156,6 +158,7 @@ pub fn install(world: &mut zenith_world::World, renderer: Renderer, settings: Re
 	world.keep_resource::<prepare::PreparedViews>();
 	world.keep_resource::<prepare::DrawLists>();
 	world.keep_resource::<prepare::SpriteLists>();
+	world.keep_resource::<prepare::ReloadShaders>();
 	world.keep_resource::<targets::RenderTargets>();
 	insert_resources(world.world_mut(), renderer, settings);
 }

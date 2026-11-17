@@ -1,3 +1,4 @@
+// zenith-shader: Zenith/standard 1
 // The standard material, as drawn by `zenith.opaque` and `zenith.transparent`.
 //
 // Group 0: what the pass was given (camera, lights, scene, environment,
@@ -10,52 +11,7 @@
 // the ambient light, a look along the reflection (a level that grows with the
 // roughness) is the reflection.
 
-struct Camera {
-	view: mat4x4<f32>,
-	proj: mat4x4<f32>,
-	view_proj: mat4x4<f32>,
-	inv_view_proj: mat4x4<f32>,
-	viewport: vec4<f32>,
-}
-
-struct DirectionalLight {
-	// The way the light travels.
-	direction: vec4<f32>,
-	// Color times illuminance; w is 1 for the light that casts the shadow.
-	color: vec4<f32>,
-}
-
-struct PointLight {
-	// w is the range.
-	position: vec4<f32>,
-	color: vec4<f32>,
-}
-
-struct Lights {
-	// rgb: the ambient light that does not come from the environment.
-	ambient: vec4<f32>,
-	// x: directional lights, y: point lights.
-	counts: vec4<u32>,
-	directional: array<DirectionalLight, 4>,
-	point: array<PointLight, 16>,
-}
-
-struct Scene {
-	shadow_matrix: mat4x4<f32>,
-	// x: the intensity of the environment, y: 1 if there is one, z: 1 if
-	// there is a shadow map, w: the last mip level of the environment.
-	params: vec4<f32>,
-	// x: the bias, y: the size of a texel of the shadow map in 0..1.
-	shadow: vec4<f32>,
-}
-
-struct Material {
-	base_color: vec4<f32>,
-	roughness: f32,
-	metallic: f32,
-	alpha_cutoff: f32,
-	flags: u32,
-}
+import package::Zenith::common::{Camera, Lights, Scene, Material};
 
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var<uniform> lights: Lights;

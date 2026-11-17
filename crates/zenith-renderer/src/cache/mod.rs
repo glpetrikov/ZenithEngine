@@ -149,6 +149,19 @@ pub struct GpuCache {
 	memory: u64,
 	/// Where the shaders by name come from.
 	sources: ShaderSources,
+	/// The shaders compiled so far, by name and conditions.
+	compiled: HashMap<ShaderKey, CompiledShader>,
+	/// Failures already reported, so a broken file is one message.
+	reported: HashSet<(ShaderKey, u64)>,
+}
+
+/// A shader by name and the conditions it is compiled with.
+type ShaderKey = (String, Vec<(String, bool)>);
+
+/// A shader that was made, and the version of the sources it came from.
+struct CompiledShader {
+	id: ShaderId,
+	version: u64,
 }
 
 impl GpuCache {
@@ -180,6 +193,8 @@ impl GpuCache {
 			now: Instant::now(),
 			memory: 0,
 			sources: ShaderSources::default(),
+			compiled: HashMap::new(),
+			reported: HashSet::new(),
 		}
 	}
 
@@ -449,8 +464,56 @@ impl GpuCache {
 	/// The shader `name` from [`GpuCache::sources`], made the first time it
 	/// is asked for (and again if its text changed). `None`: no such shader.
 	pub fn named_shader(&mut self, name: &str) -> Option<ShaderId> {
-		let source = self.sources.get(name)?;
-		Some(self.pipelines.shader(name, source))
+		self.named_shader_with(name, &[])
+	}
+
+	/// The shader `name` compiled with the WESL `conditions` (`@if(name)`).
+	///
+	/// Made the first time, and again when the sources change. One that is
+	/// missing or does not compile is not an error of the device: the last
+	/// version that compiled stays, else the engine's copy stands in, else
+	/// (a shader of the project) the magenta one, with a message once.
+	/// `None` only if even those fail.
+	pub fn named_shader_with(&mut self, name: &str, conditions: &[(&str, bool)]) -> Option<ShaderId> {
+		let mut conditions: Vec<(String, bool)> = conditions
+			.iter()
+			.map(|&(condition, on)| (condition.to_owned(), on))
+			.collect();
+		conditions.sort();
+		let key = (name.to_owned(), conditions);
+		let version = self.sources.version();
+		if let Some(done) = self.compiled.get(&key)
+			&& done.version == version
+		{
+			return Some(done.id);
+		}
+		let label = shader_label(&key);
+		let id = match crate::shaders::compile::compile(name, &self.sources, &key.1) {
+			Ok(wgsl) => self.pipelines.shader(&label, &wgsl),
+			Err(e) => {
+				if self.reported.insert((key.clone(), version)) {
+					zenith_log::warn!("{e}");
+				}
+				if let Some(last) = self.compiled.get(&key) {
+					last.id
+				} else {
+					self.stand_in(name, &key, &label)?
+				}
+			}
+		};
+		self.compiled.insert(key, CompiledShader { id, version });
+		Some(id)
+	}
+
+	/// The engine's copy of `name`, or the magenta shader.
+	fn stand_in(&mut self, name: &str, key: &ShaderKey, label: &str) -> Option<ShaderId> {
+		let engine = ShaderSources::engine();
+		if crate::shaders::is_engine(name) {
+			let wgsl = crate::shaders::compile::compile(name, &engine, &key.1).ok()?;
+			return Some(self.pipelines.shader(label, &wgsl));
+		}
+		let wgsl = crate::shaders::compile::compile(crate::shaders::MAGENTA, &engine, &[]).ok()?;
+		Some(self.pipelines.shader(label, &wgsl))
 	}
 
 	/// See [`Pipelines::shader`].
@@ -529,4 +592,18 @@ fn retry<T>(table: &mut Table<T>, kind: AssetKind, pending: &mut VecDeque<(Asset
 			pending.push_back((kind, id));
 		}
 	}
+}
+
+/// The name a shader is known by to the device: the conditions are in it.
+fn shader_label(key: &ShaderKey) -> String {
+	if key.1.is_empty() {
+		return key.0.clone();
+	}
+	let on: Vec<&str> = key
+		.1
+		.iter()
+		.filter(|(_, on)| *on)
+		.map(|(name, _)| name.as_str())
+		.collect();
+	format!("{}#{}", key.0, on.join("+"))
 }

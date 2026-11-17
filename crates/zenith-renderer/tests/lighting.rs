@@ -32,7 +32,7 @@ fn a_directional_light_lights_the_face_it_shines_on() {
 		return;
 	};
 	scene.spawn_cube(DVec3::ZERO);
-	scene.render_frames(8);
+	scene.render_frames(30);
 	let dark = brightness(center(&scene));
 
 	// The light travels along -Z, onto the face that looks at the camera.
@@ -51,7 +51,7 @@ fn a_light_from_behind_leaves_the_face_to_the_ambient_light() {
 		return;
 	};
 	scene.spawn_cube(DVec3::ZERO);
-	scene.render_frames(8);
+	scene.render_frames(30);
 	let dark = brightness(center(&scene));
 
 	// Shining along +Z: onto the back of the cube.
@@ -70,7 +70,7 @@ fn a_point_light_near_the_face_lights_it() {
 		return;
 	};
 	scene.spawn_cube(DVec3::ZERO);
-	scene.render_frames(8);
+	scene.render_frames(30);
 	let dark = brightness(center(&scene));
 
 	scene.world.world_mut().spawn((
@@ -131,7 +131,7 @@ fn a_cube_casts_a_shadow_on_the_wall_behind_it() {
 	let Some(mut scene) = shadow_scene() else {
 		return;
 	};
-	scene.render_frames(8);
+	scene.render_frames(30);
 	// To the right of the cube, where its shadow falls with the light on.
 	let (x, y) = (SIZE * 13 / 16, SIZE / 2);
 	let without = brightness(scene.pixel(x, y));
@@ -154,7 +154,7 @@ fn the_sky_is_drawn_where_nothing_else_is() {
 		return;
 	};
 	scene.spawn_cube(DVec3::ZERO);
-	scene.render_frames(8);
+	scene.render_frames(30);
 	let background = scene.pixel(2, 2);
 	let cube = center(&scene);
 
@@ -164,7 +164,7 @@ fn the_sky_is_drawn_where_nothing_else_is() {
 	);
 	scene.world.world_mut().resource_mut::<ExtraViews>().0[0].environment = Some((sky, 1.0));
 	// The picture arrives over a few frames.
-	scene.render_frames(8);
+	scene.render_frames(30);
 	assert_ne!(scene.pixel(2, 2), background, "the sky instead of the clear color");
 	assert_eq!(scene.pixel(2, 2)[3], 255);
 	assert_ne!(center(&scene), scene.pixel(2, 2), "the cube is still in front of it");

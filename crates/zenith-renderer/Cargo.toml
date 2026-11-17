@@ -34,6 +34,9 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 half = "2.7.1"
 # The clock of the GPU cache (`std::time::Instant` panics in a browser).
 web-time = "1.1.0"
+# The shaders of a project are WESL: WGSL with modules and conditions. They
+# are compiled to WGSL when they are loaded.
+wesl = { version = "0.6.0", default-features = false }
 
 zenith_error = { version = "0.1.0", path = "../zenith_error" }
 zenith_log = { version = "0.1.0", path = "../zenith_log" }

@@ -1,13 +1,8 @@
+// zenith-shader: Zenith/sprite 1
 // Sprites: a quad per instance, facing +Z of its own, tinted and cut out of a
 // texture. Everything is relative to the camera.
 
-struct Camera {
-	view: mat4x4<f32>,
-	proj: mat4x4<f32>,
-	view_proj: mat4x4<f32>,
-	inv_view_proj: mat4x4<f32>,
-	viewport: vec4<f32>,
-}
+import package::Zenith::common::Camera;
 
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(1) @binding(0) var sprite_texture: texture_2d<f32>;

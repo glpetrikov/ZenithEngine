@@ -1,3 +1,4 @@
+// zenith-shader: Zenith/shadow 1
 // The shadow pass: the depth of the meshes seen from the light.
 
 struct Light {

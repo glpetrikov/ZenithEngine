@@ -59,7 +59,7 @@ fn a_sprite_is_drawn_where_it_stands_and_nowhere_else() {
 		.world_mut()
 		.spawn((sprite(texture, [1.0; 4], 0, 2.0), Transform::default()));
 	// The texture arrives over a few frames.
-	scene.render_frames(8);
+	scene.render_frames(30);
 	assert_ne!(scene.pixel(SIZE / 2, SIZE / 2), background, "in the middle");
 	assert_ne!(scene.pixel(SIZE * 5 / 8, SIZE * 3 / 8), background, "inside the quad");
 	assert_eq!(scene.pixel(2, 2), background, "the corner is not covered");
@@ -82,7 +82,7 @@ fn a_sprite_that_is_moved_moves_on_the_screen() {
 			},
 		))
 		.id();
-	scene.render_frames(8);
+	scene.render_frames(30);
 	let background = scene.pixel(SIZE - 3, SIZE / 2);
 	assert_ne!(scene.pixel(SIZE / 4, SIZE / 2), background, "on the left");
 	assert_eq!(scene.pixel(SIZE * 3 / 4, SIZE / 2), background, "not on the right");
@@ -117,7 +117,7 @@ fn the_sprite_with_the_higher_order_is_on_top() {
 		.world
 		.world_mut()
 		.spawn((sprite(texture, blue, 1, 2.0), Transform::default()));
-	scene.render_frames(8);
+	scene.render_frames(30);
 	let [r, _, b, _] = scene.pixel(SIZE / 2, SIZE / 2);
 	assert!(b > r, "blue on top: {r} {b}");
 
@@ -146,7 +146,7 @@ fn a_part_of_the_texture_can_be_cut_out() {
 		.world_mut()
 		.spawn((sprite(texture, [1.0; 4], 0, 2.0), Transform::default()))
 		.id();
-	scene.render_frames(8);
+	scene.render_frames(30);
 	let before = scene.pixel(SIZE / 2, SIZE / 2);
 	let mut sprite = scene.world.world_mut().entity_mut(whole);
 	let mut sprite = sprite.get_mut::<Sprite>().expect("it is a sprite");

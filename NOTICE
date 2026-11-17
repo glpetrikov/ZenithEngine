@@ -253,6 +253,12 @@ maybe-owned with version 0.3.4 under Apache License 2.0.
 
 ctrlc with version 3.5.2 under Apache License 2.0.
 
+logos-codegen with version 0.16.1 under Apache License 2.0.
+
+logos-derive with version 0.16.1 under Apache License 2.0.
+
+logos with version 0.16.1 under Apache License 2.0.
+
 glam with version 0.34.1 under Apache License 2.0.
 
 gpu-allocator with version 0.28.0 under Apache License 2.0.
@@ -331,6 +337,8 @@ crossbeam-queue with version 0.3.14 under Apache License 2.0.
 
 crossbeam-utils with version 0.8.23 under Apache License 2.0.
 
+either with version 1.19.0 under Apache License 2.0.
+
 encoding_rs_io with version 0.1.8 under Apache License 2.0.
 
 equivalent with version 1.0.2 under Apache License 2.0.
@@ -363,6 +371,8 @@ gethostname with version 1.1.0 under Apache License 2.0.
 
 gimli with version 0.32.3 under Apache License 2.0.
 
+glob with version 0.3.4 under Apache License 2.0.
+
 hash32 with version 0.3.1 under Apache License 2.0.
 
 hashbrown with version 0.16.1 under Apache License 2.0.
@@ -383,11 +393,15 @@ io-lifetimes with version 2.0.4 under Apache License 2.0.
 
 io-lifetimes with version 3.0.1 under Apache License 2.0.
 
+itertools with version 0.15.0 under Apache License 2.0.
+
 jobserver with version 0.1.35 under Apache License 2.0.
 
 js-sys with version 0.3.105 under Apache License 2.0.
 
 khronos-egl with version 6.0.0 under Apache License 2.0.
+
+lalrpop-util with version 0.23.2 under Apache License 2.0.
 
 lazy_static with version 1.5.0 under Apache License 2.0.
 
@@ -510,6 +524,20 @@ bit-vec with version 0.9.1 under Apache License 2.0.
 downcast-rs with version 1.2.1 under Apache License 2.0.
 
 downcast-rs with version 2.0.2 under Apache License 2.0.
+
+lexical-core with version 1.0.6 under Apache License 2.0.
+
+lexical-parse-float with version 1.0.6 under Apache License 2.0.
+
+lexical-parse-integer with version 1.0.6 under Apache License 2.0.
+
+lexical-util with version 1.0.7 under Apache License 2.0.
+
+lexical-write-float with version 1.0.6 under Apache License 2.0.
+
+lexical-write-integer with version 1.0.6 under Apache License 2.0.
+
+lexical with version 7.0.5 under Apache License 2.0.
 
 presser with version 0.3.1 under Apache License 2.0.
 
@@ -831,6 +859,12 @@ utf8parse with version 0.2.2 under Apache License 2.0.
 
 variadics_please with version 2.0.0 under Apache License 2.0.
 
+wesl-core with version 0.1.0 under Apache License 2.0.
+
+wesl-macros with version 0.6.0 under Apache License 2.0.
+
+wesl with version 0.6.0 under Apache License 2.0.
+
 wgpu-core-deps-apple with version 30.0.1 under Apache License 2.0.
 
 wgpu-core-deps-emscripten with version 30.0.1 under Apache License 2.0.
@@ -848,6 +882,10 @@ wgpu-naga-bridge with version 30.0.1 under Apache License 2.0.
 wgpu-types with version 30.0.1 under Apache License 2.0.
 
 wgpu with version 30.0.1 under Apache License 2.0.
+
+wgsl-parse with version 0.6.0 under Apache License 2.0.
+
+wgsl-types with version 0.6.0 under Apache License 2.0.
 
 winapi-i686-pc-windows-gnu with version 0.4.0 under Apache License 2.0.
 

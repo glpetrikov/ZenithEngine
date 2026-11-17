@@ -14,6 +14,8 @@ pub const TMP_SUFFIX: &str = ".zenith-tmp";
 
 pub const DIR_ASSETS: &str = "Assets";
 pub const DIR_WORLDS: &str = "Assets/Worlds";
+/// The shaders of the project (WESL), `Shaders://`.
+pub const DIR_SHADERS: &str = "Assets/Shaders";
 pub const DIR_PACKAGES: &str = "Packages";
 pub const DIR_SETTINGS: &str = "Settings";
 pub const DIR_TEMP: &str = "Temp";
@@ -42,6 +44,7 @@ pub const BASE_BUILD_DIRS: &[&str] = &[DIR_ASSETS, DIR_SETTINGS, DIR_PACKAGES];
 pub const BUILTIN_SCHEMES: &[(&str, &str)] = &[
 	("Assets", DIR_ASSETS),
 	("Worlds", DIR_WORLDS),
+	("Shaders", DIR_SHADERS),
 	("Settings", DIR_SETTINGS),
 	("Packages", DIR_PACKAGES),
 	("Temp", DIR_TEMP),

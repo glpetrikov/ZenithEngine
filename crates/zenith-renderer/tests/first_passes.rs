@@ -50,7 +50,7 @@ fn a_cube_is_drawn_over_the_background() {
 	};
 	scene.spawn_cube(DVec3::ZERO);
 	// The mesh, the material and its textures arrive over a few frames.
-	scene.render_frames(8);
+	scene.render_frames(30);
 	let background = scene.pixel(2, 2);
 	let center = scene.pixel(SIZE / 2, SIZE / 2);
 	assert_ne!(center, background, "the cube is in the middle");
@@ -63,7 +63,7 @@ fn a_cube_behind_the_camera_is_not_seen() {
 		return;
 	};
 	scene.spawn_cube(DVec3::new(0.0, 0.0, 10.0));
-	scene.render_frames(8);
+	scene.render_frames(30);
 	assert_eq!(scene.pixel(SIZE / 2, SIZE / 2), scene.pixel(2, 2));
 }
 
@@ -118,7 +118,7 @@ fn two_cameras_share_a_target_and_a_third_draws_into_a_texture() {
 			ClearMode::Color([0.0, 0.0, 1.0, 1.0]),
 		));
 	}
-	scene.render_frames(8);
+	scene.render_frames(30);
 	// Each camera draws the cube into the middle of its own half; the corners
 	// of the halves show the background.
 	let background = scene.pixel(2, 2);

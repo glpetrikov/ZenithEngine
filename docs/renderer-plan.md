@@ -873,7 +873,7 @@ Every stage ends with something that can be checked.
    depth, and are hidden by what is nearer when `depth_test` is on. A 2D
    camera is a camera with `Orthographic`. Checks on a real adapter: where a
    sprite stands and where it does not, moving it, the order, `uv_rect`.
-10. **Shaders in the project** (section 19): `Shaders://`, the engine's
+10. **Shaders in the project** *(done, see below)* (section 19): `Shaders://`, the engine's
     shaders written into new projects and into old ones on open, the version
     line and "the engine has a newer one", loading from the project, WESL
     compiled with `wesl` (imports through the project, conditions in the
@@ -882,6 +882,20 @@ Every stage ends with something that can be checked.
     before this stage move to `.wesl` here. Check: a project whose
     `Zenith/standard.wesl` was changed draws with the change; a broken one
     draws with the engine's copy and a warning.
+    *Done:* `Shaders://` (`Assets/Shaders`), the engine's shaders are `.wesl`
+    with a `// zenith-shader: name version` line and a shared
+    `Zenith/common`; `shaders::project` writes the missing ones
+    (`install_engine_shaders`, an older copy is only reported,
+    `restore_engine_shaders` writes all), and reads the project
+    (`load_project_shaders`, `.wesl` wins over `.wgsl`); `shaders::compile`
+    runs `wesl` over the project's files in memory and checks the WGSL with
+    `naga`; `GpuCache::named_shader_with` takes WESL conditions (they are part
+    of the key), keeps the last version that compiled, else stands in with the
+    engine's copy, else `Zenith/magenta`. The `load_shaders` system reads the
+    project once and when `ReloadShaders` is set. `wesl` builds for wasm32.
+    Left out: `mipmap.wgsl` stays inside the cache (it is not a shader a
+    project would change); the runtime does not write shaders into a project
+    (the editor does, stage 11); no compiled-WGSL builds yet.
 11. **The editor: viewport.** The texture in ImGui, the editor camera, hot
     reload (of shaders too), replacing a source, the editor passes
     (`editor.grid`, `editor.gizmos`, `editor.outline`).
