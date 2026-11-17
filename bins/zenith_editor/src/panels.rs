@@ -6,7 +6,7 @@ use zenith_input::{ZGamePad, ZGamePadAxis, ZStick};
 
 use crate::{
 	editor::{EMULATED_PAD, Editor},
-	toolbar, viewport_panel,
+	graph_panel, toolbar, viewport_panel,
 };
 
 const WELCOME: &str = "Welcome";
@@ -27,6 +27,7 @@ pub fn draw(editor: &mut Editor, ui: &Ui) {
 	viewport_panel::viewport(editor, ui);
 	input_debug(editor, ui);
 	viewport_panel::worlds(editor, ui);
+	graph_panel::draw(editor, ui);
 	dialogs(editor, ui);
 }
 

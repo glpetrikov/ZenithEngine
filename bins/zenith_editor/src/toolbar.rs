@@ -124,7 +124,9 @@ pub fn draw_toolbar(editor: &mut Editor, ui: &Ui) {
 			ui.menu_item("Undo");
 			ui.menu_item("Redo");
 		});
-		ui.menu("Window", || {});
+		ui.menu("Window", || {
+			ui.checkbox("Render Graph", &mut editor.graph.open);
+		});
 		ui.menu("Debug", || {
 			if ui.menu_item_enabled_selected("Mark all worlds changed", None::<&str>, false, has_project)
 				&& let Some(project) = &mut editor.project

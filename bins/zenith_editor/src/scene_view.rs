@@ -55,6 +55,9 @@ pub enum GizmoOperation {
 pub struct SceneView {
 	pub camera: EditorCamera,
 	pub selection: Option<Entity>,
+	/// A graph to draw the Viewport with instead of the editor graph (the one
+	/// being edited in the graph editor).
+	pub preview_graph: Option<GraphId>,
 	pub operation: GizmoOperation,
 	/// The gizmo works in the axes of the entity, not of the world.
 	pub local: bool,
@@ -81,6 +84,7 @@ impl Default for SceneView {
 		Self {
 			camera: EditorCamera::default(),
 			selection: None,
+			preview_graph: None,
 			operation: GizmoOperation::default(),
 			local: false,
 			flying: false,
@@ -98,7 +102,7 @@ impl Default for SceneView {
 }
 
 /// The texture the world was drawn into.
-struct Shown {
+pub struct Shown {
 	view: wgpu::TextureView,
 	/// It is not the one the UI was told about.
 	resized: bool,
@@ -175,7 +179,7 @@ impl SceneView {
 
 	/// Draws the world into the texture, and says which it is. `None`: there
 	/// is no such world.
-	fn draw(
+	pub(crate) fn draw(
 		&mut self,
 		device: &wgpu::Device,
 		queue: &wgpu::Queue,
@@ -214,7 +218,7 @@ impl SceneView {
 			viewport: None,
 			order: 0,
 			clear: ClearMode::Color(CLEAR),
-			graph: Some(GraphId::EDITOR),
+			graph: Some(self.preview_graph.unwrap_or(GraphId::EDITOR)),
 			environment: None,
 		}];
 		ecs.resource_mut::<EditorSelection>().0 = self.selection.into_iter().collect();

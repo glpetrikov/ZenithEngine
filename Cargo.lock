@@ -1105,6 +1105,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "dear-imnodes"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cea35108d336ccdc350c93405a81839dc7ecc545a7391663bdf2c9399d9973c7"
+dependencies = [
+ "bitflags 2.13.2",
+ "dear-imgui-rs",
+ "dear-imnodes-sys",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "dear-imnodes-sys"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9eb279e3161c64ab959593fbff41ed4530647a3ca888f64be3842231d25361e"
+dependencies = [
+ "cc",
+ "dear-imgui-build-support",
+ "dear-imgui-sys",
+]
+
+[[package]]
 name = "deranged"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5223,11 +5246,13 @@ dependencies = [
  "dear-imgui-wgpu",
  "dear-imgui-winit",
  "dear-imguizmo",
+ "dear-imnodes",
  "dirs",
  "glam 0.34.1",
  "pollster 1.0.1",
  "rfd",
  "serde",
+ "serde_json",
  "tempfile",
  "toml",
  "web-time",

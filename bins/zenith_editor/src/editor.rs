@@ -61,6 +61,8 @@ pub struct Editor {
 	pub project: Option<OpenProject>,
 	/// What the Viewport shows.
 	pub scene: SceneView,
+	/// The graph editor.
+	pub graph: crate::graph_panel::GraphEditor,
 	/// The world the Viewport and the Hierarchy show.
 	pub active_world: Option<String>,
 	/// The seconds the last frame took.
@@ -103,6 +105,7 @@ impl Editor {
 		let mut editor = Self {
 			project: None,
 			scene: SceneView::default(),
+			graph: crate::graph_panel::GraphEditor::default(),
 			active_world: None,
 			dt: 0.0,
 			recent_file,
@@ -149,6 +152,7 @@ impl Editor {
 		// The renderer goes out of the worlds that are about to be dropped.
 		self.scene.release(self.project.as_mut());
 		self.active_world = None;
+		self.graph.reset();
 		for problem in &open.load_errors {
 			self.problems
 				.push(format!("The world {} cannot be read: {}", problem.name, problem.error));

@@ -141,6 +141,11 @@ impl Gfx {
 		}
 	}
 
+	/// The UI context, for what is built on it (the node editor).
+	pub const fn imgui(&self) -> &Context {
+		&self.context
+	}
+
 	/// The GPU the UI is drawn with: the renderer of the world uses it too.
 	pub const fn device(&self) -> &wgpu::Device {
 		&self.device

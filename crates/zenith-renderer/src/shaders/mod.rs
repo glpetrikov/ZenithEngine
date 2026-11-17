@@ -26,6 +26,11 @@ pub const SPRITE: &str = "Zenith/sprite";
 pub const LINES: &str = "Zenith/lines";
 /// The structs the shaders of the passes share.
 pub const COMMON: &str = "Zenith/common";
+/// One mip level of a texture from the one above it. Inside the cache: it is
+/// not written into a project (a project cannot change it).
+pub const MIPMAP: &str = "Zenith/mipmap";
+/// The text of [`MIPMAP`].
+pub const MIPMAP_SOURCE: &str = include_str!("mipmap.wesl");
 /// What stands in for a shader of a material that is missing or broken.
 pub const MAGENTA: &str = "Zenith/magenta";
 

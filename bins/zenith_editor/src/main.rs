@@ -3,6 +3,8 @@ mod backup;
 mod camera;
 mod editor;
 mod gfx;
+mod graph_edit;
+mod graph_panel;
 mod panels;
 mod project;
 mod recent;

@@ -1,3 +1,4 @@
+// zenith-shader: Zenith/mipmap 1
 // One mip level of a texture from the one above it: a triangle that covers
 // the target, sampling the bigger level linearly (four texels into one).
 

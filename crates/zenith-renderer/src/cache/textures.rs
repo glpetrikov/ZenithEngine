@@ -214,6 +214,23 @@ pub const fn sampler_key(settings: &TextureImport) -> SamplerKey {
 	}
 }
 
+/// The WGSL of the mip shader, made from its WESL once.
+fn mipmap_wgsl() -> Option<&'static str> {
+	static WGSL: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+	WGSL.get_or_init(|| {
+		let mut sources = crate::shaders::ShaderSources::engine();
+		sources.set(crate::shaders::MIPMAP, crate::shaders::MIPMAP_SOURCE);
+		match crate::shaders::compile::compile(crate::shaders::MIPMAP, &sources, &[]) {
+			Ok(wgsl) => Some(wgsl),
+			Err(e) => {
+				zenith_log::error!("The mip shader of the engine does not compile: {e}");
+				None
+			}
+		}
+	})
+	.as_deref()
+}
+
 /// Fills the levels below the first, each from the one above it. The GPU
 /// does the sRGB right by itself: it reads linear values from an sRGB
 /// texture and writes them back as sRGB.
@@ -225,7 +242,10 @@ fn generate_mipmaps(
 	format: wgpu::TextureFormat,
 	levels: u32,
 ) {
-	let shader = pipelines.shader("zenith.mipmap", include_str!("../shaders/mipmap.wgsl"));
+	let Some(wgsl) = mipmap_wgsl() else {
+		return;
+	};
+	let shader = pipelines.shader("zenith.mipmap", wgsl);
 	let layout = pipelines.layout(&[
 		wgpu::BindGroupLayoutEntry {
 			binding: 0,

@@ -224,6 +224,7 @@ pub fn worlds(editor: &mut Editor, ui: &Ui) {
 				}
 			}
 			if chosen.is_some() && chosen != editor.active_world {
+				editor.graph.reset();
 				editor.active_world = chosen;
 			}
 		});

@@ -16,6 +16,9 @@ dear-imgui-winit = "0.18.0"
 dear-imgui-wgpu = "0.18.0"
 # The transform gizmo over the viewport; matrices go in as plain arrays.
 dear-imguizmo = { version = "0.18.0", default-features = false }
+# The graph editor.
+dear-imnodes = { version = "0.18.0", default-features = false }
+serde_json = "1"
 pollster = "1.0.1"
 # Ctrl+C (and SIGTERM, closing the console) end the editor the way closing the window does.
 ctrlc = { version = "3", features = ["termination"] }

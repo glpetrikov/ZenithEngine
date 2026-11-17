@@ -147,6 +147,13 @@ impl GraphRegistry {
 		Some((id, compiled))
 	}
 
+	/// The ids of the graphs, in a fixed order.
+	pub fn ids(&self) -> Vec<GraphId> {
+		let mut ids: Vec<GraphId> = self.graphs.keys().copied().collect();
+		ids.sort();
+		ids
+	}
+
 	pub fn len(&self) -> usize {
 		self.graphs.len()
 	}

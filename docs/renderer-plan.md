@@ -696,6 +696,55 @@ are text for the sake of diffs and merges.
 The Game panel: cameras with `CameraTarget::Window` are redirected into its
 texture.
 
+### The panels (UE-like layout)
+
+The four panels that matter most, in this order of importance: **Details**,
+**Hierarchy**, **File Explorer**, **Viewport**. The default layout is the one
+of Unreal Engine, not of Unity: the Viewport in the middle and big, the
+Hierarchy (what UE calls the Outliner) on the right at the top, the Details
+(the same name as in UE) on the right below it, and the file panel along the whole
+bottom edge. The docking layout is saved with the editor settings as it is
+now (`EditorLayout.ini`).
+
+- **Hierarchy.** The entities of the shown world as a tree with the name and
+  an icon by what the entity has (model, light, camera, sprite). A search
+  box, selecting with a click, Ctrl/Shift for several, rename, delete,
+  duplicate, drag to make a child. Needs a parent/child component in
+  `zenith_components` (**[verify]** it does not exist yet: today the world is
+  flat). The selection is the same everywhere: the Viewport, the Hierarchy
+  and the Details share it.
+- **Details.** For the selected entity: the name and the active flag, then
+  one collapsible block per component, with a widget per field, made from
+  the registry of components (`zenith_registry`: the names and the types of
+  the fields), so a component of a game shows up without code in the
+  editor. `Add Component` with a search, remove a component, reset to
+  default, a lock, multi-edit when several entities are selected. Every
+  change marks the world as changed. Asset fields (a model, a material, a
+  texture) take a drag from the File Explorer. Transform is the first block.
+- **Viewport.** Besides what stage 11 did: **selection by a click in the
+  picture** (a ray against the bounds of the models, then the nearest hit;
+  an ID pass can replace it later), box selection by dragging, Ctrl/Shift to
+  add, the outline (`editor.outline`) of everything selected, the gizmo on
+  the selection, and a hover highlight.
+- **File Explorer** (the name is a proposal, see below). Like the Content
+  Browser of UE: a tree of folders on the left, the files of the chosen
+  folder as tiles or a list on the right, a path bar with breadcrumbs, a
+  search and a filter by the kind of asset, a size slider for the tiles.
+  **Favorites** at the top of the tree: a folder or an asset is added with
+  a right click and stays. **Opened folders are remembered**: which folders
+  of the tree are expanded, which folder is open, the scroll, the view mode
+  and the favorites are saved per project (in `Settings/`, not in the
+  world) and come back when the editor or the project is opened again;
+  closing a panel does not forget the open folder. Drag and drop to move
+  (through `ops::move_asset`, so ids stay), rename, delete (to the trash of
+  the project), import by dropping files in, a thumbnail for pictures and
+  models, a context menu with Show on Disk, Replace Source, Export.
+
+Names for the file panel: **Content Browser** (the UE name, the easiest to
+recognise), **Asset Browser**, **Project Files**, **File Manager**, **Assets**.
+The proposal is **Content Browser**, because the layout and the behaviour
+copy UE; **Assets** is the short, neutral alternative.
+
 ### The graph editor (imnodes)
 
 - A list to choose which graph is shown (from the `GraphRegistry`).
@@ -893,8 +942,7 @@ Every stage ends with something that can be checked.
     of the key), keeps the last version that compiled, else stands in with the
     engine's copy, else `Zenith/magenta`. The `load_shaders` system reads the
     project once and when `ReloadShaders` is set. `wesl` builds for wasm32.
-    Left out: `mipmap.wgsl` stays inside the cache (it is not a shader a
-    project would change); the runtime does not write shaders into a project
+    Left out: (`mipmap` is WESL too now, `Zenith/mipmap`, compiled once inside the cache; it is not written into a project because a project would not change it); the runtime does not write shaders into a project
     (the editor does, stage 11); no compiled-WGSL builds yet.
 11. **The editor: viewport.** The texture in ImGui, the editor camera, hot
     reload (of shaders too), replacing a source, the editor passes
@@ -927,13 +975,31 @@ Every stage ends with something that can be checked.
     the Game panel, a silhouette outline; the window was not run by hand
     (only the parts without a window are tested), and a project with no
     world shows nothing in the Viewport.
-12. **The graph editor** with imnodes.
-13. **Scriptable render passes** (section 20), after the scripting, made by Gleb, can call
+12. **The graph editor** with imnodes. *Done:* the panel Render Graph (Window menu): a list of the graphs of the renderer and of the project (`.zenithgraph` assets, loaded on a click), nodes and pins made from `PassDesc` (a pin is colored by what its slot carries, a title by the category of its pass), parameters as ImGui widgets made from `ParamDesc` right in the node, links by dragging (checked: output to input, the same kind of slot, not to itself; Ctrl-drag detaches), delete with the Delete key, adding a node from a menu on right click (by category), every edit goes into `Renderer::set_graph`, which compiles it, so the errors and warnings of the compiler are listed under the nodes and the nodes with errors are red; the last version that compiled keeps running. Save writes a project graph back, Save As puts a copy with a new id into `Assets/Graphs`; "Show in Viewport" draws the Viewport with the graph being edited; "Main graph" makes it the main one. Node positions come from the file, nodes without one are laid out in columns by depth, and the positions imnodes holds are written back. The pieces without a window (pins, links, layout, parameters, a UI run with no window) are tested; the panel was not run by hand. Left out: undo, copy and paste of nodes, a view of the textures of a graph (stage 13), renaming a graph.
+13. **Line rendering and debug views.** A line renderer in the engine (not only for the editor): world-space lines with a thickness, a color and an optional depth test, batched, as an API for games and tools (`DebugDraw`: line, polyline, box, sphere, circle, arrow, frustum, grid) and as the `zenith.lines` pass; the editor passes (grid, gizmos, outline) move onto it. Debug views: a node `zenith.debug_view` that shows a buffer of the graph instead of the picture, with a mode and a palette: depth (a color ramp from near to far, linear or logarithmic, with the range as parameters), normals, roughness, velocity, entity id (a color per id), overdraw, lights per cluster (a heat map), shadow cascades (a color per cascade), mip level, wireframe. A Debug view menu in the Viewport chooses the mode; every texture slot of any graph can be viewed from the graph editor with a click on its pin. Check: the depth of the sample scene as colors that change with distance, and the lights-per-cluster heat map once stage 16 is there.
+14. **The editor: panels.** Details, Hierarchy, the file panel and the
+    selection in the Viewport, in the UE-like layout (see "The panels" in
+    section 13). Order: the shared selection and the parent/child component,
+    then the Hierarchy, the Details made from the component registry,
+    selection by a click, and last the file panel with favorites and the
+    remembered folders. Check: a model is dragged from the file panel into the
+    world, picked in the Viewport, its material changed in the Details, the
+    world saved, and after a restart the same folders are open.
+15. **Scriptable render passes** (section 20), after the scripting, made by Gleb, can call
     into the engine. Check: a fullscreen effect written as a script and a
     WESL file in the project, put into the graph in the graph editor.
-14. **Later.** The asset index in a build, asynchronous loading, frustum
-    culling, MSAA, the parameters of custom shaders read by reflection
+16. **Clustered forward and the buffers.** Compute passes and buffer slots in the graph, frame buffers with history, the depth pre-pass with the thin G-buffer (`depth`, `normal`, `velocity`, `entity_id`), `light_cull`, lights in storage buffers, `SpotLight`, MSAA. Check: 500 point lights in a scene give the same picture as the loop over all of them, and the frame is faster.
+17. **Shadows and ambient light.** Cascaded maps, spot and point shadows in an atlas, soft edges, contact shadows, a better bias; prefiltered environment, spherical harmonics, BRDF lookup. Check: a shadow of a cube from each kind of light, no shimmering when the camera moves.
+18. **Post-processing.** SSAO, fog, bloom, glare, lens flare, anamorphic streaks, ghost-type lens flare (section 23), vignette, automatic exposure, FXAA and TAA, more tone mappers, color grading, outline by `entity_id`, picking in the Viewport by the same buffer. Check: each as a node of the graph, off when left out, and the editor graph shows the silhouette of the selection.
+19. **Atmosphere, volumetric fog and decals.** Atmospheric scattering (lookup tables), height fog, froxel volumetric fog with temporal reprojection, the decal pass. Check: a light shaft through a window, the cost shown in the frame time stays under a set budget.
+20. **Software and Hardware graphs.** The `profile` and `platforms` of a graph, `requires` of a pass, the graph set of a project, `builtin_hardware`, ray traced shadows and reflections, the path tracer (Hardware, and the compute one as Software). Check: the same scene in both profiles, and a machine without ray tracing falls back with a log line.
+21. **Later.** A sample scene to show the engine: a floor, a wall and a sun, a character that can walk around (like the Hazel one), with shadows and the sky, as the project the editor opens first and the check for the lighting stages.  The asset index in a build, asynchronous loading, culling
+    (frustum first, then occlusion; see "Culling"), the parameters of custom shaders read by reflection
     (section 19), removing the old `zenith_renderer`.
+22. **The big ones, in pieces** (each piece useful alone): virtual geometry
+    (Nanite-like), global illumination (Lumen-like), ReSTIR for the path
+    tracer, depth of field with bokeh, motion blur, Gaussian splatting.
+    See their sections at the end of section 23.
 
 ## 17. Open questions
 
@@ -1086,7 +1152,7 @@ can change how the engine draws, and can add shaders of its own.
 
 ## 20. Later: scriptable render passes (SRP)
 
-**[decided]** Later, after the scripting is done (stage 13 of section 16; Gleb writes the scripting and this part, not the renderer work): render passes written
+**[decided]** Later, after the scripting is done (stage 15 of section 16; Gleb writes the scripting and this part, not the renderer work): render passes written
 in the scripting language of the engine (Gleb's part), not in Rust, that the
 graph uses like any other pass.
 
@@ -1110,3 +1176,575 @@ graph uses like any other pass.
 - What is decided before it: the scripting language and how it calls into
   the engine (Gleb), and that the renderer runs its passes on the main thread
   (it does now).
+
+## 21. Lighting, buffers and effects
+
+### What is drawn today
+
+| Effect | State today |
+| --- | --- |
+| Shading | PBR (base color, roughness, metallic, normal map, alpha cutoff), forward, one pass per phase (opaque, transparent) |
+| Lights | up to 4 directional and 16 point, in one uniform buffer, every pixel loops over all of them |
+| Shadows | one directional light, one 2048 orthographic map, hardware comparison sampler (2x2 PCF), a fixed distance and bias |
+| Environment | an equirectangular picture: the sky, ambient light and reflections (no prefiltering yet, so the ambient light is sharp) |
+| Transparency | sorted blending, no depth write |
+| 2D | sprites with an order, a UV rectangle and a tint |
+| Tone mapping | ACES, Reinhard, none; exposure |
+| Editor | grid, gizmo lines, selection box |
+
+Nothing else: no bloom, no ambient occlusion, no fog, no anti-aliasing, no
+screen-space effects, no post-processing besides tone mapping.
+
+### Forward+ (decided: it is built clustered)
+
+**Decision:** the light grid is **clustered** from the start (a tile on the
+screen times depth slices, 16 x 9 x 24 cells to begin with, the slices on an
+exponential curve), because it fixes the transparency case below and the
+volumetric fog and the decals reuse the same grid. "Tile" in the text that
+follows reads as "cluster"; the depth range of a tile is then not needed, the
+culling is a light against the cells.
+
+The lighting becomes **Forward+** (tiled forward). Meshes are still shaded in
+one pass, with the material they have, so MSAA, blending and custom material
+shaders keep working. What changes is how a pixel finds its lights.
+
+1. `zenith.depth_prepass`: draws the opaque and masked meshes into the depth
+   buffer (and the thin G-buffer, below) first.
+2. `zenith.light_cull`: a **compute** pass. It splits the screen into tiles
+   (16 x 16 pixels), reads the smallest and the largest depth of each tile,
+   and writes for each tile the list of lights that touch it (a storage
+   buffer: a count and indices per tile).
+3. `zenith.opaque` reads the list of its tile and loops over those lights
+   only; the depth test is `Equal` with no depth write, so each pixel is
+   shaded once.
+4. `zenith.transparent` uses the same lists. The tile depth range comes from
+   the opaque depth only, which is wrong for a surface in front of it, so the
+   culling is done with the near plane for the far end: a little more lights
+   per tile, no light missing. Clustered (depth slices as well) is the next
+   step if that costs too much.
+
+The lights move from the uniform into storage buffers, so the 4 and 16 limits
+go: the number is the size of the buffer (a setting, 1024 point and spot
+lights to start with). Directional lights are few and affect every pixel, so
+they stay out of the culling and are looped over directly. New light type:
+`SpotLight` (position, direction, range, inner and outer angle). Area lights
+are later.
+
+What it needs from the graph:
+
+- **Compute passes.** `RenderPass` gets a `begin_compute_pass` in
+  `ExecContext` next to `begin_render_pass`, and a `PassCategory::Compute` for
+  the colors of the nodes. `PipelineKey` gets a compute variant. WebGPU has
+  compute, storage buffers and `atomics`; the limits to respect are
+  `maxStorageBuffersPerShaderStage` (8 by default) and
+  `maxComputeWorkgroupSize` (256).
+- **Buffer slots.** A slot kind for a storage buffer beside the textures and
+  the data (`SlotKind::Buffer`), created by a pass with a size rule, so the
+  light list is a resource of the graph and not a hidden one.
+- The `lights` data slot stays as the CPU side of the lights; the new
+  `light_grid` slot carries the tile lists to the passes that shade.
+
+### G-buffers
+
+Forward+ has no fat G-buffer for lighting. What the effects need (ambient
+occlusion, reflections, decals, motion blur, picking, outlines) comes from a
+**thin G-buffer** that the depth pre-pass writes as extra color targets, so
+it costs one pass and no more geometry:
+
+| Target | Format | What | Used by |
+| --- | --- | --- | --- |
+| `depth` | `Depth32Float` | scene depth | culling, AO, fog, DoF, soft particles, decals |
+| `normal` | `Rgb10a2Unorm` (octahedral, roughness in the last bits) | normal and roughness | SSAO, SSR, decals |
+| `velocity` | `Rg16Float` | motion of a pixel since the last frame | TAA, motion blur |
+| `entity_id` | `R32Uint` | the entity of the pixel | picking in the Viewport, outline by silhouette |
+
+Each is an output of the pre-pass in the graph and can be left out of a graph
+that does not use it (an unlinked output is not allocated). The editor
+graph keeps `entity_id`, which gives exact picking and a real silhouette
+outline instead of a box. A fully deferred shading path is not planned.
+
+### Frame buffers
+
+The graph already makes transient textures from a pool. A **frame buffer**
+is the named set of attachments a group of passes draws into, and it also
+covers what must live longer than one frame:
+
+- `FrameBuffer` in the description of a graph: a name, a list of color
+  attachments, an optional depth, a size rule (`FromParam`, a fraction of the
+  view, a fixed size) and a format rule. Passes name a frame buffer instead of
+  each slot, so `depth_prepass` and `opaque` share one set.
+- **History.** A texture can be marked `history`: the pass reads the one of
+  the last frame and writes the new one; the two swap each frame, per view.
+  This is what TAA, automatic exposure and temporal AO need.
+- **Resolution scale.** The scene frame buffers can be a fraction of the
+  target (a setting), and the last passes scale up; the UI stays sharp.
+- A camera that draws into a render texture (`CameraTarget::Texture`) is a
+  frame buffer an asset can read.
+
+### Effects, one by one
+
+State: **done**, **planned** (with the stage) or **later**.
+
+**Shadows** (they are different kinds, one per light kind):
+
+| Kind | What | State |
+| --- | --- | --- |
+| Directional, one map | orthographic, PCF | done |
+| Cascaded shadow maps | 3 to 4 cascades fitted to the camera frustum, a blend between cascades, a texel-snapped matrix against shimmering; SDSM fitting as an option | planned, stage 17 |
+| Spot light | one perspective map | planned, stage 17 |
+| Point light | six faces, in an atlas (no cube arrays on the web) | planned, stage 17 |
+| Soft edge | PCF with a rotated Poisson disk, and PCSS (the radius follows the distance to the blocker); the filter is a setting of the light: hardware PCF, Poisson PCF, PCSS | **decided**, stage 17 |
+| Contact shadows | a short screen-space ray march toward the light, over small details | planned, stage 17 |
+| Shadow bias | constant, slope-scaled and normal offset together, and receiver plane bias for the wide kernels; all are settings of the light | **decided**, stage 17 |
+| Static shadow cache | maps of lights that did not move are kept | later |
+
+The shadow maps are packed into one atlas with a list per light, so the
+number of shadowed lights is a budget, not a limit of the shader.
+
+**Ambient light and reflections**
+
+| Effect | State |
+| --- | --- |
+| Image based lighting from the environment picture | done (diffuse and specular from the same picture) |
+| Prefiltered specular (roughness in the mips), irradiance as spherical harmonics, BRDF lookup | planned, stage 17 |
+| Reflection probes (box-projected) | later |
+| SSAO, as GTAO (depth and normal) | planned, stage 18 |
+| Screen-space reflections (hierarchical depth march) | later |
+| Specular occlusion from AO | planned, stage 18 |
+
+**Anti-aliasing**
+
+| Effect | State |
+| --- | --- |
+| MSAA (2x, 4x, 8x on the forward passes) | **decided**, stage 16 (a setting, the depth and the buffers resolve) |
+| SSAA (a render scale above 1) | **decided**, stage 16 (with the resolution scale of the frame buffers) |
+| FXAA | **decided**, stage 18 (the cheap one for the web) |
+| SMAA (1x and T2x) | **decided**, stage 18 |
+| CMAA2 | **decided**, stage 18 |
+| TAA (jitter, velocity, history, clamp and sharpen) | **decided**, stage 18 |
+
+**Post-processing** (all as nodes of the graph, in this order in the default
+graph):
+
+| Effect | Notes | State |
+| --- | --- | --- |
+| Fog | exponential height fog, a color or the sky | planned, stage 18 |
+| Bloom | downsample and upsample chain (no big blur), a threshold and an intensity | planned, stage 18 |
+| Automatic exposure | a histogram of the scene luminance, eye adaptation over time | planned, stage 18 |
+| Depth of field | circle of confusion from depth, a bokeh gather | later |
+| Motion blur | from the velocity buffer | later |
+| Tone mapping | ACES, Reinhard, none; AgX and Khronos PBR Neutral to add | done / planned, stage 18 |
+| Color grading | a 3D lookup table and the usual sliders (contrast, saturation, white balance) | planned, stage 18 |
+| Decals | boxes projected onto the depth and the normal | later |
+| Outline | silhouette from `entity_id`, editor selection first | planned, stage 18 |
+
+**Other**
+
+| Effect | State |
+| --- | --- |
+| Atmospheric scattering (the sky, the haze with distance, the color of the sun), section 22 | planned, stage 19 |
+| Volumetric fog and light shafts | froxels, section 22 | planned, stage 19 |
+| Order independent transparency (weighted blended) | later, if sorting is not enough |
+| Particles (compute, billboards) | later |
+| Path tracing, ray traced shadows, reflections, GI | the Hardware profile and a slow Software path tracer, section 22 | planned, stage 20 |
+| Global illumination | not planned; baked lightmaps or probes are a later question |
+
+Every effect is a node with parameters in the graph, so it is off by being
+left out, and the cost is paid only when it is in. Each needs the compute and
+the frame-buffer parts above, which is why they come first.
+
+## 22. Techniques, and graphs for Software and Hardware
+
+### The kinds of forward and deferred
+
+| Name | How a pixel finds its lights | Good | Bad |
+| --- | --- | --- | --- |
+| Forward | loops over all lights | simple, MSAA, blending | cost grows with lights |
+| **Forward+** (tiled forward) | a list per 16 x 16 tile | many lights, MSAA, blending, any material | the depth range of a tile is wide at edges; transparent surfaces need care |
+| **Clustered forward** | a list per 3D cell (tile and depth slice) | the lists are tight, transparency works, volumetric fog reuses it | more memory and more work in culling |
+| Deferred | lights shade a G-buffer | cost does not depend on geometry | no MSAA, no blending, a fat G-buffer, bandwidth |
+| Tiled / clustered deferred | the same lists over a G-buffer | many lights, cheap | the same limits as deferred |
+| Light indexed deferred | lights drawn as volumes | few lights are cheap | overdraw of volumes |
+| Visibility buffer | triangle ids stored, shaded later | the least bandwidth, material batching | needs bindless and a lot of work |
+
+The plan is Forward+ first, with the light list built so that it can become
+clustered (one more dimension) without touching the passes that read it.
+
+### Shadow algorithms
+
+**Making the map**
+- Shadow mapping: depth from the light, compared in the shader. What we do.
+- Cascaded shadow maps (CSM / PSSM): several maps along the view, the near
+  ones sharp. Cascade splits are a mix of linear and logarithmic.
+- SDSM: the splits fitted to the depth that is really on the screen (a
+  depth reduction in compute finds the nearest and the farthest pixel, the
+  cascades are made to fit that). Planned for stage 17 as an option over the
+  plain CSM.
+- Point lights: six faces (cube) or an atlas of six squares; the web has no
+  cube arrays, so an atlas. Dual paraboloid is cheaper but has artefacts.
+- Virtual shadow maps (UE5): a huge sparse map. Out of reach, not planned.
+
+**Filtering the edge**
+- Hardware PCF: the comparison sampler does 2 x 2 for free. Done.
+- PCF with a kernel (Poisson disk, rotated by a noise): the edge gets soft
+  and noisy-but-smooth. Stage 17.
+- PCSS: first finds the blockers, then sets the radius by the distance, so a
+  shadow is sharp at the foot and soft far away. Costs a lot of taps.
+- VSM, ESM, EVSM, MSM: store moments, so the map can be blurred and sampled
+  with a filter. Light bleeding or a lot of memory; not planned.
+
+**Bias**
+- Constant plus slope-scaled depth bias, and a **normal offset** (move the
+  point along the normal by a texel); receiver plane depth bias for large
+  PCF kernels. A bias is a setting of the light.
+
+**Without a map**
+- Contact shadows: a few steps of a ray in the depth buffer toward the light.
+  Catches what the map is too coarse for. Stage 17.
+- Screen-space shadows are the same thing for the whole light.
+- Distance field shadows and capsule shadows (UE): need a distance field of
+  the meshes. Later, maybe.
+- Ray traced shadows: exact and soft, in the Hardware graph (below).
+- Baked shadows: lightmaps. A later question.
+
+### Anti-aliasing
+
+| Kind | What it does | Cost | Notes |
+| --- | --- | --- | --- |
+| MSAA 2x/4x/8x | samples the edges of triangles | memory and bandwidth | forward only; the depth resolves; no help for shader aliasing |
+| SSAA | draws bigger, shrinks | very high | a "render scale" above 1 does it |
+| FXAA | one post pass on the picture | tiny | blurs; the web fallback |
+| SMAA (1x, T2x) | finds edge shapes, blends | small | sharper than FXAA |
+| CMAA2 | compute edge pass | small | |
+| **TAA** | jitter per frame and a history | small, needs velocity | blurs a bit, ghosting; fixed with a sharpen and a clamp |
+| Upscalers (TSR style, FSR 2/3) | TAA at a lower resolution, scaled up | gains time | a later node; DLSS/XeSS are vendor SDKs and not reachable from `wgpu` |
+| Geometric / specular AA | widens roughness by the variance of the normal | free | always on in the shader |
+| Alpha to coverage | soft edges of masked materials (leaves) | free with MSAA | a material flag |
+
+All of them are nodes, so a graph picks what it wants. The setting
+`anti_aliasing` is a list that may hold several, with the rules that make
+sense: geometric AA always; MSAA with FXAA or SMAA; TAA instead of FXAA and
+SMAA (it can run with MSAA on, which is expensive); an upscaler needs TAA's
+inputs. The editor shows the combination as the nodes it makes.
+
+### Decals
+
+A decal is a picture put on top of the surfaces that are already there: a
+bullet hole, blood, dirt, a road mark, a painted sign.
+- **Mesh decals**: a plane drawn on the surface with a depth bias. The
+  simplest; it needs a mesh that fits.
+- **Projected (box) decals**: a box volume in the world; every pixel of the
+  scene that is inside the box takes the picture projected along the box.
+  This needs the depth (and the normal, to fade at steep angles), which the
+  thin G-buffer has.
+- In deferred these are written into the G-buffer. Here (forward) there are
+  two ways: **clustered decals**, which go into the same cells as the lights
+  and are blended by the material shader (works with every material, costs
+  every pixel a loop), or a **decal pass** after the opaque pass that draws
+  the boxes over the color (cheap, the lighting is the one of the pixel under
+  it). The first version is the pass; clustered decals when the lights are
+  clustered.
+- Fields: a material or a texture set (color, normal, roughness), a size, a
+  fade angle, a sort order, a lifetime (so they can disappear).
+
+### Volumetric light and fog, and keeping them cheap
+
+It is not hard if it is made in the cheap way. What is cheap:
+
+1. **Height fog**, analytic: no marching, the fog on a ray has a closed form.
+   One line in the final pass. Always on in every graph.
+2. **Light shafts as a screen-space blur** from the sun: nearly free, fake,
+   needs the sun on the screen. Optional.
+3. **Froxel volumetric fog** (what shipped games use): a 3D texture lined up
+   with the camera, for example 160 x 90 x 64 cells with the depth slices on
+   a curve. Compute passes: (a) write the density and the scattering of each
+   cell, (b) add each light (the light cells of Forward+ or the clustered
+   grid) with its shadow map, (c) integrate along the depth. The shading
+   pass reads the result with one texture sample per pixel. The cost does not
+   grow with the screen size, only with the cells. Two more things make it
+   cheap: **temporal reprojection** (jitter the cells per frame and blend with
+   the last frame, so it can use few samples per cell) and a **lower
+   resolution** than the screen.
+4. Ray marching the sun through the cascades with few steps and blue noise,
+   upscaled: only if the froxels are not enough.
+
+The web can do it: 3D storage textures with `rgba16float` are allowed for
+writing in WebGPU. It needs the compute pass, the frame buffers with history
+and the shadow atlas, so it comes after stages 16 and 17 (stage 19).
+Parameters: density, height falloff, scattering color, anisotropy, the
+distance, the cell counts, and per light a "volumetric" intensity.
+
+### Graphs for Software and Hardware
+
+A **profile** says what the graph needs from the machine:
+
+- **Software**: rasterization and compute shaders only. It runs on every
+  device that WebGPU runs on, the web too. Forward+, shadow maps, SSAO, SSR,
+  froxel fog, TAA: all of section 21. This is the default.
+- **Hardware**: needs ray tracing hardware (ray queries, an acceleration
+  structure). Ray traced shadows, reflections, ambient occlusion and global
+  illumination, and the **path tracer**. In `wgpu` ray tracing is behind an
+  experimental feature on Vulkan, DX12 and Metal and does not exist on the
+  web, so this profile is native only. **[verify]** the state of the feature
+  in the `wgpu` version in use.
+
+How it fits the graphs:
+
+- A graph asset gets a field `profile` (`software` or `hardware`) and a
+  `platforms` list (for example `desktop`, `web`, `mobile`); empty means all.
+  A pass has a `requires` in its description (a feature of the device, a
+  limit), and a graph that uses a pass the machine cannot run does not
+  compile for it, with the reason in the diagnostics.
+- **The graph set** of a project (a file in `Settings/`): for each platform,
+  the graph per profile. The renderer decides at start: the Hardware graph if
+  the device has the features and the setting allows it, else the Software
+  one. The camera may name a graph (it wins); then the main graph of the
+  profile; then the built-in graph of the profile.
+- The built-in graphs are `builtin_software` (what we have, growing with the
+  stages) and `builtin_hardware` (stage 20). The editor graph is the same
+  idea: `editor_software`, `editor_hardware`.
+- The graph editor shows the profile and marks nodes that the other profile
+  cannot run.
+- A game can switch the profile at run time (the quality menu); passes are
+  made again for the new graph, the cache stays.
+
+**Path tracing**
+- *Hardware*: one ray query path tracer pass: a primary ray per pixel, a few
+  bounces, next event estimation toward the lights, the same materials as the
+  raster path (so the PBR parameters are shared), accumulation over frames
+  while the camera is still, and a denoiser (a classic one, no neural network:
+  an edge-aware a-trous wavelet filter guided by the normal, the depth and
+  the albedo, with a temporal part like SVGF) for real-time use. It is a node: `zenith.path_trace`.
+- *Software*: the same algorithm with the BVH built on the CPU and traversed in
+  a compute shader. It runs everywhere and is slow, so it is for the
+  reference picture in the editor ("bake a still") and for the web where
+  nothing else exists. Only the traversal differs; the shading code is
+  shared.
+- Both are for the editor and for games that want it; the raster graphs do
+  not depend on them.
+
+### Atmospheric scattering
+
+The blue of the sky, the red of the sunset, and the haze that makes far
+mountains pale and blue (**aerial perspective**) come from light scattering in
+the air. The way to do it in real time (Hillaire, 2020) is lookup tables that
+are small and cheap to update:
+
+1. **Transmittance table** (2D): how much light of the sun reaches a point at
+   a height, along an angle. Made once, remade when the atmosphere settings
+   change.
+2. **Multiple scattering table** (2D): the light that scattered more than
+   once; it keeps the sky from going dark.
+3. **Sky-view table** (2D, per frame, small): the color of the sky in every
+   direction from the camera. The sky pass reads it instead of marching a ray
+   per pixel.
+4. **Aerial perspective** (a 3D table in the camera froxels, shared with the
+   volumetric fog): the haze and the loss of color along the way to every
+   pixel. The scene pass applies it with one sample, so far geometry gets
+   the blue.
+
+Parameters: the planet and atmosphere radius, Rayleigh (blue, air),
+Mie (white, dust and haze), ozone, the sun direction and color; the
+directional light of the world can drive it, so the sky follows the sun. The
+tables also give the ambient light and the color of the sun on the ground, so
+a sunset turns the whole scene. It replaces the environment picture as the
+sky when it is on (the picture stays for the reflections, or is rendered
+from the atmosphere into a cube map). It is compute and small textures, so it
+runs on the web. It is a node: `zenith.atmosphere`.
+
+### Light through transparent things
+
+What a transparent material can do, from cheap to costly:
+
+1. **Blending** (what we have): the color of the surface mixes with what is
+   behind it by alpha. No bending of light at all.
+2. **Absorption** (Beer-Lambert): glass and water take light out by the
+   thickness, so thick stained glass is darker and more colored than thin.
+   Needs the thickness (the depth behind minus the depth of the surface, or a
+   value in the material). Cheap.
+3. **Transmission with refraction (screen space)**: the opaque pass is copied
+   (with its mips), and the transparent surface samples that copy at a point
+   moved along the refracted direction by the normal and the index of
+   refraction. Roughness picks a blurrier mip (frosted glass). Cheap, looks
+   right for bottles and windows; it cannot show what is not on the screen or
+   what is in front of the glass. Stage 18 (it needs the frame buffers and the
+   copy of the color).
+4. **Dispersion**: the index of refraction depends on the color, so the
+   colors bend by different amounts. In screen space it is done by sampling
+   the copy three times (red, green, blue) with three slightly different
+   indices: colored fringes on the edges of glass. Cheap, a parameter of the
+   material (`abbe` number).
+5. **Subsurface scattering** (skin, wax, marble, leaves): light goes in, wanders
+   and comes out nearby. In raster it is a blur of the diffuse light in
+   screen space or a thickness-based glow; real in the path tracer.
+6. **Real refraction**: light follows the glass, bends at each surface and may
+   bounce inside. Needs ray tracing: the Hardware profile and the software
+   path tracer, stage 20.
+
+**A prism that turns white light into a rainbow.** Dispersion is the same
+effect: the index of refraction of glass is a bit larger for blue than for
+red, so a beam that goes through a prism fans out. How hard it is depends on
+what is wanted:
+
+- *Seeing the colors in the prism* (fringes, a rainbow inside the glass, edges
+  of a lens): easy, point 4 gives it.
+- *A decoration* (a beam of light with a rainbow fan on a wall): easy and
+  honest, a mesh or a decal with a gradient made by hand and driven by the
+  angle. It is a fake but it looks the same, and it is what most games do.
+- *The real thing: a white beam goes through a modelled prism and paints a
+  rainbow on a wall.* That is a **caustic**, and it is the hard case for any
+  renderer. It needs the Hardware profile: a spectral path tracer (each path
+  picks a wavelength, the index of refraction comes from a formula like
+  Cauchy or Sellmeier, the result is turned into a color with the standard
+  color matching curves). The dispersion in the glass itself is easy in that
+  tracer; what is hard is that the light reaches the wall only through the
+  glass, and a path that starts at the camera and tries to connect to a
+  light cannot do so through a refracting surface. So the wall stays black
+  and noisy unless the tracer also follows light from the lamp
+  (bidirectional tracing, photon mapping or light tracing). That is a
+  separate piece of work after the path tracer works, and the result is a
+  slow picture that converges over seconds, not a real-time effect. It is
+  noted as **later**, after stage 20.
+
+So: rainbows in the glass, soon and cheap; a rainbow on the wall, as a fake
+at once or physically much later.
+
+## 23. Bright spots, lens effects and the rest of the catalog
+
+### What a bright thing leaves on the picture
+
+These are different effects with different causes; a graph can have any of
+them, each as its own node (or one node with switches).
+
+| Effect | What it looks like | Cause | How it is made | State |
+| --- | --- | --- | --- | --- |
+| **Bloom** | a soft glow around bright areas | light scattering in the eye or the lens | a chain of downsamples and upsamples of the bright part, added back | planned, stage 18 |
+| **Glare / starburst** | rays or a star from a bright point | diffraction at the aperture blades and the lashes | a streak filter: the bright part is smeared along a few directions (4, 6, 8 rays, a rotation) | planned, stage 18 |
+| **Anamorphic streak** | one long horizontal (often blue) line | the cylindrical lens of a cinema camera | a streak filter along X only, tinted | planned, stage 18 |
+| **Lens flare: ghosts** | a row of colored discs on the line through the screen center | reflections between the lens elements | the bright part is mirrored through the center and repeated with a tint (screen space), or sprites placed along the line | planned, stage 18 |
+| **Lens flare: halo** | a ring around the center | the same, the ring is the shape of the aperture | a ring sampled from the mirrored bright part | planned, stage 18 |
+| **Bokeh** | bright discs (or polygons) in the blur of what is out of focus | the aperture shape in the depth of field | a gather or scatter blur by the circle of confusion; the shape is a texture or a polygon of N blades | with the depth of field, later |
+| **Light shafts / god rays** | beams in dust or mist | scattering along the ray | section 22 (screen space or froxel fog) | planned, stage 19 |
+| **Sun disc and corona** | a bright disc with a halo | the sun itself | in the atmosphere node (section 22) | planned, stage 19 |
+| **Flare sprites** | the same as lens flare but from a game object, hidden by what stands in front | an artist's choice | a sprite at the light's screen position, scaled by an occlusion test (a few depth samples) | later |
+
+Anything that adds light needs the scene in **HDR** (we have that), and the
+bright part is picked by a threshold or, better, by the exposure, so a lamp
+in a dark room blooms and a lamp in daylight does not.
+
+### The rest of the catalog
+
+What the lists of modern techniques name, with what we do about each.
+
+| Technique | What it is | Plan |
+| --- | --- | --- |
+| Motion blur | smear along the velocity | later, after TAA (needs the same buffer) |
+| Depth of field and bokeh | blur by the distance from the focus plane, with bright discs | later, after stage 18 |
+| Subsurface scattering | light that enters a material and leaves nearby (skin, wax, leaves) | screen-space blur of the diffuse light for raster, later; true in the path tracer |
+| Iridescence / thin film | rainbow on soap, oil, beetles, heated metal | a material parameter (thickness and index of the film), the shader computes the interference per color; cheap, planned with the material work |
+| Dispersion | the rainbow in glass | section 22 |
+| Caustics | patterns of light from glass and water | section 22: a fake for water (animated texture projected by the light), the real one later in the Hardware profile |
+| Displacement | the surface really moved by a height map | needs tessellation or a dense mesh; later |
+| Parallax occlusion mapping | the look of relief on a flat surface by a ray in the height map | a material option, later; cheaper than displacement |
+| Decals | section 22 | stage 19 |
+| Global illumination (Lumen-like radiance cache) | many bounces of light with no ray tracing | later; the cheap steps are probes with irradiance (DDGI style) and screen-space GI; a big job, not before the Hardware profile |
+| ReSTIR | picks the important lights among millions by resampling over space and time | later, only for the Hardware path tracer; the clustered grid covers the raster side |
+| Spectral rendering | light as wavelengths, not as RGB | an option of the path tracer in stage 20 (it is what makes a real prism and the colors of gems right) |
+| Nanite (virtual geometry) | clusters of triangles with their own LOD, drawn by compute | not planned; the first step is meshlets, LODs by hand, then frustum culling (stage 21) |
+| Mesh shaders | the GPU decides which triangles to draw before the rasterizer | not in WebGPU; not planned |
+| 3D Gaussian splatting | a scene made of millions of translucent colored ellipsoids from photos | feasible (we would only draw ready files; making them needs training, which is not ours): a compute sort plus a splat pass, an asset type `.zenithsplat`; later, as an addition |
+
+### Decided not to do
+
+- **Effects that only spoil the picture**: film grain, halation, chromatic
+  aberration, lens dirt, veiling glare. Not planned. (The vignette stays: it
+  gives the picture a mood.)
+- **Anything that needs a neural network** (DLSS and its relatives, ray
+  reconstruction, NeRF, neural texture compression): training and data are
+  out of reach, and the vendors' versions are not reachable from `wgpu`.
+
+### Added back, and the big ones for later
+
+- **Vignette**: a node of stage 18 (a darkening toward the corners, with a
+  radius, a softness and a color).
+- **Denoiser**: classic and not neural, in stage 20 with the path tracer (an
+  a-trous filter guided by the normal, the depth and the albedo, plus a
+  temporal part like SVGF). The ray traced shadows and reflections use the
+  same node.
+
+### ReSTIR (later, with the Hardware profile)
+
+Resampled importance sampling of lights: every pixel keeps a small
+"reservoir" with one chosen light and its weight, offers a few random lights
+to it, then mixes it with the reservoirs of the neighbors (space) and of the
+pixel in the last frame (time), and casts a shadow ray only to the survivor.
+Many lights cost about as much as a few.
+
+Where it is useful here:
+- the Hardware path tracer and the ray traced shadows (stage 20) in a scene
+  with many small lights: lamps along a street, neon signs, a city at night,
+  emissive meshes as lights (a screen, lava, a fire made of many sparks);
+- direct light from **emissive triangles**, which the raster path cannot
+  treat as lights at all;
+- later the same idea for indirect light (ReSTIR GI), as the way to make
+  the path tracer usable in real time.
+It needs per-pixel history (the frame buffers with history of stage 16), the
+G-buffer (normal, depth, velocity) and a denoiser behind it. The raster path
+does not need it: the clustered light grid is the answer there.
+
+### Nanite-like virtual geometry (possible, later)
+
+Clusters of about 128 triangles in a hierarchy of levels of detail, a compute
+pass that chooses for every frame the clusters whose size on the screen is
+about a pixel, a culling pass (frustum and occlusion with the depth of the
+last frame), and a visibility buffer (`entity_id` plus the triangle id) so
+the material is shaded once per pixel. Small triangles are drawn by a
+compute rasterizer, the big ones by the hardware. It is done in **several
+passes of work**, each one useful alone:
+1. meshlets (clusters) in the model asset, frustum culling per cluster;
+2. the hierarchy of levels of detail built at import (a cluster group is
+   merged and simplified, with the error kept);
+3. choosing clusters by error on the GPU, and the visibility buffer;
+4. occlusion culling with the hierarchical depth;
+5. the compute rasterizer for tiny triangles, and streaming of clusters.
+It needs compute, indirect drawing and storage buffers (WebGPU has them);
+no mesh shaders. After stage 21.
+
+### Lumen-like global illumination (possible, later)
+
+Light that bounces between surfaces in real time, with no baked lightmaps. Also
+in steps, each one useful alone and each a node of the graph:
+1. **Screen-space GI**: bounces from what is on the screen (cheap, needs the
+   thin G-buffer and the history).
+2. **Probes with irradiance** (DDGI): a grid of light probes in the world that
+   are updated a few per frame (ray traced in the Hardware profile, from a
+   simple scene copy in the Software one), sampled by the shading.
+3. **A surface cache**: cards, a small lit picture of each mesh from a few
+   sides, which is what the rays read instead of the full material.
+4. **A world radiance cache** that the screen probes read, plus a distance
+   field of the scene (or the hardware rays) for the tracing, and a temporal
+   filter.
+5. **Reflections** from the same cache, so metals and wet floors are lit by
+   the room, not only by the sky.
+It is the biggest piece of the list and sits after the Hardware profile
+(stage 20) and the denoiser; stages 1 and 2 may come earlier.
+
+### Culling (later)
+
+Not drawing what cannot be seen. Today every model is drawn and only the GPU
+clips it. The kinds, in the order they pay off:
+
+| Kind | What it removes | How |
+| --- | --- | --- |
+| Back-face culling | triangles that face away | the pipeline state (`cull_mode`); done for single-sided materials |
+| **Frustum culling** | models outside the view | a bounding box (`GpuMesh::bounds`, the transform) against the six planes; on the CPU first, in compute later |
+| Distance culling | models too far or too small on the screen | a size threshold per model, with a fade; a setting of the model |
+| **Occlusion culling** | models hidden behind others | the depth of the last frame as a pyramid (hierarchical Z), the bounding box is tested against it in compute; the result decides the indirect draws |
+| Shadow culling | casters that no visible receiver sees | frustum of the light, per cascade |
+| Light culling | lights that touch nothing | already in the clustered grid |
+| Portals / PVS | rooms that cannot be seen | for indoor levels only; not planned |
+| Cluster culling | parts of a model | with the virtual geometry above |
+
+It is stage 21 work: frustum culling first (simple and the biggest win),
+then the depth pyramid and occlusion culling, which share their work with the
+virtual geometry.

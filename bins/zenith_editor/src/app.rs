@@ -56,6 +56,7 @@ impl EditorApp {
 		let dt = now.duration_since(*last_frame).as_secs_f32();
 		*last_frame = now;
 		editor.dt = dt;
+		editor.graph.init(gfx.imgui());
 		editor.render_viewport(gfx);
 		if let Err(e) = gfx.frame(|ui| panels::draw(editor, ui)) {
 			zenith_log::error!("The frame failed: {e}");
@@ -137,6 +138,7 @@ impl ApplicationHandler for EditorApp {
 	/// Every way out comes here: the window closed, Escape, Ctrl+C. The UI and
 	/// the GPU are let go of in order while the window still exists.
 	fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+		self.editor.graph.shutdown();
 		self.gfx = None;
 		zenith_log::info!("The editor is closed");
 	}
