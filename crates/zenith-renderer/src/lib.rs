@@ -98,6 +98,7 @@ pub fn add_systems(schedule: &mut Schedule) {
 		apply_settings.in_set(RenderSet::Prepare),
 		(
 			prepare::assets::prepare_assets.run_if(resource_exists::<GpuCache>),
+			targets::prepare_targets,
 			prepare::views::prepare_views,
 			prepare::draw_lists::prepare_draw_lists.run_if(resource_exists::<GpuCache>),
 		)

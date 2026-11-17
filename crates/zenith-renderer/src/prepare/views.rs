@@ -72,7 +72,7 @@ impl PreparedViews {
 pub fn target_size(target: ViewTarget, renderer: &Renderer, targets: Option<&RenderTargets>) -> Option<(u32, u32)> {
 	match target {
 		ViewTarget::Window => renderer.surface_size(),
-		ViewTarget::Target(id) => targets?.get(id).map(|target| target.size),
+		ViewTarget::Target(_) | ViewTarget::Texture { .. } => targets?.resolve(target).map(|target| target.size),
 	}
 }
 

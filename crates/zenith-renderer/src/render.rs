@@ -73,10 +73,12 @@ fn draw(world: &World, renderer: &mut Renderer, cache: &mut GpuCache) {
 				(Some(frame), Some(size)) => (&frame.view, parts.output_format, size),
 				_ => continue,
 			},
-			ViewTarget::Target(id) => match targets.and_then(|targets| targets.get(id)) {
-				Some(target) => (&target.view, target.format, target.size),
-				None => continue,
-			},
+			ViewTarget::Target(_) | ViewTarget::Texture { .. } => {
+				match targets.and_then(|targets| targets.resolve(view.target)) {
+					Some(target) => (&target.view, target.format, target.size),
+					None => continue,
+				}
+			}
 		};
 		// Only the first camera on a target clears it.
 		let first = cleared.insert(view.target);

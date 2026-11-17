@@ -104,9 +104,10 @@ pub enum CameraTarget {
 	/// The main output: the window (in the editor, the Game panel).
 	#[default]
 	Window,
-	/// A render texture asset. Not drawn yet: it comes with the render
-	/// targets (stage 7 of the plan).
-	Texture(AssetId),
+	/// A render texture: the renderer keeps a texture of `size` pixels for `id`
+	/// (made on first use, remade when the size changes). Other cameras and the
+	/// host get it from `RenderTargets::texture_target`.
+	Texture { id: AssetId, size: [u32; 2] },
 }
 
 /// What a camera does with its target before it draws.

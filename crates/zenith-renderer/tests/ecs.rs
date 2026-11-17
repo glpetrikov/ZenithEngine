@@ -92,13 +92,18 @@ fn extract_copies_what_is_active_and_orders_the_views() {
 		))
 		.id();
 	world.spawn((camera(0), at(0.0, 0.0, 0.0), IsActive::new(false)));
-	world.spawn((
-		Camera {
-			target: CameraTarget::Texture(id(7)),
-			..camera(0)
-		},
-		at(0.0, 0.0, 0.0),
-	));
+	let into_texture = world
+		.spawn((
+			Camera {
+				target: CameraTarget::Texture {
+					id: id(7),
+					size: [16, 8],
+				},
+				..camera(4)
+			},
+			at(0.0, 0.0, 0.0),
+		))
+		.id();
 	world
 		.resource_mut::<ExtraViews>()
 		.0
@@ -134,12 +139,24 @@ fn extract_copies_what_is_active_and_orders_the_views() {
 	let sources: Vec<ViewSource> = views.iter().map(|view| view.source).collect();
 	assert_eq!(
 		sources,
-		[ViewSource::Entity(early), ViewSource::Host(1), ViewSource::Entity(late)],
-		"by order; an inactive camera and one into a texture are left out"
+		[
+			ViewSource::Entity(early),
+			ViewSource::Host(1),
+			ViewSource::Entity(into_texture),
+			ViewSource::Entity(late)
+		],
+		"by order; an inactive camera is left out"
 	);
 	assert_eq!(views[0].position, DVec3::new(1.0, 2.0, 3.0));
 	assert_eq!(views[0].environment, Some((id(9), 0.5)));
-	assert_eq!(views[2].environment, None);
+	assert_eq!(views[3].environment, None);
+	assert_eq!(
+		views[2].target,
+		ViewTarget::Texture {
+			id: id(7),
+			size: (16, 8)
+		}
+	);
 
 	let meshes = &world.resource::<ExtractedMeshes>().0;
 	assert_eq!(meshes.len(), 2, "the inactive model is left out, the active one is not");

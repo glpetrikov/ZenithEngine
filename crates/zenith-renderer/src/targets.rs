@@ -4,7 +4,16 @@
 
 use std::collections::HashMap;
 
-use bevy_ecs::resource::Resource;
+use bevy_ecs::{
+	resource::Resource,
+	system::{Res, ResMut},
+};
+
+use crate::{
+	assets::AssetId,
+	extract::{ExtractedViews, ViewTarget},
+	renderer::Renderer,
+};
 
 /// An offscreen target of [`RenderTargets`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -22,6 +31,7 @@ pub struct RenderTarget {
 #[derive(Resource, Default)]
 pub struct RenderTargets {
 	targets: HashMap<RenderTargetId, RenderTarget>,
+	textures: HashMap<AssetId, RenderTargetId>,
 	next: u32,
 }
 
@@ -43,6 +53,39 @@ impl RenderTargets {
 			&& target.size != size
 		{
 			*target = make(device, size, target.format);
+		}
+	}
+
+	/// The target of the render texture `id`, made or resized to `size`.
+	pub fn ensure_texture(
+		&mut self,
+		device: &wgpu::Device,
+		id: AssetId,
+		size: (u32, u32),
+		format: wgpu::TextureFormat,
+	) -> RenderTargetId {
+		if let Some(&target) = self.textures.get(&id)
+			&& self.targets.contains_key(&target)
+		{
+			self.resize(device, target, size);
+			return target;
+		}
+		let target = self.create(device, size, format);
+		self.textures.insert(id, target);
+		target
+	}
+
+	/// The target of the render texture `id`, if a camera has drawn into it.
+	pub fn texture_target(&self, id: AssetId) -> Option<RenderTargetId> {
+		self.textures.get(&id).copied()
+	}
+
+	/// The target a view draws into, if it exists.
+	pub fn resolve(&self, target: ViewTarget) -> Option<&RenderTarget> {
+		match target {
+			ViewTarget::Window => None,
+			ViewTarget::Target(id) => self.get(id),
+			ViewTarget::Texture { id, .. } => self.get(self.texture_target(id)?),
 		}
 	}
 
@@ -87,5 +130,16 @@ fn make(device: &wgpu::Device, size: (u32, u32), format: wgpu::TextureFormat) ->
 		view,
 		format,
 		size,
+	}
+}
+
+/// Makes (or resizes) the textures the cameras of the frame draw into. Runs
+/// before `prepare_views`.
+#[allow(clippy::needless_pass_by_value)] // a system takes its parameters by value
+pub fn prepare_targets(views: Res<ExtractedViews>, renderer: Res<Renderer>, mut targets: ResMut<RenderTargets>) {
+	for view in &views.0 {
+		if let ViewTarget::Texture { id, size } = view.target {
+			targets.ensure_texture(renderer.device(), id, size, renderer.output_format());
+		}
 	}
 }

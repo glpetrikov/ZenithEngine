@@ -143,7 +143,7 @@ pub struct Sprite { pub texture: AssetId, pub size: Vec2, pub color: [f32; 4],
                     pub uv_rect: Option<[f32; 4]>, pub order: i32 }
 pub struct Camera {
     pub projection: Projection,       // Perspective { fov_y, near, far } | Orthographic { height, near, far }
-    pub target: CameraTarget,         // Window | Texture(AssetId) (later: a render texture asset)
+    pub target: CameraTarget,         // Window | Texture { id: AssetId, size: [u32; 2] }
     pub viewport: Option<[f32; 4]>,   // a part of the target, in 0..1; None is all of it
     pub order: i32,                   // the order of cameras on one target
     pub clear: ClearMode,             // Color(..) | None (draw over the camera before)
@@ -843,8 +843,13 @@ Every stage ends with something that can be checked.
    into a texture on a real adapter (the background, the cube in the middle,
    a cube behind the camera not seen). A world needs a `Camera` entity to
    be drawn: the runtime draws nothing of a world without one.
-7. **Cameras and targets.** `order`, `viewport`, `clear`, `RenderTargets`,
-   `Camera.graph`. Check: two cameras on one window, a third into a texture.
+7. **Cameras and targets.** *Done.* `order`, `viewport`, `clear`, `graph` and
+   `RenderTargets` were made with stages 5 and 6; this stage added the camera
+   that draws into a texture: `CameraTarget::Texture { id, size }`,
+   `ViewTarget::Texture`, `RenderTargets::ensure_texture` / `texture_target`
+   and the `prepare_targets` system (the texture is made on first use and
+   remade when the size changes). Check: two cameras with viewports on one
+   target, a third into a texture, on a real adapter.
 8. **The rest of the 3D passes**, carrying over what the old renderer
    does: `zenith.input_lights`, `zenith.input_environment`, `zenith.sky`,
    lighting, normal mapping, environment reflections, `zenith.transparent`,

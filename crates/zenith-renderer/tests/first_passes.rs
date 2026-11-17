@@ -208,3 +208,84 @@ fn a_cube_behind_the_camera_is_not_seen() {
 	scene.render_frames(8);
 	assert_eq!(scene.pixel(SIZE / 2, SIZE / 2), scene.pixel(2, 2));
 }
+
+fn view(number: u32, target: ViewTarget, order: i32, viewport: Option<[f32; 4]>, clear: ClearMode) -> ExtractedView {
+	ExtractedView {
+		source: ViewSource::Host(number),
+		position: DVec3::new(0.0, 0.0, 4.0),
+		rotation: Quat::IDENTITY,
+		projection: Projection::default(),
+		target,
+		viewport,
+		order,
+		clear,
+		graph: None,
+		environment: None,
+	}
+}
+
+#[test]
+fn two_cameras_share_a_target_and_a_third_draws_into_a_texture() {
+	let Some(mut scene) = Scene::new() else {
+		return;
+	};
+	scene.world.world_mut().resource_mut::<ExtraViews>().0.clear();
+	scene.spawn_cube(DVec3::ZERO);
+	let red = ClearMode::Color([1.0, 0.0, 0.0, 1.0]);
+	let green = ClearMode::Color([0.0, 1.0, 0.0, 1.0]);
+	let texture = AssetId::from_bytes([7; 16]);
+	{
+		let target = scene.target;
+		let mut extra = scene.world.world_mut().resource_mut::<ExtraViews>();
+		// The left half is cleared red by its camera, the right half green.
+		extra
+			.0
+			.push(view(1, ViewTarget::Target(target), 0, Some([0.0, 0.0, 0.5, 1.0]), red));
+		extra.0.push(view(
+			2,
+			ViewTarget::Target(target),
+			1,
+			Some([0.5, 0.0, 0.5, 1.0]),
+			green,
+		));
+		// The third camera has a texture of its own, with a different size.
+		extra.0.push(view(
+			3,
+			ViewTarget::Texture {
+				id: texture,
+				size: (32, 32),
+			},
+			2,
+			None,
+			ClearMode::Color([0.0, 0.0, 1.0, 1.0]),
+		));
+	}
+	scene.render_frames(8);
+	// Each camera draws the cube into the middle of its own half; the corners
+	// of the halves show the background.
+	let background = scene.pixel(2, 2);
+	assert_ne!(scene.pixel(SIZE / 4, SIZE / 2), background, "the cube in the left half");
+	assert_ne!(
+		scene.pixel(SIZE * 3 / 4, SIZE / 2),
+		background,
+		"the cube in the right half"
+	);
+	assert_eq!(scene.pixel(SIZE - 3, 2), background);
+	let id = scene
+		.world
+		.world()
+		.resource::<RenderTargets>()
+		.texture_target(texture)
+		.expect("the texture has a target");
+	let size = scene
+		.world
+		.world()
+		.resource::<RenderTargets>()
+		.get(id)
+		.expect("it exists")
+		.size;
+	assert_eq!(size, (32, 32));
+	// The cube is drawn into the texture too: the middle is not the corner.
+	scene.target = id;
+	assert_ne!(scene.pixel(16, 16), scene.pixel(1, 1));
+}

@@ -9,7 +9,7 @@
 use bevy_ecs::{
 	entity::Entity,
 	resource::Resource,
-	system::{Local, Query, Res, ResMut},
+	system::{Query, Res, ResMut},
 };
 use glam::{DVec3, Quat, Vec2, Vec3};
 use zenith_components::{IsActive, Transform};
@@ -39,6 +39,11 @@ pub enum ViewTarget {
 	/// The main output.
 	Window,
 	Target(RenderTargetId),
+	/// The render texture `id` of `size` pixels (see `CameraTarget::Texture`).
+	Texture {
+		id: AssetId,
+		size: (u32, u32),
+	},
 }
 
 /// A camera of the frame.
@@ -147,7 +152,6 @@ pub fn extract_cameras(
 	cameras: Query<(Entity, &Camera, &Transform, Option<&IsActive>, Option<&Environment>)>,
 	extra: Res<ExtraViews>,
 	mut views: ResMut<ExtractedViews>,
-	mut warned: Local<bool>,
 ) {
 	views.0.clear();
 	for (entity, camera, transform, is_active, environment) in &cameras {
@@ -156,14 +160,7 @@ pub fn extract_cameras(
 		}
 		let target = match camera.target {
 			CameraTarget::Window => ViewTarget::Window,
-			CameraTarget::Texture(_) => {
-				// Render texture assets come with the render targets.
-				if !*warned {
-					*warned = true;
-					zenith_log::warn!("A camera draws into a texture: not supported yet, the camera is left out");
-				}
-				continue;
-			}
+			CameraTarget::Texture { id, size } => ViewTarget::Texture { id, size: size.into() },
 		};
 		views.0.push(ExtractedView {
 			source: ViewSource::Entity(entity),
