@@ -10,7 +10,11 @@ green = "\033[32m"
 reset = "\033[0m"
 
 def run(label, cmd):
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    # The output of cargo is UTF-8, but `text=True` alone reads it with the
+    # code page of the system (cp1252 on Windows) and fails on some bytes.
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace"
+    )
     if result.returncode != 0:
         print(f"{red}X {label}{reset}")
         if result.stdout:
