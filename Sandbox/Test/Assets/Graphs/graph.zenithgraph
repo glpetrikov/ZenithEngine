@@ -1,0 +1,427 @@
+{
+  "uuid": "df6870aa-0153-4c03-9eb3-b2ad5435eabb",
+  "type": "render_graph",
+  "version": 1,
+  "name": "graph",
+  "nodes": [
+    {
+      "id": 1,
+      "pass": "zenith.input_camera",
+      "editor": {
+        "pos": [
+          -480.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "pass": "zenith.input_meshes",
+      "params": {
+        "phase": "opaque"
+      },
+      "editor": {
+        "pos": [
+          -480.0,
+          120.0
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "pass": "zenith.opaque",
+      "params": {
+        "clear_color": [
+          0.1681579053401947,
+          0.6883721351623535,
+          0.07043806463479996,
+          1.0
+        ]
+      },
+      "editor": {
+        "pos": [
+          204.0,
+          67.0
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "pass": "zenith.tonemap",
+      "params": {
+        "operator": "aces",
+        "exposure": 1.0
+      },
+      "editor": {
+        "pos": [
+          1400.0,
+          120.0
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "pass": "zenith.output",
+      "editor": {
+        "pos": [
+          1700.0,
+          120.0
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "pass": "zenith.input_lights",
+      "params": {
+        "ambient": [
+          0.25,
+          0.25,
+          0.25,
+          1.0
+        ]
+      },
+      "editor": {
+        "pos": [
+          -480.0,
+          260.0
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "pass": "zenith.input_environment",
+      "editor": {
+        "pos": [
+          -480.0,
+          380.0
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "pass": "zenith.shadow",
+      "params": {
+        "size": 1618,
+        "distance": 75.58999633789062,
+        "bias": 0.09700000286102295
+      },
+      "editor": {
+        "pos": [
+          -120.0,
+          -120.0
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "pass": "zenith.sky",
+      "params": {
+        "intensity": 1.0
+      },
+      "editor": {
+        "pos": [
+          537.0,
+          136.0
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "pass": "zenith.input_meshes",
+      "params": {
+        "phase": "transparent"
+      },
+      "editor": {
+        "pos": [
+          -480.0,
+          500.0
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "pass": "zenith.transparent",
+      "editor": {
+        "pos": [
+          800.0,
+          120.0
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "pass": "zenith.input_sprites",
+      "editor": {
+        "pos": [
+          -480.0,
+          620.0
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "pass": "zenith.sprites",
+      "params": {
+        "depth_test": true
+      },
+      "editor": {
+        "pos": [
+          1100.0,
+          120.0
+        ]
+      }
+    }
+  ],
+  "links": [
+    {
+      "from": [
+        1,
+        "camera"
+      ],
+      "to": [
+        3,
+        "camera"
+      ]
+    },
+    {
+      "from": [
+        1,
+        "camera"
+      ],
+      "to": [
+        8,
+        "camera"
+      ]
+    },
+    {
+      "from": [
+        1,
+        "camera"
+      ],
+      "to": [
+        9,
+        "camera"
+      ]
+    },
+    {
+      "from": [
+        1,
+        "camera"
+      ],
+      "to": [
+        11,
+        "camera"
+      ]
+    },
+    {
+      "from": [
+        2,
+        "meshes"
+      ],
+      "to": [
+        3,
+        "meshes"
+      ]
+    },
+    {
+      "from": [
+        2,
+        "meshes"
+      ],
+      "to": [
+        8,
+        "meshes"
+      ]
+    },
+    {
+      "from": [
+        6,
+        "lights"
+      ],
+      "to": [
+        3,
+        "lights"
+      ]
+    },
+    {
+      "from": [
+        6,
+        "lights"
+      ],
+      "to": [
+        8,
+        "lights"
+      ]
+    },
+    {
+      "from": [
+        6,
+        "lights"
+      ],
+      "to": [
+        11,
+        "lights"
+      ]
+    },
+    {
+      "from": [
+        7,
+        "environment"
+      ],
+      "to": [
+        3,
+        "environment"
+      ]
+    },
+    {
+      "from": [
+        7,
+        "environment"
+      ],
+      "to": [
+        9,
+        "environment"
+      ]
+    },
+    {
+      "from": [
+        7,
+        "environment"
+      ],
+      "to": [
+        11,
+        "environment"
+      ]
+    },
+    {
+      "from": [
+        8,
+        "shadow_map"
+      ],
+      "to": [
+        3,
+        "shadow_map"
+      ]
+    },
+    {
+      "from": [
+        8,
+        "shadow_map"
+      ],
+      "to": [
+        11,
+        "shadow_map"
+      ]
+    },
+    {
+      "from": [
+        3,
+        "color"
+      ],
+      "to": [
+        9,
+        "color"
+      ]
+    },
+    {
+      "from": [
+        3,
+        "depth"
+      ],
+      "to": [
+        9,
+        "depth"
+      ]
+    },
+    {
+      "from": [
+        3,
+        "depth"
+      ],
+      "to": [
+        11,
+        "depth"
+      ]
+    },
+    {
+      "from": [
+        9,
+        "color"
+      ],
+      "to": [
+        11,
+        "color"
+      ]
+    },
+    {
+      "from": [
+        10,
+        "meshes"
+      ],
+      "to": [
+        11,
+        "meshes"
+      ]
+    },
+    {
+      "from": [
+        3,
+        "depth"
+      ],
+      "to": [
+        13,
+        "depth"
+      ]
+    },
+    {
+      "from": [
+        1,
+        "camera"
+      ],
+      "to": [
+        13,
+        "camera"
+      ]
+    },
+    {
+      "from": [
+        12,
+        "sprites"
+      ],
+      "to": [
+        13,
+        "sprites"
+      ]
+    },
+    {
+      "from": [
+        11,
+        "color"
+      ],
+      "to": [
+        13,
+        "color"
+      ]
+    },
+    {
+      "from": [
+        13,
+        "color"
+      ],
+      "to": [
+        4,
+        "hdr"
+      ]
+    },
+    {
+      "from": [
+        4,
+        "color"
+      ],
+      "to": [
+        5,
+        "color"
+      ]
+    }
+  ]
+}
